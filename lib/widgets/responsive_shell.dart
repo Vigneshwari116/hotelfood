@@ -42,12 +42,16 @@ class NavItem {
 
 class ResponsiveShell extends StatefulWidget {
   final String title;
+  final String? userLabel;
   final List<NavItem> items;
+  final VoidCallback? onLogout;
 
   const ResponsiveShell({
     super.key,
     required this.title,
     required this.items,
+    this.userLabel,
+    this.onLogout,
   });
 
   @override
@@ -108,6 +112,8 @@ class _ResponsiveShellState extends State<ResponsiveShell> {
               items: widget.items,
               selectedIndex: _index,
               onSelected: _selectPage,
+              userLabel: widget.userLabel,
+              onLogout: widget.onLogout,
             ),
           ),
 
@@ -124,8 +130,9 @@ class _ResponsiveShellState extends State<ResponsiveShell> {
             child: Column(
               children: [
                 _TopBar(
-                  title: widget.title,
                   pageTitle: currentItem.label,
+                  userLabel: widget.userLabel,
+                  onLogout: widget.onLogout,
                 ),
 
                 Expanded(
@@ -155,6 +162,14 @@ class _ResponsiveShellState extends State<ResponsiveShell> {
             fontWeight: FontWeight.bold,
           ),
         ),
+        actions: [
+          if (widget.onLogout != null)
+            IconButton(
+              tooltip: 'Logout',
+              onPressed: widget.onLogout,
+              icon: const Icon(Icons.logout),
+            ),
+        ],
       ),
 
       // ------------------------------------------------------
@@ -175,6 +190,8 @@ class _ResponsiveShellState extends State<ResponsiveShell> {
 
           Navigator.of(context).pop();
         },
+        userLabel: widget.userLabel,
+        onLogout: widget.onLogout,
       ),
 
       // ------------------------------------------------------
@@ -195,12 +212,16 @@ class _DesktopSidebar extends StatelessWidget {
   final List<NavItem> items;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
+  final String? userLabel;
+  final VoidCallback? onLogout;
 
   const _DesktopSidebar({
     required this.title,
     required this.items,
     required this.selectedIndex,
     required this.onSelected,
+    this.userLabel,
+    this.onLogout,
   });
 
   @override
@@ -281,16 +302,21 @@ class _DesktopSidebar extends StatelessWidget {
           // FOOTER
           // --------------------------------------------------
 
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Text(
-              'RestoPOS',
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey.shade600,
+          if (onLogout != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+              child: ListTile(
+                leading: Icon(
+                  Icons.logout,
+                  color: Colors.grey.shade700,
+                ),
+                title: const Text('Logout'),
+                subtitle: userLabel == null
+                    ? null
+                    : Text(userLabel!),
+                onTap: onLogout,
               ),
             ),
-          ),
         ],
       ),
     );
@@ -385,12 +411,16 @@ class _AppDrawer extends StatelessWidget {
   final List<NavItem> items;
   final int selectedIndex;
   final ValueChanged<int> onSelected;
+  final String? userLabel;
+  final VoidCallback? onLogout;
 
   const _AppDrawer({
     required this.title,
     required this.items,
     required this.selectedIndex,
     required this.onSelected,
+    this.userLabel,
+    this.onLogout,
   });
 
   @override
@@ -535,30 +565,23 @@ class _AppDrawer extends StatelessWidget {
           // FOOTER
           // --------------------------------------------------
 
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.restaurant,
-                    size: 18,
-                    color: Colors.grey.shade600,
-                  ),
-
-                  const SizedBox(width: 8),
-
-                  Text(
-                    'RestoPOS',
-                    style: TextStyle(
-                      color: Colors.grey.shade600,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
+          if (onLogout != null)
+            SafeArea(
+              child: ListTile(
+                leading: Icon(
+                  Icons.logout,
+                  color: Colors.grey.shade700,
+                ),
+                title: const Text('Logout'),
+                subtitle: userLabel == null
+                    ? null
+                    : Text(userLabel!),
+                onTap: () {
+                  Navigator.of(context).pop();
+                  onLogout!();
+                },
               ),
             ),
-          ),
         ],
       ),
     );
@@ -571,12 +594,14 @@ class _AppDrawer extends StatelessWidget {
 
 class _TopBar extends StatelessWidget
     implements PreferredSizeWidget {
-  final String title;
   final String pageTitle;
+  final String? userLabel;
+  final VoidCallback? onLogout;
 
   const _TopBar({
-    required this.title,
     required this.pageTitle,
+    this.userLabel,
+    this.onLogout,
   });
 
   @override
@@ -611,21 +636,29 @@ class _TopBar extends StatelessWidget
 
           const Spacer(),
 
-          Icon(
-            Icons.storefront,
-            size: 18,
-            color: Colors.grey.shade600,
-          ),
-
-          const SizedBox(width: 8),
-
-          Text(
-            title,
-            style: TextStyle(
+          if (userLabel != null) ...[
+            Icon(
+              Icons.person_outline,
+              size: 18,
               color: Colors.grey.shade600,
-              fontWeight: FontWeight.w500,
             ),
-          ),
+            const SizedBox(width: 6),
+            Text(
+              userLabel!,
+              style: TextStyle(
+                color: Colors.grey.shade700,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(width: 8),
+          ],
+
+          if (onLogout != null)
+            IconButton(
+              tooltip: 'Logout',
+              onPressed: onLogout,
+              icon: const Icon(Icons.logout),
+            ),
         ],
       ),
     );

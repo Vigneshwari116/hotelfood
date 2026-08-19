@@ -202,6 +202,86 @@ class Repository {
             return rows.map(UnitM.fromMap).toList();
       }
 
+      /// Built-in units shown in dropdowns (Raw Materials, etc.).
+      /// These are not managed from a separate Units tab.
+      Future<void> ensureStandardUnits() async {
+            final existing = await units();
+            final names = existing
+                  .map((u) => u.name.trim().toLowerCase())
+                  .toSet();
+            final codes = existing
+                  .map((u) => u.shortCode.trim().toLowerCase())
+                  .toSet();
+
+            const standard = [
+                  ('Kilogram', 'kg'),
+                  ('Gram', 'g'),
+                  ('Litre', 'L'),
+                  ('Millilitre', 'ml'),
+                  ('Piece', 'pc'),
+                  ('Packet', 'pkt'),
+                  ('Dozen', 'doz'),
+                  ('Box', 'box'),
+            ];
+
+            for (final unit in standard) {
+                  final nameKey = unit.$1.toLowerCase();
+                  final codeKey = unit.$2.toLowerCase();
+                  if (names.contains(nameKey) || codes.contains(codeKey)) {
+                        continue;
+                  }
+
+                  await addUnit(
+                        UnitM(
+                              name: unit.$1,
+                              shortCode: unit.$2,
+                        ),
+                  );
+                  names.add(nameKey);
+                  codes.add(codeKey);
+            }
+      }
+
+      Future<void> ensureDefaultUsers() async {
+            final db = await _db;
+            final now = DateTime.now().toIso8601String();
+
+            Future<void> insertIfMissing({
+                  required String username,
+                  required String password,
+                  required String role,
+            }) async {
+                  final rows = await db.query(
+                        'users',
+                        where: 'username = ?',
+                        whereArgs: [username],
+                        limit: 1,
+                  );
+                  if (rows.isNotEmpty) return;
+
+                  await db.insert(
+                        'users',
+                        {
+                              'username': username,
+                              'password_hash': hashPin(password),
+                              'role': role,
+                              'created_at': now,
+                        },
+                  );
+            }
+
+            await insertIfMissing(
+                  username: 'admin',
+                  password: 'admin123',
+                  role: 'admin',
+            );
+            await insertIfMissing(
+                  username: 'staff',
+                  password: 'staff123',
+                  role: 'staff',
+            );
+      }
+
       // ============================================================
       // SUPPLIERS
       // ============================================================

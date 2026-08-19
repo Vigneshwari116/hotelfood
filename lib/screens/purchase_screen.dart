@@ -708,14 +708,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             crossAxisAlignment:
             CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Purchase',
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 4),
               Text(
                 'Add raw materials and update stock',
                 style: TextStyle(

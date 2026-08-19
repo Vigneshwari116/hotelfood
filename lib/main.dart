@@ -91,33 +91,9 @@ class _StartupGateState extends State<_StartupGate> {
   }
 
   Future<void> _initializeApp() async {
-    final db = await DBHelper.instance.database;
-
-    // --------------------------------------------------------
-    // CREATE DEFAULT ADMIN IF NO USER EXISTS
-    // --------------------------------------------------------
-
-    final rows = await db.query(
-      'users',
-      limit: 1,
-    );
-
-    if (rows.isEmpty) {
-      await db.insert(
-        'users',
-        {
-          'username': 'admin',
-          'password_hash': hashPin('admin123'),
-          'role': 'admin',
-          'created_at': DateTime.now().toIso8601String(),
-        },
-      );
-    }
-
-    // --------------------------------------------------------
-    // WRITE OFF EXPIRED STOCK
-    // --------------------------------------------------------
-
+    await DBHelper.instance.database;
+    await Repository.instance.ensureDefaultUsers();
+    await Repository.instance.ensureStandardUnits();
     await Repository.instance.writeOffExpiredStock();
   }
 
@@ -200,10 +176,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _user = TextEditingController(
-    text: 'admin',
-  );
-
+  final _user = TextEditingController();
   final _pass = TextEditingController();
 
   String? _error;
@@ -255,9 +228,14 @@ class _LoginScreenState extends State<LoginScreen> {
 
       if (!mounted) return;
 
+      final role = (rows.first['role'] ?? 'staff').toString();
+
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => const MainShell(),
+          builder: (_) => MainShell(
+            username: username,
+            role: role,
+          ),
         ),
       );
     } catch (e) {
@@ -379,16 +357,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-
-                    const SizedBox(height: 14),
-
-                    Text(
-                      'Default: admin / admin123',
-                      style: TextStyle(
-                        color: Colors.grey.shade500,
-                        fontSize: 12,
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -405,99 +373,77 @@ class _LoginScreenState extends State<LoginScreen> {
 // ============================================================
 
 class MainShell extends StatelessWidget {
-  const MainShell({super.key});
+  final String username;
+  final String role;
+
+  const MainShell({
+    super.key,
+    required this.username,
+    required this.role,
+  });
+
+  bool get _isAdmin => role.toLowerCase() == 'admin';
 
   @override
   Widget build(BuildContext context) {
+    final salesItem = NavItem(
+      icon: Icons.point_of_sale,
+      label: 'Sales / POS',
+      page: const PosScreen(),
+    );
+
+    final items = _isAdmin
+        ? [
+            NavItem(
+              icon: Icons.dashboard_outlined,
+              label: 'Dashboard',
+              page: const DashboardScreen(),
+            ),
+            salesItem,
+            NavItem(
+              icon: Icons.inventory_2_outlined,
+              label: 'Inventory',
+              page: const InventoryScreen(),
+            ),
+            NavItem(
+              icon: Icons.shopping_cart_outlined,
+              label: 'Purchase',
+              page: const PurchaseScreen(),
+            ),
+            NavItem(
+              icon: Icons.warehouse_outlined,
+              label: 'Raw Materials',
+              page: const RawMaterialMasterScreen(),
+            ),
+            NavItem(
+              icon: Icons.people_outline,
+              label: 'Customers',
+              page: const CustomersScreen(),
+            ),
+            NavItem(
+              icon: Icons.category_outlined,
+              label: 'Masters',
+              page: const SimpleMastersScreen(),
+            ),
+            NavItem(
+              icon: Icons.bar_chart_outlined,
+              label: 'Reports',
+              page: const ReportsScreen(),
+            ),
+          ]
+        : [salesItem];
+
     return ResponsiveShell(
-      title: 'RestoPOS',
-
-      items: [
-        // ----------------------------------------------------
-        // DASHBOARD
-        // ----------------------------------------------------
-
-        NavItem(
-          icon: Icons.dashboard_outlined,
-          label: 'Dashboard',
-          page: const DashboardScreen(),
-        ),
-
-        // ----------------------------------------------------
-        // SALES
-        // ----------------------------------------------------
-
-        NavItem(
-          icon: Icons.point_of_sale,
-          label: 'Sales / POS',
-          page: const PosScreen(),
-        ),
-
-        // ----------------------------------------------------
-        // INVENTORY
-        // ----------------------------------------------------
-
-        NavItem(
-          icon: Icons.inventory_2_outlined,
-          label: 'Inventory',
-          page: const InventoryScreen(),
-        ),
-
-        // ----------------------------------------------------
-        // PURCHASE
-        // ----------------------------------------------------
-
-        NavItem(
-          icon: Icons.shopping_cart_outlined,
-          label: 'Purchase',
-          page: const PurchaseScreen(),
-        ),
-
-        // ----------------------------------------------------
-        // MENU / RECIPE / COMBO
-        // ----------------------------------------------------
-
-
-        // ----------------------------------------------------
-        // RAW MATERIALS
-        // ----------------------------------------------------
-
-        NavItem(
-          icon: Icons.warehouse_outlined,
-          label: 'Raw Materials',
-          page: const RawMaterialMasterScreen(),
-        ),
-
-        // ----------------------------------------------------
-        // CUSTOMERS
-        // ----------------------------------------------------
-
-        NavItem(
-          icon: Icons.people_outline,
-          label: 'Customers',
-          page: const CustomersScreen(),
-        ),
-
-        // ----------------------------------------------------
-        // MASTERS
-        // ----------------------------------------------------
-
-        NavItem(
-          icon: Icons.category_outlined,
-          label: 'Masters',
-          page: const SimpleMastersScreen(),
-        ),
-
-        // ----------------------------------------------------
-        // REPORTS
-        // ----------------------------------------------------
-
-        NavItem(
-          icon: Icons.bar_chart_outlined,
-          label: 'Reports',
-          page: const ReportsScreen(),
-        ),
-      ],
+      title: 'Five Star',
+      userLabel: username,
+      items: items,
+      onLogout: () {
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => const LoginScreen(),
+          ),
+        );
+      },
     );
   }
 }

@@ -1757,27 +1757,6 @@ class _PosScreenState extends State<PosScreen> {
       BuildContext context,
       ) {
     return Scaffold(
-      appBar:
-      AppBar(
-        title:
-        const Text(
-          'POS',
-        ),
-        actions: [
-          IconButton(
-            tooltip:
-            'Refresh',
-            onPressed:
-            _loading
-                ? null
-                : _loadData,
-            icon:
-            const Icon(
-              Icons.refresh,
-            ),
-          ),
-        ],
-      ),
       body: _loading
           ? const Center(
         child:
@@ -1874,6 +1853,16 @@ class _PosScreenState extends State<PosScreen> {
                 true,
               ),
             ),
+          ),
+
+          const SizedBox(
+            width: 4,
+          ),
+
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: _loading ? null : _loadData,
+            icon: const Icon(Icons.refresh),
           ),
         ],
       ),

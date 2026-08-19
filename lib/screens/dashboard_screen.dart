@@ -89,19 +89,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 8),
-
-                  // Dashboard heading only
-                  const Text(
-                    'Dashboard',
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
                   if (_loading)
                     const Center(
                       child: Padding(

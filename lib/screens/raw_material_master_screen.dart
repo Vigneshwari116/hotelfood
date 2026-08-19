@@ -493,46 +493,6 @@ class _RawMaterialMasterScreenState
           CrossAxisAlignment.start,
           children: [
             // ==================================================
-            // HEADER
-            // ==================================================
-
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Raw Materials',
-                    style: Theme.of(context)
-                        .textTheme
-                        .headlineSmall
-                        ?.copyWith(
-                      fontWeight:
-                      FontWeight.bold,
-                    ),
-                  ),
-                ),
-
-                if (_loading)
-                  const Padding(
-                    padding:
-                    EdgeInsets.only(
-                      right: 12,
-                    ),
-                    child:
-                    SizedBox(
-                      width: 20,
-                      height: 20,
-                      child:
-                      CircularProgressIndicator(
-                        strokeWidth: 2,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-
-            // ==================================================
             // TABS
             // ==================================================
 
