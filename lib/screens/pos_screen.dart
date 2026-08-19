@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/printer_service.dart';
 import 'package:foodstock/services/repository.dart';
 
 class PosScreen extends StatefulWidget {
@@ -30,13 +31,10 @@ class _PosScreenState extends State<PosScreen> {
   ScrollController();
 
   List<RawMaterial> _materials = [];
-  List<Customer> _customers = [];
 
   Map<int, double> _rawStock = {};
 
   final List<CartLine> _cart = [];
-
-  Customer? _selectedCustomer;
 
   String _paymentType = 'Cash';
 
@@ -88,7 +86,6 @@ class _PosScreenState extends State<PosScreen> {
 
     try {
       final materials = await _repo.rawMaterials();
-      final customers = await _repo.customers();
       final stock =
       await _repo.maxQuantitiesForRawMaterials();
 
@@ -96,7 +93,6 @@ class _PosScreenState extends State<PosScreen> {
 
       setState(() {
         _materials = materials;
-        _customers = customers;
         _rawStock = stock;
         _loading = false;
       });
@@ -484,29 +480,20 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    if (_paymentType ==
-        'Credit' &&
-        _selectedCustomer ==
-            null) {
-      _showError(
-        'Select a customer for credit sales.',
-      );
-      return;
-    }
-
     setState(() {
       _saving = true;
     });
 
+    final soldLines =
+        List<CartLine>.from(_cart);
+    final subtotal = _subtotal;
+    final grandTotal = _total;
+
     try {
       final saleId =
       await _repo.recordSale(
-        customerId:
-        _selectedCustomer?.id,
-        lines:
-        List<CartLine>.from(
-          _cart,
-        ),
+        customerId: null,
+        lines: soldLines,
         tax: tax,
         discount: discount,
         paymentType:
@@ -530,16 +517,17 @@ class _PosScreenState extends State<PosScreen> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Sale #$saleId completed successfully.',
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ReceiptScreen(
+            saleId: saleId,
+            lines: soldLines,
+            paymentType: _paymentType,
+            subtotal: subtotal,
+            tax: tax,
+            discount: discount,
+            grandTotal: grandTotal,
           ),
-          behavior:
-          SnackBarBehavior
-              .floating,
         ),
       );
     } on InsufficientStockException catch (
@@ -576,182 +564,6 @@ class _PosScreenState extends State<PosScreen> {
       _showError(
         'Unable to complete sale: $e',
       );
-    }
-  }
-
-  // ============================================================
-  // CUSTOMER
-  // ============================================================
-
-  Future<void> _selectCustomer() async {
-    if (_customers.isEmpty) {
-      _showError(
-        'No customers found. Add a customer first.',
-      );
-      return;
-    }
-
-    final selected =
-    await showModalBottomSheet<Customer>(
-      context: context,
-      isScrollControlled:
-      true,
-      builder:
-          (sheetContext) {
-        String query = '';
-
-        return StatefulBuilder(
-          builder: (
-              context,
-              setSheetState,
-              ) {
-            final filtered =
-            _customers.where(
-                  (customer) {
-                if (query
-                    .trim()
-                    .isEmpty) {
-                  return true;
-                }
-
-                final q =
-                query
-                    .trim()
-                    .toLowerCase();
-
-                return customer.name
-                    .toLowerCase()
-                    .contains(q) ||
-                    (customer.phone ??
-                        '')
-                        .toLowerCase()
-                        .contains(q);
-              },
-            ).toList();
-
-            return SafeArea(
-              child: SizedBox(
-                height:
-                MediaQuery.of(
-                  context,
-                )
-                    .size
-                    .height *
-                    0.75,
-                child: Column(
-                  children: [
-                    Padding(
-                      padding:
-                      const EdgeInsets.all(
-                        16,
-                      ),
-                      child:
-                      TextField(
-                        autofocus:
-                        true,
-                        decoration:
-                        const InputDecoration(
-                          labelText:
-                          'Search customer',
-                          prefixIcon:
-                          Icon(
-                            Icons
-                                .search,
-                          ),
-                          border:
-                          OutlineInputBorder(),
-                        ),
-                        onChanged:
-                            (value) {
-                          setSheetState(
-                                () {
-                              query =
-                                  value;
-                            },
-                          );
-                        },
-                      ),
-                    ),
-
-                    Expanded(
-                      child:
-                      filtered.isEmpty
-                          ? const Center(
-                        child:
-                        Text(
-                          'No customers found',
-                        ),
-                      )
-                          : ListView
-                          .builder(
-                        itemCount:
-                        filtered.length,
-                        itemBuilder:
-                            (
-                            _,
-                            index,
-                            ) {
-                          final customer =
-                          filtered[
-                          index];
-
-                          return ListTile(
-                            leading:
-                            const CircleAvatar(
-                              child:
-                              Icon(
-                                Icons
-                                    .person,
-                              ),
-                            ),
-                            title:
-                            Text(
-                              customer
-                                  .name,
-                            ),
-                            subtitle:
-                            customer.phone ==
-                                null ||
-                                customer
-                                    .phone!
-                                    .isEmpty
-                                ? null
-                                : Text(
-                              customer
-                                  .phone!,
-                            ),
-                            trailing:
-                            Text(
-                              '₹${customer.openingBalance.toStringAsFixed(2)}',
-                            ),
-                            onTap:
-                                () {
-                              Navigator
-                                  .pop(
-                                context,
-                                customer,
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    if (!mounted) return;
-
-    if (selected != null) {
-      setState(() {
-        _selectedCustomer =
-            selected;
-      });
     }
   }
 
@@ -1360,106 +1172,6 @@ class _PosScreenState extends State<PosScreen> {
             .stretch,
         children: [
           // ------------------------------------------------------
-          // CUSTOMER
-          // ------------------------------------------------------
-
-          InkWell(
-            onTap:
-            _selectCustomer,
-            borderRadius:
-            BorderRadius
-                .circular(
-              8,
-            ),
-            child:
-            Container(
-              padding:
-              const EdgeInsets
-                  .all(
-                9,
-              ),
-              decoration:
-              BoxDecoration(
-                border:
-                Border.all(
-                  color: Theme.of(
-                    context,
-                  ).dividerColor,
-                ),
-                borderRadius:
-                BorderRadius
-                    .circular(
-                  8,
-                ),
-              ),
-              child:
-              Row(
-                children: [
-                  const Icon(
-                    Icons
-                        .person_outline,
-                    size: 20,
-                  ),
-
-                  const SizedBox(
-                    width: 8,
-                  ),
-
-                  Expanded(
-                    child:
-                    Column(
-                      mainAxisSize:
-                      MainAxisSize
-                          .min,
-                      crossAxisAlignment:
-                      CrossAxisAlignment
-                          .start,
-                      children: [
-                        const Text(
-                          'Customer',
-                          style:
-                          TextStyle(
-                            fontSize:
-                            11,
-                          ),
-                        ),
-                        Text(
-                          _selectedCustomer
-                              ?.name ??
-                              'Walk-in Customer',
-                          maxLines:
-                          1,
-                          overflow:
-                          TextOverflow
-                              .ellipsis,
-                          style:
-                          const TextStyle(
-                            fontWeight:
-                            FontWeight
-                                .w600,
-                            fontSize:
-                            13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const Icon(
-                    Icons
-                        .chevron_right,
-                    size: 20,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          const SizedBox(
-            height: 8,
-          ),
-
-          // ------------------------------------------------------
           // PAYMENT
           // ------------------------------------------------------
 
@@ -1504,14 +1216,6 @@ class _PosScreenState extends State<PosScreen> {
                 child:
                 Text(
                   'Card',
-                ),
-              ),
-              DropdownMenuItem(
-                value:
-                'Credit',
-                child:
-                Text(
-                  'Credit',
                 ),
               ),
             ],

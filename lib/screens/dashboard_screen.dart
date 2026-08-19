@@ -12,7 +12,6 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _materials = 0;
   int _menuItems = 0;
-  int _customers = 0;
   int _lowStock = 0;
 
   double _todaySales = 0;
@@ -30,7 +29,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final repo = Repository.instance;
 
       final materials = await repo.rawMaterials();
-      final customers = await repo.customers();
       final stock = await repo.currentStockReport();
       final sales = await repo.salesReport();
 
@@ -58,7 +56,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       setState(() {
         _materials = materials.length;
-        _customers = customers.length;
         _lowStock = lowStock;
         _todaySales = todayTotal;
         _loading = false;
@@ -119,13 +116,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           '$_menuItems',
                           Icons.restaurant_menu,
                           Colors.orange,
-                        ),
-
-                        _statCard(
-                          'Customers',
-                          '$_customers',
-                          Icons.people,
-                          Colors.purple,
                         ),
 
                         _statCard(

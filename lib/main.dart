@@ -10,8 +10,8 @@ import 'screens/raw_material_master_screen.dart';
 import 'screens/purchase_screen.dart';
 import 'screens/inventory_screen.dart';
 import 'screens/pos_screen.dart';
-import 'screens/customers_screen.dart';
 import 'screens/reports_screen.dart';
+import 'screens/printer_settings_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -416,11 +416,6 @@ class MainShell extends StatelessWidget {
               page: const RawMaterialMasterScreen(),
             ),
             NavItem(
-              icon: Icons.people_outline,
-              label: 'Customers',
-              page: const CustomersScreen(),
-            ),
-            NavItem(
               icon: Icons.category_outlined,
               label: 'Masters',
               page: const SimpleMastersScreen(),
@@ -429,6 +424,11 @@ class MainShell extends StatelessWidget {
               icon: Icons.bar_chart_outlined,
               label: 'Reports',
               page: const ReportsScreen(),
+            ),
+            NavItem(
+              icon: Icons.print_outlined,
+              label: 'Printers',
+              page: const PrinterSettingsScreen(),
             ),
           ]
         : [salesItem];

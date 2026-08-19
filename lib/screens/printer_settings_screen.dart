@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:foodstock/services/printer_service.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -86,8 +87,7 @@ class _PrinterSettingsScreenState
       // RESTORE PAPER SIZE
       // --------------------------------------------------------
 
-      if (savedPaperSize == '58mm' ||
-          savedPaperSize == '80mm') {
+      if (ReceiptPaper.isValid(savedPaperSize)) {
         _paperSize = savedPaperSize!;
       }
 
@@ -285,17 +285,9 @@ class _PrinterSettingsScreenState
       // RECEIPT PAPER SIZE
       // --------------------------------------------------------
 
-      final PdfPageFormat format =
-      _paperSize == '58mm'
-          ? PdfPageFormat(
-        58 * PdfPageFormat.mm,
-        150 * PdfPageFormat.mm,
-        marginAll: 3 * PdfPageFormat.mm,
-      )
-          : PdfPageFormat(
-        80 * PdfPageFormat.mm,
-        150 * PdfPageFormat.mm,
-        marginAll: 4 * PdfPageFormat.mm,
+      final PdfPageFormat format = ReceiptPaper.format(
+        _paperSize,
+        itemCount: 3,
       );
 
       // --------------------------------------------------------
@@ -305,7 +297,7 @@ class _PrinterSettingsScreenState
       final bool result =
       await Printing.directPrintPdf(
         printer: printer,
-        name: 'FoodStock Test Receipt',
+        name: 'Five Star Test Bill',
         format: format,
         onLayout: (format) async {
           return _buildTestReceipt(format);
@@ -379,7 +371,7 @@ class _PrinterSettingsScreenState
               // ------------------------------------------------
 
               pw.Text(
-                'FOODSTOCK',
+                'FIVE STAR',
                 textAlign:
                 pw.TextAlign.center,
                 style: pw.TextStyle(
@@ -392,7 +384,7 @@ class _PrinterSettingsScreenState
               pw.SizedBox(height: 4),
 
               pw.Text(
-                'RESTAURANT',
+                'HOTEL BILL — TEST',
                 style:
                 const pw.TextStyle(
                   fontSize: 9,
@@ -997,7 +989,7 @@ class _PrinterSettingsScreenState
             ),
 
             Text(
-              'Choose the thermal receipt width.',
+              'Choose thermal roll or sheet size so the bill matches your printer.',
               style: TextStyle(
                 color:
                 Colors.grey.shade600,
@@ -1022,19 +1014,12 @@ class _PrinterSettingsScreenState
                 border:
                 OutlineInputBorder(),
               ),
-              items: const [
-                DropdownMenuItem(
-                  value: '58mm',
-                  child: Text(
-                    '58mm Thermal',
+              items: [
+                for (final entry in ReceiptPaper.labels.entries)
+                  DropdownMenuItem(
+                    value: entry.key,
+                    child: Text(entry.value),
                   ),
-                ),
-                DropdownMenuItem(
-                  value: '80mm',
-                  child: Text(
-                    '80mm Thermal',
-                  ),
-                ),
               ],
               onChanged:
                   (value) {
@@ -1062,33 +1047,6 @@ class _PrinterSettingsScreenState
       BuildContext context,
       ) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          'Printer Settings',
-          style: TextStyle(
-            fontWeight:
-            FontWeight.bold,
-          ),
-        ),
-        actions: [
-          IconButton(
-            tooltip:
-            'Refresh printers',
-            onPressed:
-            _loading
-                ? null
-                : _loadPrinters,
-            icon: const Icon(
-              Icons.refresh,
-            ),
-          ),
-        ],
-      ),
-
-      // ========================================================
-      // BODY
-      // ========================================================
-
       body: _loading
           ? const Center(
         child:
@@ -1105,6 +1063,15 @@ class _PrinterSettingsScreenState
             16,
           ),
           children: [
+            Align(
+              alignment: Alignment.centerRight,
+              child: IconButton(
+                tooltip: 'Refresh printers',
+                onPressed: _loading ? null : _loadPrinters,
+                icon: const Icon(Icons.refresh),
+              ),
+            ),
+
             // ==================================================
             // SELECTED PRINTER
             // ==================================================
@@ -1379,9 +1346,8 @@ class _PrinterSettingsScreenState
 
                     Expanded(
                       child: Text(
-                        'Select a printer and choose your receipt paper size. '
-                            'Use "Print Test Receipt" to verify the printer before '
-                            'using it for sales.',
+                        'Select a printer and a paper size (58mm, 80mm, A5 or A4). '
+                            'Use "Print Test Receipt" to verify before sales.',
                         style:
                         TextStyle(
                           color: Colors
