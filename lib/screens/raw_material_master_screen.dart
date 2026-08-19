@@ -1377,6 +1377,9 @@ class _RawMaterialEditorDialogState
   final _shelfLifeController =
   TextEditingController();
 
+  final _packetsController =
+  TextEditingController();
+
   final _packetController =
   TextEditingController();
 
@@ -1463,6 +1466,27 @@ class _RawMaterialEditorDialogState
     }
 
     _nameController.addListener(_copyNameToSubItem);
+    _packetsController.addListener(_recalculateStock);
+    _packetController.addListener(_recalculateStock);
+  }
+
+  void _recalculateStock() {
+    if (widget.existing != null) return;
+
+    final packets =
+        double.tryParse(_packetsController.text.trim()) ?? 0;
+    final perPacket =
+        double.tryParse(_packetController.text.trim()) ?? 0;
+
+    if (packets <= 0 || perPacket <= 0) return;
+
+    final stock = packets * perPacket;
+    final text = stock % 1 == 0
+        ? stock.toStringAsFixed(0)
+        : stock.toStringAsFixed(2);
+
+    if (_openingController.text == text) return;
+    _openingController.text = text;
   }
 
   void _copyNameToSubItem() {
@@ -1477,6 +1501,8 @@ class _RawMaterialEditorDialogState
   @override
   void dispose() {
     _nameController.removeListener(_copyNameToSubItem);
+    _packetsController.removeListener(_recalculateStock);
+    _packetController.removeListener(_recalculateStock);
     _nameController.dispose();
     _subItemController.dispose();
     _qtyController.dispose();
@@ -1484,6 +1510,7 @@ class _RawMaterialEditorDialogState
     _openingController.dispose();
     _reorderController.dispose();
     _shelfLifeController.dispose();
+    _packetsController.dispose();
     _packetController.dispose();
     _costController.dispose();
     _sellingController.dispose();
@@ -1650,6 +1677,24 @@ class _RawMaterialEditorDialogState
     }
   }
 
+  InputDecoration _denseDecoration(
+    String label, {
+    String? hint,
+    IconData? prefix,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      isDense: true,
+      border: const OutlineInputBorder(),
+      prefixIcon: prefix == null ? null : Icon(prefix, size: 20),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 12,
+        vertical: 10,
+      ),
+    );
+  }
+
   // ============================================================
   // BUILD
   // ============================================================
@@ -1695,242 +1740,200 @@ class _RawMaterialEditorDialogState
                 ),
               ),
 
-              const SizedBox(
-                height: 20,
-              ),
-
-              // ------------------------------------------------
-              // IMAGE
-              // ------------------------------------------------
+              const SizedBox(height: 10),
 
               Center(
                 child: Stack(
                   children: [
                     _ItemImage(
-                      path:
-                      _imagePath,
-                      size: 88,
-                      icon: Icons
-                          .inventory_2_outlined,
+                      path: _imagePath,
+                      size: 64,
+                      icon: Icons.inventory_2_outlined,
                     ),
                     Positioned(
                       right: 0,
                       bottom: 0,
-                      child:
-                      FloatingActionButton
-                          .small(
-                        onPressed:
-                        _pickImage,
-                        child:
-                        const Icon(
-                          Icons
-                              .camera_alt,
-                        ),
+                      child: FloatingActionButton.small(
+                        onPressed: _pickImage,
+                        child: const Icon(Icons.camera_alt),
                       ),
                     ),
                   ],
                 ),
               ),
 
-              const SizedBox(
-                height: 20,
-              ),
-
-              TextField(
-                controller:
-                _nameController,
-                decoration:
-                const InputDecoration(
-                  labelText:
-                  'Item Name',
-                  border:
-                  OutlineInputBorder(),
-                  prefixIcon:
-                  Icon(
-                    Icons
-                        .inventory_2_outlined,
-                  ),
-                ),
-              ),
-
-              const SizedBox(
-                height: 12,
-              ),
-
-              TextField(
-                controller:
-                _subItemController,
-                decoration:
-                const InputDecoration(
-                  labelText:
-                  'Sub Item',
-                  hintText:
-                  'Shown under the item name',
-                  border:
-                  OutlineInputBorder(),
-                  prefixIcon:
-                  Icon(
-                    Icons
-                        .subdirectory_arrow_right,
-                  ),
-                ),
-              ),
-
-              const SizedBox(
-                height: 12,
-              ),
+              const SizedBox(height: 10),
 
               Row(
                 children: [
                   Expanded(
-                    child:
-                    TextField(
-                      controller:
-                      _qtyController,
-                      keyboardType:
-                      const TextInputType
-                          .numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration:
-                      const InputDecoration(
-                        labelText:
-                        'Qty',
-                        hintText:
-                        '1.5',
-                        helperText:
-                        'Stock reduced by this qty on each sale',
-                        border:
-                        OutlineInputBorder(),
+                    child: TextField(
+                      controller: _nameController,
+                      decoration: _denseDecoration(
+                        'Item Name',
+                        prefix: Icons.inventory_2_outlined,
                       ),
                     ),
                   ),
-                  const SizedBox(
-                    width: 12,
-                  ),
+                  const SizedBox(width: 10),
                   Expanded(
-                    child:
-                    TextField(
-                      controller:
-                      _openingController,
-                      enabled:
-                      widget.existing ==
-                          null,
-                      keyboardType:
-                      const TextInputType
-                          .numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration:
-                      const InputDecoration(
-                        labelText:
-                        'Stock',
-                        border:
-                        OutlineInputBorder(),
+                    child: TextField(
+                      controller: _subItemController,
+                      decoration: _denseDecoration(
+                        'Sub Item',
+                        prefix: Icons.subdirectory_arrow_right,
                       ),
                     ),
                   ),
                 ],
               ),
 
-              const SizedBox(
-                height: 12,
+              const SizedBox(height: 8),
+
+              BarcodeField(
+                controller: _barcodeController,
+                isDense: true,
               ),
 
-              DropdownButtonFormField<
-                  int>(
-                value: _categoryId,
-                decoration:
-                const InputDecoration(
-                  labelText:
-                  'Category',
-                  border:
-                  OutlineInputBorder(),
-                ),
-                items: widget
-                    .categories
-                    .map(
-                      (category) {
-                    return DropdownMenuItem<
-                        int>(
-                      value:
-                      category.id,
-                      child: Text(
-                        category
-                            .name,
+              const SizedBox(height: 8),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _qtyController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
                       ),
-                    );
-                  },
-                )
-                    .toList(),
-                onChanged:
-                    (value) {
-                  setState(() {
-                    _categoryId =
-                        value;
-                  });
-                },
-              ),
-
-              const SizedBox(
-                height: 12,
-              ),
-
-              DropdownButtonFormField<
-                  int>(
-                value: _unitId,
-                decoration:
-                const InputDecoration(
-                  labelText:
-                  'Unit',
-                  border:
-                  OutlineInputBorder(),
-                ),
-                items: widget.units
-                    .map(
-                      (unit) {
-                    return DropdownMenuItem<
-                        int>(
-                      value:
-                      unit.id,
-                      child: Text(
-                        '${unit.name} (${unit.shortCode})',
+                      decoration: _denseDecoration(
+                        'Qty / sale',
+                        hint: '1.5',
                       ),
-                    );
-                  },
-                )
-                    .toList(),
-                onChanged:
-                    (value) {
-                  setState(() {
-                    _unitId =
-                        value;
-                  });
-                },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: _packetsController,
+                      enabled: widget.existing == null,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: _denseDecoration('Packets'),
+                    ),
+                  ),
+                ],
               ),
 
-              const SizedBox(
-                height: 12,
+              const SizedBox(height: 8),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _packetController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: _denseDecoration('Units / packet'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: _openingController,
+                      enabled: widget.existing == null,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: _denseDecoration('Stock'),
+                    ),
+                  ),
+                ],
               ),
 
-              TextField(
-                controller:
-                _sellingController,
-                keyboardType:
-                const TextInputType
-                    .numberWithOptions(
-                  decimal: true,
-                ),
-                decoration:
-                const InputDecoration(
-                  labelText:
-                  'Selling Price (₹)',
-                  border:
-                  OutlineInputBorder(),
-                ),
+              const SizedBox(height: 8),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _costController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: _denseDecoration('C.P. (₹)'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: TextField(
+                      controller: _sellingController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: _denseDecoration('S.P. (₹)'),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 8),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      value: _categoryId,
+                      isDense: true,
+                      decoration: _denseDecoration('Category'),
+                      items: widget.categories
+                          .map(
+                            (category) => DropdownMenuItem<int>(
+                              value: category.id,
+                              child: Text(
+                                category.name,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _categoryId = value;
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: DropdownButtonFormField<int>(
+                      value: _unitId,
+                      isDense: true,
+                      decoration: _denseDecoration('Unit'),
+                      items: widget.units
+                          .map(
+                            (unit) => DropdownMenuItem<int>(
+                              value: unit.id,
+                              child: Text(
+                                '${unit.name} (${unit.shortCode})',
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        setState(() {
+                          _unitId = value;
+                        });
+                      },
+                    ),
+                  ),
+                ],
               ),
 
               const Spacer(),
+
 
               Row(
                 mainAxisAlignment:
@@ -2121,14 +2124,16 @@ class _ComboEditorDialogState
       return;
     }
 
-    setState(() {
-      _lines.add(
-        _ComboLine(
-          rawMaterialId:
-          available.first.id,
-          qty: 1,
-        ),
-      );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _lines.add(
+          _ComboLine(
+            rawMaterialId: available.first.id,
+            qty: 1,
+          ),
+        );
+      });
     });
   }
 
@@ -2283,30 +2288,23 @@ class _ComboEditorDialogState
             .size
             .width;
 
+    final height =
+        MediaQuery.of(context).size.height;
+
     final dialogWidth =
     width < Breakpoints.mobile
         ? width * .94
         : 650.0;
 
     return Dialog(
-      child: ConstrainedBox(
-        constraints:
-        BoxConstraints(
-          maxWidth:
-          dialogWidth,
-        ),
-        child:
-        SingleChildScrollView(
-          padding:
-          const EdgeInsets.all(
-            20,
-          ),
+      insetPadding: const EdgeInsets.all(16),
+      child: SizedBox(
+        width: dialogWidth,
+        height: height * 0.9,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
           child: Column(
-            mainAxisSize:
-            MainAxisSize.min,
-            crossAxisAlignment:
-            CrossAxisAlignment
-                .stretch,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // ==================================================
               // TITLE
@@ -2457,51 +2455,33 @@ class _ComboEditorDialogState
               // RAW MATERIAL LINES
               // ==================================================
 
-              if (_lines.isEmpty)
-                Container(
-                  padding:
-                  const EdgeInsets
-                      .all(20),
-                  decoration:
-                  BoxDecoration(
-                    border:
-                    Border.all(
-                      color:
-                      Theme.of(
-                        context,
-                      )
-                          .dividerColor,
+              Expanded(
+                child: _lines.isEmpty
+                    ? Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Theme.of(context).dividerColor,
                     ),
-                    borderRadius:
-                    BorderRadius
-                        .circular(
-                      8,
-                    ),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  child:
-                  const Center(
+                  child: const Center(
                     child: Text(
-                      'No raw materials added.\nTap "Add Item".',
-                      textAlign:
-                      TextAlign.center,
+                      'No menu items added.\nTap "Add Item".',
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 )
-              else
-                ..._lines.asMap().entries.map(
-                      (entry) {
-                    final index =
-                        entry.key;
-
-                    final line =
-                        entry.value;
-
+                    : ListView.builder(
+                  itemCount: _lines.length,
+                  itemBuilder: (context, index) {
                     return _buildComboLine(
                       index,
-                      line,
+                      _lines[index],
                     );
                   },
                 ),
+              ),
 
               const SizedBox(
                 height: 20,
@@ -2584,12 +2564,15 @@ class _ComboEditorDialogState
             child:
             DropdownButtonFormField<
                 int>(
+              isExpanded: true,
+              isDense: true,
               value:
               line.rawMaterialId,
               decoration:
               const InputDecoration(
                 labelText:
                 'Menu Item',
+                isDense: true,
                 border:
                 OutlineInputBorder(),
               ),
@@ -2613,32 +2596,19 @@ class _ComboEditorDialogState
               )
                   .map(
                     (material) {
+                  final sub =
+                      material.trimmedSubItem;
                   return DropdownMenuItem<
                       int>(
                     value:
                     material.id,
-                    child:
-                    Row(
-                      children: [
-                        _ItemImage(
-                          path:
-                          material
-                              .imagePath,
-                          size: 35,
-                          icon: Icons
-                              .inventory_2_outlined,
-                        ),
-                        const SizedBox(
-                          width: 8,
-                        ),
-                        Flexible(
-                          child:
-                          Text(
-                            material
-                                .name,
-                          ),
-                        ),
-                      ],
+                    child: Text(
+                      sub == null
+                          ? material.name
+                          : '${material.name} ($sub)',
+                      overflow:
+                      TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
                   );
                 },
