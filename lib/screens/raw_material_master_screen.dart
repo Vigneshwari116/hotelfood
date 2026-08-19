@@ -1677,7 +1677,9 @@ class _RawMaterialEditorDialogState
     }
   }
 
-  InputDecoration _denseDecoration(
+  static const double _fieldGap = 16;
+
+  InputDecoration _fieldDecoration(
     String label, {
     String? hint,
     IconData? prefix,
@@ -1689,9 +1691,20 @@ class _RawMaterialEditorDialogState
       border: const OutlineInputBorder(),
       prefixIcon: prefix == null ? null : Icon(prefix, size: 20),
       contentPadding: const EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: 10,
+        horizontal: 14,
+        vertical: 14,
       ),
+    );
+  }
+
+  Widget _twoFields(Widget left, Widget right) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: left),
+        const SizedBox(width: _fieldGap),
+        Expanded(child: right),
+      ],
     );
   }
 
@@ -1722,7 +1735,7 @@ class _RawMaterialEditorDialogState
         width: dialogWidth,
         height: height * 0.9,
         child: Padding(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
           child: Column(
             crossAxisAlignment:
             CrossAxisAlignment.stretch,
@@ -1740,14 +1753,14 @@ class _RawMaterialEditorDialogState
                 ),
               ),
 
-              const SizedBox(height: 10),
+              const SizedBox(height: 16),
 
               Center(
                 child: Stack(
                   children: [
                     _ItemImage(
                       path: _imagePath,
-                      size: 64,
+                      size: 72,
                       icon: Icons.inventory_2_outlined,
                     ),
                     Positioned(
@@ -1762,178 +1775,150 @@ class _RawMaterialEditorDialogState
                 ),
               ),
 
-              const SizedBox(height: 10),
+              const SizedBox(height: 20),
 
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _nameController,
-                      decoration: _denseDecoration(
-                        'Item Name',
-                        prefix: Icons.inventory_2_outlined,
+              DropdownButtonFormField<int>(
+                value: _categoryId,
+                isExpanded: true,
+                isDense: true,
+                decoration: _fieldDecoration(
+                  'Category',
+                  prefix: Icons.category_outlined,
+                ),
+                items: widget.categories
+                    .map(
+                      (category) => DropdownMenuItem<int>(
+                        value: category.id,
+                        child: Text(
+                          category.name,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _subItemController,
-                      decoration: _denseDecoration(
-                        'Sub Item',
-                        prefix: Icons.subdirectory_arrow_right,
-                      ),
-                    ),
-                  ),
-                ],
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _categoryId = value;
+                  });
+                },
               ),
 
-              const SizedBox(height: 8),
+              const SizedBox(height: _fieldGap),
+
+              _twoFields(
+                TextField(
+                  controller: _nameController,
+                  decoration: _fieldDecoration(
+                    'Item Name',
+                    prefix: Icons.inventory_2_outlined,
+                  ),
+                ),
+                TextField(
+                  controller: _subItemController,
+                  decoration: _fieldDecoration(
+                    'Sub Item',
+                    prefix: Icons.subdirectory_arrow_right,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: _fieldGap),
 
               BarcodeField(
                 controller: _barcodeController,
                 isDense: true,
               ),
 
-              const SizedBox(height: 8),
+              const SizedBox(height: _fieldGap),
 
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _qtyController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: _denseDecoration(
-                        'Qty / sale',
-                        hint: '1.5',
-                      ),
-                    ),
+              _twoFields(
+                TextField(
+                  controller: _qtyController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _packetsController,
-                      enabled: widget.existing == null,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: _denseDecoration('Packets'),
-                    ),
+                  decoration: _fieldDecoration(
+                    'Qty / sale',
+                    hint: '1.5',
                   ),
-                ],
+                ),
+                TextField(
+                  controller: _packetsController,
+                  enabled: widget.existing == null,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: _fieldDecoration('Packets'),
+                ),
               ),
 
-              const SizedBox(height: 8),
+              const SizedBox(height: _fieldGap),
 
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _packetController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: _denseDecoration('Units / packet'),
-                    ),
+              _twoFields(
+                TextField(
+                  controller: _packetController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _openingController,
-                      enabled: widget.existing == null,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: _denseDecoration('Stock'),
-                    ),
+                  decoration: _fieldDecoration('Units / packet'),
+                ),
+                TextField(
+                  controller: _openingController,
+                  enabled: widget.existing == null,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
                   ),
-                ],
+                  decoration: _fieldDecoration('Stock'),
+                ),
               ),
 
-              const SizedBox(height: 8),
+              const SizedBox(height: _fieldGap),
 
-              Row(
-                children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _costController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: _denseDecoration('C.P. (₹)'),
-                    ),
+              _twoFields(
+                TextField(
+                  controller: _costController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
                   ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _sellingController,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration: _denseDecoration('S.P. (₹)'),
-                    ),
+                  decoration: _fieldDecoration('C.P. (₹)'),
+                ),
+                TextField(
+                  controller: _sellingController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
                   ),
-                ],
+                  decoration: _fieldDecoration('S.P. (₹)'),
+                ),
               ),
 
-              const SizedBox(height: 8),
+              const SizedBox(height: _fieldGap),
 
-              Row(
-                children: [
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      value: _categoryId,
-                      isDense: true,
-                      decoration: _denseDecoration('Category'),
-                      items: widget.categories
-                          .map(
-                            (category) => DropdownMenuItem<int>(
-                              value: category.id,
-                              child: Text(
-                                category.name,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          _categoryId = value;
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: DropdownButtonFormField<int>(
-                      value: _unitId,
-                      isDense: true,
-                      decoration: _denseDecoration('Unit'),
-                      items: widget.units
-                          .map(
-                            (unit) => DropdownMenuItem<int>(
-                              value: unit.id,
-                              child: Text(
-                                '${unit.name} (${unit.shortCode})',
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          _unitId = value;
-                        });
-                      },
-                    ),
-                  ),
-                ],
+              DropdownButtonFormField<int>(
+                value: _unitId,
+                isExpanded: true,
+                isDense: true,
+                decoration: _fieldDecoration('Unit'),
+                items: widget.units
+                    .map(
+                      (unit) => DropdownMenuItem<int>(
+                        value: unit.id,
+                        child: Text(
+                          '${unit.name} (${unit.shortCode})',
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _unitId = value;
+                  });
+                },
               ),
 
               const Spacer(),
 
+              const Divider(height: 24),
 
               Row(
                 mainAxisAlignment:
