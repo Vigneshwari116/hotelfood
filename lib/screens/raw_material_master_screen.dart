@@ -2117,6 +2117,9 @@ class _ComboEditorDialogState
   final _nameController =
   TextEditingController();
 
+  final _barcodeController =
+  TextEditingController();
+
   final _priceController =
   TextEditingController();
 
@@ -2137,6 +2140,9 @@ class _ComboEditorDialogState
     if (combo != null) {
       _nameController.text =
           combo.name;
+
+      _barcodeController.text =
+          combo.barcode ?? '';
 
       _priceController.text =
           combo.price.toString();
@@ -2160,6 +2166,7 @@ class _ComboEditorDialogState
   @override
   void dispose() {
     _nameController.dispose();
+    _barcodeController.dispose();
     _priceController.dispose();
 
     super.dispose();
@@ -2320,7 +2327,9 @@ class _ComboEditorDialogState
       final combo = Combo(
         id: widget.existing?.id,
         name: name,
-        barcode: widget.existing?.barcode,
+        barcode: _barcodeController.text.trim().isEmpty
+            ? null
+            : _barcodeController.text.trim(),
         categoryId: widget.existing?.categoryId,
         price: price,
         imagePath: _imagePath,
@@ -2485,6 +2494,17 @@ class _ComboEditorDialogState
                         .collections_outlined,
                   ),
                 ),
+              ),
+
+              const SizedBox(
+                height: 12,
+              ),
+
+              BarcodeField(
+                controller:
+                _barcodeController,
+                label:
+                'Barcode (optional)',
               ),
 
               const SizedBox(

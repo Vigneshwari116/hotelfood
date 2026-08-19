@@ -484,6 +484,31 @@ class Repository {
             return RawMaterial.fromMap(rows.first);
       }
 
+      Future<RawMaterial?> rawMaterialByName(
+          String name,
+          ) async {
+            final db = await _db;
+
+            final cleanName = name.trim();
+
+            if (cleanName.isEmpty) {
+                  return null;
+            }
+
+            final rows = await db.query(
+                  'raw_materials',
+                  where: 'LOWER(name) = LOWER(?)',
+                  whereArgs: [cleanName],
+                  limit: 1,
+            );
+
+            if (rows.isEmpty) {
+                  return null;
+            }
+
+            return RawMaterial.fromMap(rows.first);
+      }
+
       Future<void> deleteRawMaterial(
           int rawMaterialId,
           ) async {
@@ -814,6 +839,66 @@ class Repository {
             }
 
             return Combo.fromMap(rows.first);
+      }
+
+      Future<Combo?> comboByName(
+          String name,
+          ) async {
+            final db = await _db;
+
+            final cleanName = name.trim();
+
+            if (cleanName.isEmpty) {
+                  return null;
+            }
+
+            final rows = await db.query(
+                  'combos',
+                  where: 'LOWER(name) = LOWER(?)',
+                  whereArgs: [cleanName],
+                  limit: 1,
+            );
+
+            if (rows.isEmpty) {
+                  return null;
+            }
+
+            return Combo.fromMap(rows.first);
+      }
+
+      /// Finds a POS sellable item by barcode, then by exact name.
+      /// Combos are preferred when both a combo and a raw material match.
+      Future<({Combo? combo, RawMaterial? material})>
+      findSellableByNameOrCode(
+          String query,
+          ) async {
+            final clean = query.trim();
+
+            if (clean.isEmpty) {
+                  return (combo: null, material: null);
+            }
+
+            final comboByCode = await comboByBarcode(clean);
+            if (comboByCode != null) {
+                  return (combo: comboByCode, material: null);
+            }
+
+            final materialByCode = await rawMaterialByBarcode(clean);
+            if (materialByCode != null) {
+                  return (combo: null, material: materialByCode);
+            }
+
+            final comboByExactName = await comboByName(clean);
+            if (comboByExactName != null) {
+                  return (combo: comboByExactName, material: null);
+            }
+
+            final materialByExactName = await rawMaterialByName(clean);
+            if (materialByExactName != null) {
+                  return (combo: null, material: materialByExactName);
+            }
+
+            return (combo: null, material: null);
       }
 
       Future<List<ComboItem>> comboItems(

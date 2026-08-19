@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:foodstock/model/models.dart';
@@ -30,6 +31,7 @@ class _PosScreenState extends State<PosScreen> {
   ScrollController();
 
   List<RawMaterial> _materials = [];
+  List<Combo> _combos = [];
   List<Customer> _customers = [];
 
   Map<int, double> _rawStock = {};
@@ -88,6 +90,7 @@ class _PosScreenState extends State<PosScreen> {
 
     try {
       final materials = await _repo.rawMaterials();
+      final combos = await _repo.combosWithItems();
       final customers = await _repo.customers();
       final stock =
       await _repo.maxQuantitiesForRawMaterials();
@@ -96,6 +99,7 @@ class _PosScreenState extends State<PosScreen> {
 
       setState(() {
         _materials = materials;
+        _combos = combos;
         _customers = customers;
         _rawStock = stock;
         _loading = false;
@@ -139,20 +143,34 @@ class _PosScreenState extends State<PosScreen> {
   String get _search =>
       _searchController.text.trim().toLowerCase();
 
-  List<RawMaterial> get _filteredMaterials {
+  bool _matchesSearch(
+      String name,
+      String? barcode,
+      ) {
     if (_search.isEmpty) {
-      return _materials;
+      return true;
     }
 
+    return name.toLowerCase().contains(_search) ||
+        (barcode?.toLowerCase().contains(_search) ??
+            false);
+  }
+
+  List<RawMaterial> get _filteredMaterials {
     return _materials.where((material) {
-      final name =
-      material.name.toLowerCase();
+      return _matchesSearch(
+        material.name,
+        material.barcode,
+      );
+    }).toList();
+  }
 
-      final barcode =
-          material.barcode?.toLowerCase() ?? '';
-
-      return name.contains(_search) ||
-          barcode.contains(_search);
+  List<Combo> get _filteredCombos {
+    return _combos.where((combo) {
+      return _matchesSearch(
+        combo.name,
+        combo.barcode,
+      );
     }).toList();
   }
 
@@ -172,22 +190,31 @@ class _PosScreenState extends State<PosScreen> {
     _barcodeController.clear();
 
     try {
-      final material =
-      await _repo.rawMaterialByBarcode(
+      final match =
+      await _repo.findSellableByNameOrCode(
         barcode,
       );
 
-      if (material == null) {
-        _showError(
-          'No raw material found for barcode "$barcode".',
+      if (match.combo != null) {
+        final combo = _combos.firstWhere(
+          (c) => c.id == match.combo!.id,
+          orElse: () => match.combo!,
         );
+        _addCombo(combo);
         return;
       }
 
-      _addRawMaterial(material);
+      if (match.material != null) {
+        _addRawMaterial(match.material!);
+        return;
+      }
+
+      _showError(
+        'No item found for "$barcode". Try the name or barcode.',
+      );
     } catch (e) {
       _showError(
-        'Barcode lookup failed: $e',
+        'Lookup failed: $e',
       );
     }
   }
@@ -207,6 +234,98 @@ class _PosScreenState extends State<PosScreen> {
         material.currentStock;
   }
 
+  Combo? _comboById(int id) {
+    for (final combo in _combos) {
+      if (combo.id == id) {
+        return combo;
+      }
+    }
+    return null;
+  }
+
+  double _reservedRawQty(
+      int materialId, {
+        int? skipCartIndex,
+      }) {
+    double reserved = 0;
+
+    for (var i = 0; i < _cart.length; i++) {
+      if (i == skipCartIndex) {
+        continue;
+      }
+
+      final line = _cart[i];
+
+      if (line.rawMaterialId == materialId) {
+        reserved += line.qty;
+        continue;
+      }
+
+      if (line.comboId == null) {
+        continue;
+      }
+
+      final combo = _comboById(line.comboId!);
+      if (combo == null) {
+        continue;
+      }
+
+      for (final item in combo.items) {
+        if (item.rawMaterialId == materialId) {
+          reserved += item.qty * line.qty;
+        }
+      }
+    }
+
+    return reserved;
+  }
+
+  double _availableRawQty(
+      int materialId, {
+        int? skipCartIndex,
+      }) {
+    final stock = _rawStock[materialId] ?? 0;
+    final available =
+        stock - _reservedRawQty(
+          materialId,
+          skipCartIndex: skipCartIndex,
+        );
+    return available < 0 ? 0 : available;
+  }
+
+  double _maxComboQty(
+      Combo combo, {
+        int? skipCartIndex,
+      }) {
+    if (combo.items.isEmpty) {
+      return 0;
+    }
+
+    var maxQty = double.infinity;
+
+    for (final item in combo.items) {
+      if (item.qty <= 0) {
+        return 0;
+      }
+
+      final available = _availableRawQty(
+        item.rawMaterialId,
+        skipCartIndex: skipCartIndex,
+      );
+
+      maxQty = math.min(
+        maxQty,
+        available / item.qty,
+      );
+    }
+
+    if (maxQty.isInfinite || maxQty.isNaN) {
+      return 0;
+    }
+
+    return maxQty < 0 ? 0 : maxQty;
+  }
+
   // ============================================================
   // CART HELPERS
   // ============================================================
@@ -219,11 +338,19 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
-  double _cartQtyForRaw(
+  int _cartIndexForCombo(
+      int id,
+      ) {
+    return _cart.indexWhere(
+          (line) => line.comboId == id,
+    );
+  }
+
+  double _cartQtyForCombo(
       int id,
       ) {
     final index =
-    _cartIndexForRaw(id);
+    _cartIndexForCombo(id);
 
     if (index == -1) {
       return 0;
@@ -244,7 +371,9 @@ class _PosScreenState extends State<PosScreen> {
     }
 
     final available =
-    _stockForMaterial(material);
+    material.id == null
+        ? 0.0
+        : _availableRawQty(material.id!);
 
     if (available <= 0) {
       _showError(
@@ -281,10 +410,7 @@ class _PosScreenState extends State<PosScreen> {
     // EXISTING CART LINE
     // ----------------------------------------------------------
 
-    final currentQty =
-        _cart[index].qty;
-
-    if (currentQty + 1 >
+    if (1 >
         available + 0.000001) {
       _showError(
         'Only ${_formatQty(available)} '
@@ -302,6 +428,79 @@ class _PosScreenState extends State<PosScreen> {
       _cart[index] = CartLine(
         rawMaterialId:
         old.rawMaterialId,
+        name: old.name,
+        qty: old.qty + 1,
+        price: old.price,
+      );
+    });
+  }
+
+  // ============================================================
+  // ADD COMBO
+  // ============================================================
+
+  void _addCombo(
+      Combo combo,
+      ) {
+    if (combo.id == null) {
+      return;
+    }
+
+    if (combo.items.isEmpty) {
+      _showError(
+        '${combo.name} has no raw materials, so stock cannot be reduced.',
+      );
+      return;
+    }
+
+    final available =
+    _maxComboQty(combo);
+
+    if (available <= 0) {
+      _showError(
+        '${combo.name} is out of stock.',
+      );
+      return;
+    }
+
+    final index =
+    _cartIndexForCombo(combo.id!);
+
+    if (index == -1) {
+      if (1 > available + 0.000001) {
+        _showError(
+          'Not enough ingredients for ${combo.name}.',
+        );
+        return;
+      }
+
+      setState(() {
+        _cart.add(
+          CartLine(
+            comboId: combo.id,
+            name: combo.name,
+            qty: 1,
+            price: combo.price,
+          ),
+        );
+      });
+
+      return;
+    }
+
+    if (1 > available + 0.000001) {
+      _showError(
+        'Only ${_formatQty(available)} more '
+            '${combo.name} can be sold with current stock.',
+      );
+      return;
+    }
+
+    setState(() {
+      final old = _cart[index];
+
+      _cart[index] = CartLine(
+        comboId: old.comboId,
         name: old.name,
         qty: old.qty + 1,
         price: old.price,
@@ -334,25 +533,24 @@ class _PosScreenState extends State<PosScreen> {
     final line =
     _cart[index];
 
-    if (line.rawMaterialId == null) {
+    double maxQty = 0;
+
+    if (line.rawMaterialId != null) {
+      maxQty = _availableRawQty(
+        line.rawMaterialId!,
+        skipCartIndex: index,
+      );
+    } else if (line.comboId != null) {
+      final combo = _comboById(line.comboId!);
+      maxQty = combo == null
+          ? 0.0
+          : _maxComboQty(
+        combo,
+        skipCartIndex: index,
+      );
+    } else {
       return;
     }
-
-    // Find original material.
-    final materialIndex =
-    _materials.indexWhere(
-          (material) =>
-      material.id ==
-          line.rawMaterialId,
-    );
-
-    final maxQty =
-    materialIndex == -1
-        ? 0.0
-        : _stockForMaterial(
-      _materials[
-      materialIndex],
-    );
 
     if (newQty >
         maxQty + 0.000001) {
@@ -369,6 +567,7 @@ class _PosScreenState extends State<PosScreen> {
           CartLine(
             rawMaterialId:
             line.rawMaterialId,
+            comboId: line.comboId,
             name: line.name,
             qty: newQty,
             price: line.price,
@@ -857,7 +1056,11 @@ class _PosScreenState extends State<PosScreen> {
     );
 
     final availableToAdd =
-        stock - cartQty;
+    material.id == null
+        ? 0.0
+        : _availableRawQty(
+      material.id!,
+    );
 
     final canAdd =
         availableToAdd >
@@ -952,6 +1155,158 @@ class _PosScreenState extends State<PosScreen> {
                               color: stock <=
                                   material
                                       .reorderLevel
+                                  ? Colors
+                                  .orange
+                                  .shade800
+                                  : null,
+                            ),
+                          ),
+                        ),
+
+                        if (cartQty >
+                            0)
+                          CircleAvatar(
+                            radius:
+                            11,
+                            child:
+                            Text(
+                              _formatQty(
+                                cartQty,
+                              ),
+                              style:
+                              const TextStyle(
+                                fontSize:
+                                10,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _comboCard(
+      Combo combo,
+      ) {
+    final available =
+    _maxComboQty(combo);
+
+    final cartQty =
+    combo.id == null
+        ? 0.0
+        : _cartQtyForCombo(
+      combo.id!,
+    );
+
+    final canAdd =
+        available > 0.000001;
+
+    return Card(
+      clipBehavior:
+      Clip.antiAlias,
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        onTap: canAdd
+            ? () => _addCombo(combo)
+            : null,
+        child: Column(
+          crossAxisAlignment:
+          CrossAxisAlignment
+              .start,
+          children: [
+            _image(
+              combo.imagePath,
+              height: 100,
+            ),
+
+            Expanded(
+              child: Padding(
+                padding:
+                const EdgeInsets.all(
+                  10,
+                ),
+                child: Column(
+                  crossAxisAlignment:
+                  CrossAxisAlignment
+                      .start,
+                  children: [
+                    Text(
+                      combo.name,
+                      maxLines: 2,
+                      overflow:
+                      TextOverflow
+                          .ellipsis,
+                      style:
+                      const TextStyle(
+                        fontWeight:
+                        FontWeight
+                            .bold,
+                        fontSize: 14,
+                      ),
+                    ),
+
+                    const SizedBox(
+                      height: 3,
+                    ),
+
+                    Text(
+                      'Combo',
+                      style:
+                      TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(
+                          context,
+                        )
+                            .colorScheme
+                            .primary,
+                        fontWeight:
+                        FontWeight
+                            .w600,
+                      ),
+                    ),
+
+                    const SizedBox(
+                      height: 3,
+                    ),
+
+                    Text(
+                      '₹${combo.price.toStringAsFixed(2)}',
+                      style:
+                      const TextStyle(
+                        fontWeight:
+                        FontWeight
+                            .w600,
+                        fontSize: 14,
+                      ),
+                    ),
+
+                    const Spacer(),
+
+                    Row(
+                      children: [
+                        Expanded(
+                          child:
+                          Text(
+                            'Can sell: '
+                                '${_formatQty(available)}',
+                            maxLines:
+                            1,
+                            overflow:
+                            TextOverflow
+                                .ellipsis,
+                            style:
+                            TextStyle(
+                              fontSize:
+                              12,
+                              color: available <=
+                                  0
                                   ? Colors
                                   .orange
                                   .shade800
@@ -1156,20 +1511,25 @@ class _PosScreenState extends State<PosScreen> {
       int index,
       CartLine line,
       ) {
-    final materialIndex =
-    _materials.indexWhere(
-          (material) =>
-      material.id ==
-          line.rawMaterialId,
-    );
+    final line =
+    _cart[index];
 
-    final maxQty =
-    materialIndex == -1
-        ? 0.0
-        : _stockForMaterial(
-      _materials[
-      materialIndex],
-    );
+    double maxQty = line.qty;
+
+    if (line.rawMaterialId != null) {
+      maxQty = _availableRawQty(
+        line.rawMaterialId!,
+        skipCartIndex: index,
+      );
+    } else if (line.comboId != null) {
+      final combo = _comboById(line.comboId!);
+      maxQty = combo == null
+          ? 0.0
+          : _maxComboQty(
+        combo,
+        skipCartIndex: index,
+      );
+    }
 
     return Padding(
       padding:
@@ -1183,8 +1543,10 @@ class _PosScreenState extends State<PosScreen> {
           CircleAvatar(
             radius: 17,
             child:
-            const Icon(
-              Icons
+            Icon(
+              line.comboId != null
+                  ? Icons.fastfood_outlined
+                  : Icons
                   .inventory_2_outlined,
               size: 17,
             ),
@@ -1820,7 +2182,7 @@ class _PosScreenState extends State<PosScreen> {
               decoration:
               InputDecoration(
                 hintText:
-                'Search raw materials...',
+                'Search by name or barcode...',
                 prefixIcon:
                 const Icon(
                   Icons.search,
@@ -1862,7 +2224,7 @@ class _PosScreenState extends State<PosScreen> {
               decoration:
               const InputDecoration(
                 hintText:
-                'Scan barcode',
+                'Name or barcode',
                 prefixIcon:
                 Icon(
                   Icons
@@ -2041,9 +2403,72 @@ class _PosScreenState extends State<PosScreen> {
 
         Expanded(
           child:
-          _materialsGrid(),
+          _productsGrid(),
         ),
       ],
+    );
+  }
+
+  // ============================================================
+  // MATERIAL GRID
+  // ============================================================
+
+  Widget _productsGrid() {
+    final combos =
+        _filteredCombos;
+    final materials =
+        _filteredMaterials;
+
+    final itemCount =
+        combos.length +
+            materials.length;
+
+    if (itemCount == 0) {
+      return _emptyProducts(
+        icon:
+        Icons
+            .inventory_2_outlined,
+        title:
+        'No items found',
+      );
+    }
+
+    return GridView.builder(
+      padding:
+      const EdgeInsets.all(
+        10,
+      ),
+      gridDelegate:
+      const SliverGridDelegateWithMaxCrossAxisExtent(
+        maxCrossAxisExtent:
+        230,
+
+        mainAxisExtent:
+        220,
+
+        crossAxisSpacing:
+        10,
+        mainAxisSpacing:
+        10,
+      ),
+      itemCount:
+      itemCount,
+      itemBuilder:
+          (
+          _,
+          index,
+          ) {
+        if (index < combos.length) {
+          return _comboCard(
+            combos[index],
+          );
+        }
+
+        return _materialCard(
+          materials[
+          index - combos.length],
+        );
+      },
     );
   }
 
@@ -2079,7 +2504,7 @@ class _PosScreenState extends State<PosScreen> {
         // This gives more vertical room
         // in the POS window.
         mainAxisExtent:
-        205,
+        220,
 
         crossAxisSpacing:
         10,
