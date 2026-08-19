@@ -1677,7 +1677,7 @@ class _RawMaterialEditorDialogState
     }
   }
 
-  static const double _fieldGap = 16;
+  static const double _fieldGap = 8;
 
   InputDecoration _fieldDecoration(
     String label, {
@@ -1689,10 +1689,10 @@ class _RawMaterialEditorDialogState
       hintText: hint,
       isDense: true,
       border: const OutlineInputBorder(),
-      prefixIcon: prefix == null ? null : Icon(prefix, size: 20),
+      prefixIcon: prefix == null ? null : Icon(prefix, size: 18),
       contentPadding: const EdgeInsets.symmetric(
-        horizontal: 14,
-        vertical: 14,
+        horizontal: 12,
+        vertical: 10,
       ),
     );
   }
@@ -1735,7 +1735,7 @@ class _RawMaterialEditorDialogState
         width: dialogWidth,
         height: height * 0.9,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment:
             CrossAxisAlignment.stretch,
@@ -1747,20 +1747,20 @@ class _RawMaterialEditorDialogState
                     : 'Edit Item',
                 style:
                 const TextStyle(
-                  fontSize: 20,
+                  fontSize: 18,
                   fontWeight:
                   FontWeight.bold,
                 ),
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
 
               Center(
                 child: Stack(
                   children: [
                     _ItemImage(
                       path: _imagePath,
-                      size: 72,
+                      size: 56,
                       icon: Icons.inventory_2_outlined,
                     ),
                     Positioned(
@@ -1775,16 +1775,13 @@ class _RawMaterialEditorDialogState
                 ),
               ),
 
-              const SizedBox(height: 20),
+              const SizedBox(height: 10),
 
               DropdownButtonFormField<int>(
                 value: _categoryId,
                 isExpanded: true,
                 isDense: true,
-                decoration: _fieldDecoration(
-                  'Category',
-                  prefix: Icons.category_outlined,
-                ),
+                decoration: _fieldDecoration('Category'),
                 items: widget.categories
                     .map(
                       (category) => DropdownMenuItem<int>(
@@ -1917,8 +1914,6 @@ class _RawMaterialEditorDialogState
               ),
 
               const Spacer(),
-
-              const Divider(height: 24),
 
               Row(
                 mainAxisAlignment:

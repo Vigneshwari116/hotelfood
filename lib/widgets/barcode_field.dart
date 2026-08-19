@@ -30,7 +30,7 @@ class BarcodeField extends StatelessWidget {
         isDense: isDense,
         border: const OutlineInputBorder(),
         contentPadding: isDense
-            ? const EdgeInsets.symmetric(horizontal: 14, vertical: 14)
+            ? const EdgeInsets.symmetric(horizontal: 12, vertical: 10)
             : null,
         prefixIcon: const Icon(Icons.qr_code_scanner),
         suffixIcon: _canUseCamera
