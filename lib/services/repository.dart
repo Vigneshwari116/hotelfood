@@ -1579,6 +1579,7 @@ class Repository {
       SELECT
         rm.id,
         rm.name,
+        rm.sub_item,
         rm.barcode,
         rm.current_stock,
         rm.reorder_level,
@@ -1743,6 +1744,7 @@ class Repository {
                   columns: [
                         'id',
                         'current_stock',
+                        'qty_needed',
                   ],
             );
 
@@ -1753,8 +1755,12 @@ class Repository {
 
                   final double stock =
                       (row['current_stock'] as num?)?.toDouble() ?? 0.0;
+                  final double needed =
+                      (row['qty_needed'] as num?)?.toDouble() ?? 1.0;
+                  final perSale = needed <= 0 ? 1.0 : needed;
 
-                  result[id] = stock < 0.0 ? 0.0 : stock;
+                  final sellable = stock / perSale;
+                  result[id] = sellable < 0.0 ? 0.0 : sellable;
             }
 
             return result;
@@ -2007,6 +2013,7 @@ class Repository {
                                     line.rawMaterialId,
                                     'combo_id': line.comboId,
                                     'item_name': line.name,
+                                    'sub_item': line.subItem,
                                     'qty': line.qty,
                                     'price': line.price,
                                     'amount': line.amount,
@@ -2085,7 +2092,11 @@ class Repository {
                             totalNeeded[rawMaterialId] ?? 0.0;
 
                         totalNeeded[rawMaterialId] =
-                            existing + line.qty;
+                            existing +
+                                (line.qty * await _qtyNeeded(
+                                  txn,
+                                  rawMaterialId,
+                                ));
 
                         continue;
                   }
@@ -2153,7 +2164,12 @@ class Repository {
                               }
 
                               final double requiredQty =
-                                  comboQty * line.qty;
+                                  comboQty *
+                                      line.qty *
+                                      await _qtyNeeded(
+                                        txn,
+                                        rawMaterialId,
+                                      );
 
                               final double existing =
                                   totalNeeded[rawMaterialId] ?? 0.0;
@@ -2165,6 +2181,25 @@ class Repository {
             }
 
             return totalNeeded;
+      }
+
+      Future<double> _qtyNeeded(
+            DatabaseExecutor txn,
+            int rawMaterialId,
+            ) async {
+            final rows = await txn.query(
+                  'raw_materials',
+                  columns: ['qty_needed'],
+                  where: 'id = ?',
+                  whereArgs: [rawMaterialId],
+                  limit: 1,
+            );
+
+            if (rows.isEmpty) return 1;
+
+            final value =
+                (rows.first['qty_needed'] as num?)?.toDouble() ?? 1;
+            return value <= 0 ? 1 : value;
       }
 
       // ============================================================
@@ -2610,17 +2645,44 @@ class Repository {
                   '''
       SELECT
         si.item_name,
+        si.sub_item,
         SUM(si.qty) AS total_qty,
         SUM(si.amount) AS total_amount
       FROM sale_items si
       JOIN sales s
         ON s.id = si.sale_id
       WHERE s.is_voided = 0
-      GROUP BY si.item_name
+      GROUP BY si.item_name, IFNULL(si.sub_item, '')
       ORDER BY total_qty DESC
       LIMIT ?
       ''',
                   [limit],
+            );
+      }
+
+      Future<List<Map<String, dynamic>>> itemSalesReport() async {
+            final db = await _db;
+
+            return db.rawQuery(
+                  '''
+      SELECT
+        si.item_name,
+        si.sub_item,
+        SUM(si.qty) AS sold_qty,
+        SUM(si.amount) AS total_amount,
+        rm.current_stock
+      FROM sale_items si
+      JOIN sales s
+        ON s.id = si.sale_id
+      LEFT JOIN raw_materials rm
+        ON rm.id = si.raw_material_id
+      WHERE s.is_voided = 0
+      GROUP BY
+        si.item_name,
+        IFNULL(si.sub_item, ''),
+        si.raw_material_id
+      ORDER BY si.item_name ASC, si.sub_item ASC
+      ''',
             );
       }
 

@@ -62,7 +62,7 @@ class DBHelper {
       // DATABASE VERSION
       // ========================================================
       //
-      // Version 11
+      // Version 12
       //
       // Architecture:
       //
@@ -79,7 +79,7 @@ class DBHelper {
       //
       // Combos are built directly from raw materials.
       //
-      version: 11,
+      version: 12,
 
       onConfigure: (db) async {
         await db.execute(
@@ -208,6 +208,8 @@ class DBHelper {
         name TEXT NOT NULL,
 
         sub_item TEXT,
+
+        qty_needed REAL NOT NULL DEFAULT 1,
 
         category_id INTEGER,
 
@@ -435,6 +437,8 @@ class DBHelper {
         raw_material_id INTEGER NOT NULL,
 
         item_name TEXT NOT NULL,
+
+        sub_item TEXT,
 
         qty REAL NOT NULL,
 
@@ -1089,6 +1093,41 @@ class DBHelper {
       if (!columnNames.contains('sub_item')) {
         await db.execute(
           'ALTER TABLE raw_materials ADD COLUMN sub_item TEXT',
+        );
+      }
+    }
+
+    // ==========================================================
+    // VERSION 11 -> 12
+    // ==========================================================
+
+    if (oldVersion < 12) {
+      final materialColumns = await db.rawQuery(
+        'PRAGMA table_info(raw_materials)',
+      );
+      final materialNames = materialColumns
+          .map((c) => c['name'] as String)
+          .toSet();
+
+      if (!materialNames.contains('qty_needed')) {
+        await db.execute(
+          '''
+          ALTER TABLE raw_materials
+          ADD COLUMN qty_needed REAL NOT NULL DEFAULT 1
+          ''',
+        );
+      }
+
+      final saleColumns = await db.rawQuery(
+        'PRAGMA table_info(sale_items)',
+      );
+      final saleNames = saleColumns
+          .map((c) => c['name'] as String)
+          .toSet();
+
+      if (!saleNames.contains('sub_item')) {
+        await db.execute(
+          'ALTER TABLE sale_items ADD COLUMN sub_item TEXT',
         );
       }
     }

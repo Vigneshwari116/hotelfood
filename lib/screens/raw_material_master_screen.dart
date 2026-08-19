@@ -186,16 +186,6 @@ class _RawMaterialMasterScreenState
   Future<void> _openRawMaterialEditor({
     RawMaterial? existing,
   }) async {
-    if (existing != null &&
-        existing.id != null) {
-      final allowed =
-      await _verifyRawMaterialPassword(
-        existing.id!,
-      );
-
-      if (!allowed) return;
-    }
-
     if (!mounted) return;
 
     final saved = await showDialog<bool>(
@@ -328,13 +318,6 @@ class _RawMaterialMasterScreenState
       ) async {
     if (item.id == null) return;
 
-    final allowed =
-    await _verifyRawMaterialPassword(
-      item.id!,
-    );
-
-    if (!allowed) return;
-
     if (!mounted) return;
 
     final confirm =
@@ -343,7 +326,7 @@ class _RawMaterialMasterScreenState
       builder: (_) {
         return AlertDialog(
           title: const Text(
-            'Delete Raw Material?',
+            'Delete Item?',
           ),
           content: Text(
             'Delete "${item.name}"?',
@@ -486,12 +469,12 @@ class _RawMaterialMasterScreenState
             .width <
             Breakpoints.mobile;
 
-    return Scaffold(
-      body: ResponsivePage(
-        child: Column(
-          crossAxisAlignment:
-          CrossAxisAlignment.start,
-          children: [
+    return Padding(
+      padding: EdgeInsets.all(isMobile ? 12 : 24),
+      child: Column(
+        crossAxisAlignment:
+        CrossAxisAlignment.start,
+        children: [
             // ==================================================
             // TABS
             // ==================================================
@@ -550,8 +533,7 @@ class _RawMaterialMasterScreenState
             ),
           ],
         ),
-      ),
-    );
+      );
   }
 
   // ============================================================
@@ -578,7 +560,7 @@ class _RawMaterialMasterScreenState
                   prefixIcon:
                   Icon(Icons.search),
                   hintText:
-                  'Search raw materials...',
+                  'Search menu items...',
                   border:
                   OutlineInputBorder(),
                 ),
@@ -830,6 +812,12 @@ class _RawMaterialMasterScreenState
                         ),
                       ),
 
+                      _DetailText(
+                        icon: Icons.pin,
+                        text:
+                        'Qty ${_formatNumber(item.qtyNeeded)}',
+                      ),
+
                       if (item.barcode !=
                           null &&
                           item.barcode!
@@ -989,7 +977,7 @@ class _RawMaterialMasterScreenState
           children: [
             Expanded(
               child: Text(
-                'Raw Material Combos',
+                'Combos',
                 style: Theme.of(context)
                     .textTheme
                     .titleLarge
@@ -1022,7 +1010,7 @@ class _RawMaterialMasterScreenState
           alignment:
           Alignment.centerLeft,
           child: Text(
-            'Create combos directly from raw materials.',
+            'Create combos from menu items.',
             style: Theme.of(context)
                 .textTheme
                 .bodySmall,
@@ -1145,7 +1133,7 @@ class _RawMaterialMasterScreenState
 
                     if (combo.items.isEmpty)
                       const Text(
-                        'No raw materials added',
+                        'No menu items added',
                         style:
                         TextStyle(
                           color: Colors.red,
@@ -1279,7 +1267,7 @@ class _RawMaterialMasterScreenState
           ),
           SizedBox(height: 12),
           Text(
-            'No raw materials yet',
+            'No menu items yet',
             style: TextStyle(
               fontSize: 17,
               fontWeight:
@@ -1374,6 +1362,9 @@ class _RawMaterialEditorDialogState
   final _subItemController =
   TextEditingController();
 
+  final _qtyController =
+  TextEditingController(text: '1');
+
   final _barcodeController =
   TextEditingController();
 
@@ -1417,7 +1408,10 @@ class _RawMaterialEditorDialogState
           item.name;
 
       _subItemController.text =
-          item.subItem ?? '';
+          item.subItem ?? item.name;
+
+      _qtyController.text =
+          item.qtyNeeded.toString();
 
       _barcodeController.text =
           item.barcode ?? '';
@@ -1467,12 +1461,25 @@ class _RawMaterialEditorDialogState
             widget.units.first.id;
       }
     }
+
+    _nameController.addListener(_copyNameToSubItem);
+  }
+
+  void _copyNameToSubItem() {
+    _subItemController.value = TextEditingValue(
+      text: _nameController.text,
+      selection: TextSelection.collapsed(
+        offset: _nameController.text.length,
+      ),
+    );
   }
 
   @override
   void dispose() {
+    _nameController.removeListener(_copyNameToSubItem);
     _nameController.dispose();
     _subItemController.dispose();
+    _qtyController.dispose();
     _barcodeController.dispose();
     _openingController.dispose();
     _reorderController.dispose();
@@ -1542,6 +1549,11 @@ class _RawMaterialEditorDialogState
         _subItemController.text.trim().isEmpty
             ? null
             : _subItemController.text.trim(),
+        qtyNeeded:
+        double.tryParse(
+          _qtyController.text.trim(),
+        ) ??
+            1,
         categoryId:
         _categoryId,
         unitId:
@@ -1610,13 +1622,6 @@ class _RawMaterialEditorDialogState
       await Repository.instance
           .saveRawMaterial(
         item,
-        pin:
-        _pinController.text
-            .trim()
-            .isEmpty
-            ? null
-            : _pinController.text
-            .trim(),
       );
 
       if (!mounted) return;
@@ -1658,36 +1663,30 @@ class _RawMaterialEditorDialogState
             .size
             .width;
 
+    final height =
+        MediaQuery.of(context).size.height;
+
     final dialogWidth =
     width < Breakpoints.mobile
         ? width * .94
-        : 560.0;
+        : 720.0;
 
     return Dialog(
-      child: ConstrainedBox(
-        constraints:
-        BoxConstraints(
-          maxWidth:
-          dialogWidth,
-        ),
-        child:
-        SingleChildScrollView(
-          padding:
-          const EdgeInsets.all(
-            20,
-          ),
+      insetPadding: const EdgeInsets.all(16),
+      child: SizedBox(
+        width: dialogWidth,
+        height: height * 0.9,
+        child: Padding(
+          padding: const EdgeInsets.all(20),
           child: Column(
-            mainAxisSize:
-            MainAxisSize.min,
             crossAxisAlignment:
-            CrossAxisAlignment
-                .stretch,
+            CrossAxisAlignment.stretch,
             children: [
               Text(
                 widget.existing ==
                     null
-                    ? 'Add Raw Material'
-                    : 'Edit Raw Material',
+                    ? 'Add Item'
+                    : 'Edit Item',
                 style:
                 const TextStyle(
                   fontSize: 20,
@@ -1710,7 +1709,7 @@ class _RawMaterialEditorDialogState
                     _ItemImage(
                       path:
                       _imagePath,
-                      size: 130,
+                      size: 88,
                       icon: Icons
                           .inventory_2_outlined,
                     ),
@@ -1781,9 +1780,57 @@ class _RawMaterialEditorDialogState
                 height: 12,
               ),
 
-              BarcodeField(
-                controller:
-                _barcodeController,
+              Row(
+                children: [
+                  Expanded(
+                    child:
+                    TextField(
+                      controller:
+                      _qtyController,
+                      keyboardType:
+                      const TextInputType
+                          .numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration:
+                      const InputDecoration(
+                        labelText:
+                        'Qty',
+                        hintText:
+                        '1.5',
+                        helperText:
+                        'Stock reduced by this qty on each sale',
+                        border:
+                        OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(
+                    width: 12,
+                  ),
+                  Expanded(
+                    child:
+                    TextField(
+                      controller:
+                      _openingController,
+                      enabled:
+                      widget.existing ==
+                          null,
+                      keyboardType:
+                      const TextInputType
+                          .numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration:
+                      const InputDecoration(
+                        labelText:
+                        'Stock',
+                        border:
+                        OutlineInputBorder(),
+                      ),
+                    ),
+                  ),
+                ],
               ),
 
               const SizedBox(
@@ -1866,179 +1913,24 @@ class _RawMaterialEditorDialogState
                 height: 12,
               ),
 
-              Row(
-                children: [
-                  Expanded(
-                    child:
-                    TextField(
-                      controller:
-                      _openingController,
-                      enabled:
-                      widget.existing ==
-                          null,
-                      keyboardType:
-                      const TextInputType
-                          .numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration:
-                      const InputDecoration(
-                        labelText:
-                        'Opening Stock',
-                        border:
-                        OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(
-                    width: 12,
-                  ),
-                  Expanded(
-                    child:
-                    TextField(
-                      controller:
-                      _reorderController,
-                      keyboardType:
-                      const TextInputType
-                          .numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration:
-                      const InputDecoration(
-                        labelText:
-                        'Reorder Level',
-                        border:
-                        OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(
-                height: 12,
-              ),
-
-              Row(
-                children: [
-                  Expanded(
-                    child:
-                    TextField(
-                      controller:
-                      _shelfLifeController,
-                      keyboardType:
-                      TextInputType
-                          .number,
-                      decoration:
-                      const InputDecoration(
-                        labelText:
-                        'Shelf Life (days)',
-                        border:
-                        OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(
-                    width: 12,
-                  ),
-                  Expanded(
-                    child:
-                    TextField(
-                      controller:
-                      _packetController,
-                      keyboardType:
-                      const TextInputType
-                          .numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration:
-                      const InputDecoration(
-                        labelText:
-                        'Units Per Packet',
-                        border:
-                        OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(
-                height: 12,
-              ),
-
-              Row(
-                children: [
-                  Expanded(
-                    child:
-                    TextField(
-                      controller:
-                      _costController,
-                      keyboardType:
-                      const TextInputType
-                          .numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration:
-                      const InputDecoration(
-                        labelText:
-                        'Cost Price (₹) - C.P.',
-                        border:
-                        OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(
-                    width: 12,
-                  ),
-                  Expanded(
-                    child:
-                    TextField(
-                      controller:
-                      _sellingController,
-                      keyboardType:
-                      const TextInputType
-                          .numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration:
-                      const InputDecoration(
-                        labelText:
-                        'Selling Price (₹) - S.P.',
-                        border:
-                        OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(
-                height: 12,
-              ),
-
               TextField(
                 controller:
-                _pinController,
-                obscureText: true,
+                _sellingController,
+                keyboardType:
+                const TextInputType
+                    .numberWithOptions(
+                  decimal: true,
+                ),
                 decoration:
-                InputDecoration(
+                const InputDecoration(
                   labelText:
-                  'Entry Password',
-                  helperText:
-                  widget.existing
-                      ?.entryPasswordHash !=
-                      null
-                      ? 'Leave blank to keep existing password'
-                      : 'Optional',
+                  'Selling Price (₹)',
                   border:
-                  const OutlineInputBorder(),
+                  OutlineInputBorder(),
                 ),
               ),
 
-              const SizedBox(
-                height: 20,
-              ),
+              const Spacer(),
 
               Row(
                 mainAxisAlignment:
@@ -2534,7 +2426,7 @@ class _ComboEditorDialogState
                 children: [
                   const Expanded(
                     child: Text(
-                      'Raw Materials',
+                      'Menu Items',
                       style:
                       TextStyle(
                         fontSize: 17,
@@ -2697,7 +2589,7 @@ class _ComboEditorDialogState
               decoration:
               const InputDecoration(
                 labelText:
-                'Raw Material',
+                'Menu Item',
                 border:
                 OutlineInputBorder(),
               ),

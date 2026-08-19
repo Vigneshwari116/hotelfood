@@ -412,7 +412,7 @@ class MainShell extends StatelessWidget {
             ),
             NavItem(
               icon: Icons.warehouse_outlined,
-              label: 'Raw Materials',
+              label: 'Menu Items',
               page: const RawMaterialMasterScreen(),
             ),
             NavItem(

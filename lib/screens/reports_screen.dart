@@ -15,7 +15,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 5, vsync: this);
+    _tab = TabController(length: 6, vsync: this);
   }
 
   @override
@@ -28,6 +28,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
             isScrollable: true,
             tabs: const [
               Tab(text: 'Stock Report'),
+              Tab(text: 'Item Sales'),
               Tab(text: 'Sales Report'),
               Tab(text: 'Day End'),
               Tab(text: 'Purchase Report'),
@@ -37,6 +38,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
           Expanded(
             child: TabBarView(controller: _tab, children: const [
               _StockReportTab(),
+              _ItemSalesTab(),
               _SalesReportTab(),
               _DayEndTab(),
               _PurchaseReportTab(),
@@ -108,10 +110,11 @@ class _StockReportTabState extends State<_StockReportTab> {
         children: [
           Expanded(
             child: _rows.isEmpty
-                ? const Center(child: Text('No raw materials yet'))
+                ? const Center(child: Text('No menu items yet'))
                 : SingleChildScrollView(
               child: DataTable(columns: const [
                 DataColumn(label: Text('Item')),
+                DataColumn(label: Text('Sub Item')),
                 DataColumn(label: Text('Category')),
                 DataColumn(label: Text('Stock')),
                 DataColumn(label: Text('Unit')),
@@ -128,6 +131,7 @@ class _StockReportTabState extends State<_StockReportTab> {
                     r['name'] ?? '',
                     style: low ? const TextStyle(color: Colors.red, fontWeight: FontWeight.bold) : null,
                   )),
+                  DataCell(Text(r['sub_item']?.toString() ?? '-')),
                   DataCell(Text(r['category'] ?? '-')),
                   DataCell(Text(_formatNumber(stock))),
                   DataCell(Text(r['unit'] ?? '-')),
@@ -188,6 +192,72 @@ class _StockReportTabState extends State<_StockReportTab> {
         ],
       ),
     );
+  }
+}
+
+class _ItemSalesTab extends StatefulWidget {
+  const _ItemSalesTab();
+  @override
+  State<_ItemSalesTab> createState() => _ItemSalesTabState();
+}
+
+class _ItemSalesTabState extends State<_ItemSalesTab> {
+  List<Map<String, dynamic>> _rows = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    final r = await Repository.instance.itemSalesReport();
+    if (!mounted) return;
+    setState(() {
+      _rows = r;
+      _loading = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_rows.isEmpty) {
+      return const Center(child: Text('No item sales yet'));
+    }
+
+    return ResponsivePage(
+      child: ListView.separated(
+        itemCount: _rows.length,
+        separatorBuilder: (_, __) => const Divider(height: 1),
+        itemBuilder: (context, i) {
+          final r = _rows[i];
+          final sub = (r['sub_item'] as String?)?.trim();
+          final stock = (r['current_stock'] as num?)?.toDouble();
+          return ListTile(
+            title: Text(r['item_name']?.toString() ?? ''),
+            subtitle: Text(
+              [
+                if (sub != null && sub.isNotEmpty) sub,
+                'Sold ${r['sold_qty']}',
+                if (stock != null) 'Stock left ${_formatNumber(stock)}',
+              ].join('  •  '),
+            ),
+            trailing: Text('₹${r['total_amount']}'),
+          );
+        },
+      ),
+    );
+  }
+
+  String _formatNumber(double value) {
+    if ((value - value.roundToDouble()).abs() < 0.000001) {
+      return value.round().toString();
+    }
+    return value.toStringAsFixed(2);
   }
 }
 
@@ -457,7 +527,18 @@ class _TopSellingTabState extends State<_TopSellingTab> {
                     if (idx < 0 || idx >= _rows.length) return const SizedBox.shrink();
                     return Padding(
                       padding: const EdgeInsets.only(top: 4),
-                      child: Text(_rows[idx]['item_name'], style: const TextStyle(fontSize: 10)),
+                      child: Text(
+                        [
+                          _rows[idx]['item_name'],
+                          if ((_rows[idx]['sub_item'] as String?)
+                                  ?.trim()
+                                  .isNotEmpty ==
+                              true)
+                            _rows[idx]['sub_item'],
+                        ].join('\n'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 9),
+                      ),
                     );
                   },
                 ),

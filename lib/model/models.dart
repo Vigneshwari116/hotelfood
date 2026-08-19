@@ -168,6 +168,7 @@ class RawMaterial {
   final String? barcode;
   final String name;
   final String? subItem;
+  final double qtyNeeded;
 
   final int? categoryId;
   final int? unitId;
@@ -193,6 +194,7 @@ class RawMaterial {
     this.barcode,
     required this.name,
     this.subItem,
+    this.qtyNeeded = 1,
     this.categoryId,
     this.unitId,
     this.openingStock = 0,
@@ -213,6 +215,8 @@ class RawMaterial {
       barcode: map['barcode']?.toString(),
       name: map['name']?.toString() ?? '',
       subItem: map['sub_item']?.toString(),
+      qtyNeeded:
+      (map['qty_needed'] as num?)?.toDouble() ?? 1,
       categoryId: map['category_id'] as int?,
       unitId: map['unit_id'] as int?,
       openingStock:
@@ -244,6 +248,7 @@ class RawMaterial {
       'barcode': barcode,
       'name': name,
       'sub_item': subItem,
+      'qty_needed': qtyNeeded,
       'category_id': categoryId,
       'unit_id': unitId,
       'opening_stock': openingStock,

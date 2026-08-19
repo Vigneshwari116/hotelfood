@@ -105,7 +105,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
 
                         _statCard(
-                          'Raw Materials',
+                          'Menu Items',
                           '$_materials',
                           Icons.inventory_2,
                           Colors.blue,

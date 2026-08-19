@@ -770,31 +770,7 @@ class _PosScreenState extends State<PosScreen> {
 
                     Row(
                       children: [
-                        Expanded(
-                          child:
-                          Text(
-                            'Stock: '
-                                '${_formatQty(stock)} '
-                                '$unit',
-                            maxLines:
-                            1,
-                            overflow:
-                            TextOverflow
-                                .ellipsis,
-                            style:
-                            TextStyle(
-                              fontSize:
-                              12,
-                              color: stock <=
-                                  material
-                                      .reorderLevel
-                                  ? Colors
-                                  .orange
-                                  .shade800
-                                  : null,
-                            ),
-                          ),
-                        ),
+                        const Spacer(),
 
                         if (cartQty >
                             0)
