@@ -307,7 +307,9 @@ class Combo {
       name: map['name']?.toString() ?? '',
       barcode: map['barcode']?.toString(),
       categoryId: map['category_id'] as int?,
-      price: (map['price'] as num?)?.toDouble() ?? 0,
+      price: (map['price'] as num?)?.toDouble() ??
+          (map['selling_price'] as num?)?.toDouble() ??
+          0,
       imagePath: map['image_path']?.toString(),
       isActive: (map['is_active'] as num?)?.toInt() == 1,
       items: const [],
@@ -318,10 +320,13 @@ class Combo {
   Map<String, dynamic> toMap() {
     return {
       'id': id,
-      'barcode': barcode,
+      'barcode': (barcode == null || barcode!.trim().isEmpty)
+          ? null
+          : barcode,
       'name': name,
       'category_id': categoryId,
       'price': price,
+      'selling_price': price,
       'image_path': imagePath,
       'is_active': isActive ? 1 : 0,
       'created_at':
