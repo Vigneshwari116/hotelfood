@@ -70,7 +70,7 @@ class DBHelper {
       //      |
       //      +---- sale_items
       //      |
-      //      +---- combo_items ---- combos
+      //      +---- combo_raw_materials ---- combos
       //
       // There are NO:
       //
@@ -79,7 +79,7 @@ class DBHelper {
       //
       // Combos are built directly from raw materials.
       //
-      version: 10,
+      version: 11,
 
       onConfigure: (db) async {
         await db.execute(
@@ -417,53 +417,11 @@ class DBHelper {
     ''');
 
     // ==========================================================
-    // SALE ITEMS
-    // ==========================================================
-    //
-    // Every sale line points directly to raw_materials.
-    //
-    // ==========================================================
-
-    batch.execute('''
-      CREATE TABLE sale_items (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-
-        sale_id INTEGER NOT NULL,
-
-        raw_material_id INTEGER NOT NULL,
-
-        item_name TEXT NOT NULL,
-
-        qty REAL NOT NULL,
-
-        price REAL NOT NULL,
-
-        amount REAL NOT NULL,
-
-        FOREIGN KEY (sale_id)
-          REFERENCES sales (id)
-          ON DELETE CASCADE,
-
-        FOREIGN KEY (raw_material_id)
-          REFERENCES raw_materials (id)
-      )
-    ''');
-
-    // ==========================================================
     // COMBOS
     // ==========================================================
     //
-    // A combo is a collection of RAW MATERIALS.
-    //
-    // Example:
-    //
-    // Chicken Snack Box
-    //
-    //   Chicken Popcorn  x 1
-    //   French Fries     x 1
-    //   Coke             x 1
-    //
-    // There is NO menu_items relationship.
+    // Created before sale_items so sale_items.combo_id can
+    // reference combos(id).
     //
     // ==========================================================
 
@@ -473,34 +431,27 @@ class DBHelper {
 
         name TEXT NOT NULL UNIQUE,
 
+        barcode TEXT UNIQUE,
+
+        category_id INTEGER,
+
         image_path TEXT,
+
+        price REAL NOT NULL DEFAULT 0,
 
         selling_price REAL NOT NULL DEFAULT 0,
 
         is_active INTEGER NOT NULL DEFAULT 1,
 
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+
+        FOREIGN KEY (category_id)
+          REFERENCES categories (id)
       )
     ''');
 
-    // ==========================================================
-    // COMBO ITEMS
-    // ==========================================================
-    //
-    // Each combo contains raw materials directly.
-    //
-    // combo_items
-    //      |
-    //      +-- combo_id
-    //      |
-    //      +-- raw_material_id
-    //      |
-    //      +-- qty
-    //
-    // ==========================================================
-
     batch.execute('''
-      CREATE TABLE combo_items (
+      CREATE TABLE combo_raw_materials (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
 
         combo_id INTEGER NOT NULL,
@@ -516,6 +467,44 @@ class DBHelper {
         FOREIGN KEY (raw_material_id)
           REFERENCES raw_materials (id)
           ON DELETE CASCADE
+      )
+    ''');
+
+    // ==========================================================
+    // SALE ITEMS
+    // ==========================================================
+    //
+    // A line is either a raw material or a combo.
+    //
+    // ==========================================================
+
+    batch.execute('''
+      CREATE TABLE sale_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        sale_id INTEGER NOT NULL,
+
+        raw_material_id INTEGER,
+
+        combo_id INTEGER,
+
+        item_name TEXT NOT NULL,
+
+        qty REAL NOT NULL,
+
+        price REAL NOT NULL,
+
+        amount REAL NOT NULL,
+
+        FOREIGN KEY (sale_id)
+          REFERENCES sales (id)
+          ON DELETE CASCADE,
+
+        FOREIGN KEY (raw_material_id)
+          REFERENCES raw_materials (id),
+
+        FOREIGN KEY (combo_id)
+          REFERENCES combos (id)
       )
     ''');
 
@@ -584,13 +573,23 @@ class DBHelper {
     ''');
 
     batch.execute('''
-      CREATE INDEX idx_combo_items_combo
-      ON combo_items(combo_id)
+      CREATE INDEX idx_combo_raw_materials_combo
+      ON combo_raw_materials(combo_id)
     ''');
 
     batch.execute('''
-      CREATE INDEX idx_combo_items_material
-      ON combo_items(raw_material_id)
+      CREATE INDEX idx_combo_raw_materials_material
+      ON combo_raw_materials(raw_material_id)
+    ''');
+
+    batch.execute('''
+      CREATE INDEX idx_sale_items_combo
+      ON sale_items(combo_id)
+    ''');
+
+    batch.execute('''
+      CREATE INDEX idx_combos_barcode
+      ON combos(barcode)
     ''');
 
     // ==========================================================
@@ -1070,6 +1069,262 @@ class DBHelper {
         ON combo_items(raw_material_id)
       ''');
     }
+
+    // ==========================================================
+    // VERSION 10 -> 11
+    // ==========================================================
+    //
+    // Align the schema with Repository / Combo models:
+    //
+    // - combos.barcode, combos.category_id, combos.price
+    // - combo_raw_materials (was combo_items)
+    // - sale_items.combo_id
+    // - sale_items.raw_material_id is nullable for combo lines
+    //
+    // ==========================================================
+
+    if (oldVersion < 11) {
+      await _upgradeToV11(db);
+    }
+  }
+
+  Future<void> _upgradeToV11(Database db) async {
+    await _ensureComboColumns(db);
+    await _ensureComboRawMaterialsTable(db);
+    await _rebuildSaleItemsForCombos(db);
+  }
+
+  Future<Set<String>> _tableColumns(
+    Database db,
+    String table,
+  ) async {
+    final columns = await db.rawQuery(
+      'PRAGMA table_info($table)',
+    );
+
+    return columns
+        .map((column) => column['name'] as String)
+        .toSet();
+  }
+
+  Future<bool> _tableExists(
+    Database db,
+    String table,
+  ) async {
+    final rows = await db.rawQuery(
+      '''
+      SELECT name
+      FROM sqlite_master
+      WHERE type = 'table'
+        AND name = ?
+      ''',
+      [table],
+    );
+
+    return rows.isNotEmpty;
+  }
+
+  Future<void> _ensureComboColumns(Database db) async {
+    if (!await _tableExists(db, 'combos')) {
+      await db.execute('''
+        CREATE TABLE combos (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL UNIQUE,
+          barcode TEXT UNIQUE,
+          category_id INTEGER,
+          image_path TEXT,
+          price REAL NOT NULL DEFAULT 0,
+          selling_price REAL NOT NULL DEFAULT 0,
+          is_active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (category_id)
+            REFERENCES categories (id)
+        )
+      ''');
+
+      return;
+    }
+
+    final columnNames = await _tableColumns(db, 'combos');
+
+    if (!columnNames.contains('barcode')) {
+      await db.execute(
+        'ALTER TABLE combos ADD COLUMN barcode TEXT',
+      );
+    }
+
+    if (!columnNames.contains('category_id')) {
+      await db.execute(
+        'ALTER TABLE combos ADD COLUMN category_id INTEGER',
+      );
+    }
+
+    if (!columnNames.contains('price')) {
+      await db.execute(
+        'ALTER TABLE combos ADD COLUMN price REAL NOT NULL DEFAULT 0',
+      );
+    }
+
+    if (!columnNames.contains('selling_price')) {
+      await db.execute(
+        'ALTER TABLE combos ADD COLUMN selling_price REAL NOT NULL DEFAULT 0',
+      );
+    }
+
+    await db.execute(
+      '''
+      UPDATE combos
+      SET price = selling_price
+      WHERE (price IS NULL OR price = 0)
+        AND selling_price IS NOT NULL
+        AND selling_price != 0
+      ''',
+    );
+
+    await db.execute(
+      '''
+      UPDATE combos
+      SET selling_price = price
+      WHERE (selling_price IS NULL OR selling_price = 0)
+        AND price IS NOT NULL
+        AND price != 0
+      ''',
+    );
+
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_combos_barcode ON combos(barcode)',
+    );
+  }
+
+  Future<void> _ensureComboRawMaterialsTable(Database db) async {
+    if (!await _tableExists(db, 'combo_raw_materials')) {
+      await db.execute('''
+        CREATE TABLE combo_raw_materials (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          combo_id INTEGER NOT NULL,
+          raw_material_id INTEGER NOT NULL,
+          qty REAL NOT NULL DEFAULT 1,
+          FOREIGN KEY (combo_id)
+            REFERENCES combos (id)
+            ON DELETE CASCADE,
+          FOREIGN KEY (raw_material_id)
+            REFERENCES raw_materials (id)
+            ON DELETE CASCADE
+        )
+      ''');
+    }
+
+    if (await _tableExists(db, 'combo_items')) {
+      await db.execute('''
+        INSERT INTO combo_raw_materials (
+          combo_id,
+          raw_material_id,
+          qty
+        )
+        SELECT
+          combo_id,
+          raw_material_id,
+          qty
+        FROM combo_items
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM combo_raw_materials crm
+          WHERE crm.combo_id = combo_items.combo_id
+            AND crm.raw_material_id = combo_items.raw_material_id
+        )
+      ''');
+    }
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_combo_raw_materials_combo
+      ON combo_raw_materials(combo_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_combo_raw_materials_material
+      ON combo_raw_materials(raw_material_id)
+    ''');
+  }
+
+  Future<void> _rebuildSaleItemsForCombos(Database db) async {
+    if (!await _tableExists(db, 'sale_items')) {
+      return;
+    }
+
+    final columnNames = await _tableColumns(db, 'sale_items');
+
+    if (columnNames.contains('combo_id')) {
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_sale_items_combo
+        ON sale_items(combo_id)
+      ''');
+      return;
+    }
+
+    await db.execute('DROP TABLE IF EXISTS sale_items_v11');
+
+    await db.execute('''
+      CREATE TABLE sale_items_v11 (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sale_id INTEGER NOT NULL,
+        raw_material_id INTEGER,
+        combo_id INTEGER,
+        item_name TEXT NOT NULL,
+        qty REAL NOT NULL,
+        price REAL NOT NULL,
+        amount REAL NOT NULL,
+        FOREIGN KEY (sale_id)
+          REFERENCES sales (id)
+          ON DELETE CASCADE,
+        FOREIGN KEY (raw_material_id)
+          REFERENCES raw_materials (id),
+        FOREIGN KEY (combo_id)
+          REFERENCES combos (id)
+      )
+    ''');
+
+    await db.execute('''
+      INSERT INTO sale_items_v11 (
+        id,
+        sale_id,
+        raw_material_id,
+        combo_id,
+        item_name,
+        qty,
+        price,
+        amount
+      )
+      SELECT
+        id,
+        sale_id,
+        raw_material_id,
+        NULL,
+        item_name,
+        qty,
+        price,
+        amount
+      FROM sale_items
+    ''');
+
+    await db.execute('DROP TABLE sale_items');
+    await db.execute(
+      'ALTER TABLE sale_items_v11 RENAME TO sale_items',
+    );
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_sale_items_sale
+      ON sale_items(sale_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_sale_items_material
+      ON sale_items(raw_material_id)
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_sale_items_combo
+      ON sale_items(combo_id)
+    ''');
   }
 
   // ============================================================
