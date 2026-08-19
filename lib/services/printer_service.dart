@@ -476,10 +476,24 @@ class _ReceiptScreenState
         children: [
           pw.Expanded(
             flex: _narrow ? 6 : 5,
-            child: pw.Text(
-              line.name,
-              maxLines: 2,
-              style: pw.TextStyle(fontSize: _bodySize),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  line.name,
+                  maxLines: 2,
+                  style: pw.TextStyle(fontSize: _bodySize),
+                ),
+                if (line.subItem != null &&
+                    line.subItem!.trim().isNotEmpty)
+                  pw.Text(
+                    line.subItem!.trim(),
+                    maxLines: 1,
+                    style: pw.TextStyle(
+                      fontSize: _bodySize - 0.5,
+                    ),
+                  ),
+              ],
             ),
           ),
           pw.Expanded(

@@ -1135,7 +1135,9 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               return DropdownMenuItem<RawMaterial>(
                 value: material,
                 child: Text(
-                  material.name,
+                  material.trimmedSubItem == null
+                      ? material.name
+                      : '${material.name} (${material.trimmedSubItem})',
                   overflow: TextOverflow.ellipsis,
                 ),
               );

@@ -507,10 +507,11 @@ class Repository {
                   'raw_materials',
                   where: cleanSearch == null || cleanSearch.isEmpty
                       ? null
-                      : '(name LIKE ? OR barcode = ?)',
+                      : '(name LIKE ? OR sub_item LIKE ? OR barcode = ?)',
                   whereArgs: cleanSearch == null || cleanSearch.isEmpty
                       ? null
                       : [
+                        '%$cleanSearch%',
                         '%$cleanSearch%',
                         cleanSearch,
                   ],

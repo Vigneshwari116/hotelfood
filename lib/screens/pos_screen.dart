@@ -144,10 +144,14 @@ class _PosScreenState extends State<PosScreen> {
       final name =
       material.name.toLowerCase();
 
+      final subItem =
+          material.trimmedSubItem?.toLowerCase() ?? '';
+
       final barcode =
           material.barcode?.toLowerCase() ?? '';
 
       return name.contains(_search) ||
+          subItem.contains(_search) ||
           barcode.contains(_search);
     }).toList();
   }
@@ -263,6 +267,7 @@ class _PosScreenState extends State<PosScreen> {
             rawMaterialId:
             material.id,
             name: material.name,
+            subItem: material.trimmedSubItem,
             qty: 1,
             price:
             material.sellingPrice ?? 0,
@@ -298,7 +303,9 @@ class _PosScreenState extends State<PosScreen> {
       _cart[index] = CartLine(
         rawMaterialId:
         old.rawMaterialId,
+        comboId: old.comboId,
         name: old.name,
+        subItem: old.subItem,
         qty: old.qty + 1,
         price: old.price,
       );
@@ -365,7 +372,9 @@ class _PosScreenState extends State<PosScreen> {
           CartLine(
             rawMaterialId:
             line.rawMaterialId,
+            comboId: line.comboId,
             name: line.name,
+            subItem: line.subItem,
             qty: newQty,
             price: line.price,
           );
@@ -727,6 +736,21 @@ class _PosScreenState extends State<PosScreen> {
                       ),
                     ),
 
+                    if (material.trimmedSubItem !=
+                        null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        material.trimmedSubItem!,
+                        maxLines: 1,
+                        overflow:
+                        TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+
                     const SizedBox(
                       height: 5,
                     ),
@@ -1029,6 +1053,17 @@ class _PosScreenState extends State<PosScreen> {
                     fontSize: 13,
                   ),
                 ),
+                if (line.subItem != null &&
+                    line.subItem!.trim().isNotEmpty)
+                  Text(
+                    line.subItem!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
                 Text(
                   '₹${line.price.toStringAsFixed(2)} × '
                       '${_formatQty(line.qty)}',

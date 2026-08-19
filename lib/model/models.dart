@@ -167,6 +167,7 @@ class RawMaterial {
 
   final String? barcode;
   final String name;
+  final String? subItem;
 
   final int? categoryId;
   final int? unitId;
@@ -191,6 +192,7 @@ class RawMaterial {
     this.id,
     this.barcode,
     required this.name,
+    this.subItem,
     this.categoryId,
     this.unitId,
     this.openingStock = 0,
@@ -210,6 +212,7 @@ class RawMaterial {
       id: map['id'] as int?,
       barcode: map['barcode']?.toString(),
       name: map['name']?.toString() ?? '',
+      subItem: map['sub_item']?.toString(),
       categoryId: map['category_id'] as int?,
       unitId: map['unit_id'] as int?,
       openingStock:
@@ -240,6 +243,7 @@ class RawMaterial {
       'id': id,
       'barcode': barcode,
       'name': name,
+      'sub_item': subItem,
       'category_id': categoryId,
       'unit_id': unitId,
       'opening_stock': openingStock,
@@ -259,6 +263,12 @@ class RawMaterial {
 
   bool get isLowStock {
     return currentStock <= reorderLevel;
+  }
+
+  String? get trimmedSubItem {
+    final value = subItem?.trim();
+    if (value == null || value.isEmpty) return null;
+    return value;
   }
 }
 
@@ -468,6 +478,7 @@ class CartLine {
   final int? comboId;
 
   final String name;
+  final String? subItem;
 
   final double qty;
   final double price;
@@ -476,6 +487,7 @@ class CartLine {
     this.rawMaterialId,
     this.comboId,
     required this.name,
+    this.subItem,
     required this.qty,
     required this.price,
   });
@@ -499,6 +511,7 @@ class CartLine {
       'raw_material_id': rawMaterialId,
       'combo_id': comboId,
       'item_name': name,
+      'sub_item': subItem,
       'qty': qty,
       'price': price,
       'amount': amount,

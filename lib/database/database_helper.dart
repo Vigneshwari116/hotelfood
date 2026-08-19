@@ -62,7 +62,7 @@ class DBHelper {
       // DATABASE VERSION
       // ========================================================
       //
-      // Version 10
+      // Version 11
       //
       // Architecture:
       //
@@ -79,7 +79,7 @@ class DBHelper {
       //
       // Combos are built directly from raw materials.
       //
-      version: 10,
+      version: 11,
 
       onConfigure: (db) async {
         await db.execute(
@@ -206,6 +206,8 @@ class DBHelper {
         barcode TEXT UNIQUE,
 
         name TEXT NOT NULL,
+
+        sub_item TEXT,
 
         category_id INTEGER,
 
@@ -1069,6 +1071,26 @@ class DBHelper {
         CREATE INDEX IF NOT EXISTS idx_combo_items_material
         ON combo_items(raw_material_id)
       ''');
+    }
+
+    // ==========================================================
+    // VERSION 10 -> 11
+    // ==========================================================
+
+    if (oldVersion < 11) {
+      final columns = await db.rawQuery(
+        'PRAGMA table_info(raw_materials)',
+      );
+
+      final columnNames = columns
+          .map((c) => c['name'] as String)
+          .toSet();
+
+      if (!columnNames.contains('sub_item')) {
+        await db.execute(
+          'ALTER TABLE raw_materials ADD COLUMN sub_item TEXT',
+        );
+      }
     }
   }
 

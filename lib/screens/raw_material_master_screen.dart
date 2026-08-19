@@ -799,6 +799,20 @@ class _RawMaterialMasterScreenState
                     ),
                   ),
 
+                  if (item.trimmedSubItem !=
+                      null) ...[
+                    const SizedBox(
+                      height: 2,
+                    ),
+                    Text(
+                      item.trimmedSubItem!,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(
                     height: 5,
                   ),
@@ -1357,6 +1371,9 @@ class _RawMaterialEditorDialogState
   final _nameController =
   TextEditingController();
 
+  final _subItemController =
+  TextEditingController();
+
   final _barcodeController =
   TextEditingController();
 
@@ -1398,6 +1415,9 @@ class _RawMaterialEditorDialogState
     if (item != null) {
       _nameController.text =
           item.name;
+
+      _subItemController.text =
+          item.subItem ?? '';
 
       _barcodeController.text =
           item.barcode ?? '';
@@ -1452,6 +1472,7 @@ class _RawMaterialEditorDialogState
   @override
   void dispose() {
     _nameController.dispose();
+    _subItemController.dispose();
     _barcodeController.dispose();
     _openingController.dispose();
     _reorderController.dispose();
@@ -1517,6 +1538,10 @@ class _RawMaterialEditorDialogState
             : _barcodeController.text
             .trim(),
         name: name,
+        subItem:
+        _subItemController.text.trim().isEmpty
+            ? null
+            : _subItemController.text.trim(),
         categoryId:
         _categoryId,
         unitId:
@@ -1725,6 +1750,29 @@ class _RawMaterialEditorDialogState
                   Icon(
                     Icons
                         .inventory_2_outlined,
+                  ),
+                ),
+              ),
+
+              const SizedBox(
+                height: 12,
+              ),
+
+              TextField(
+                controller:
+                _subItemController,
+                decoration:
+                const InputDecoration(
+                  labelText:
+                  'Sub Item',
+                  hintText:
+                  'Shown under the item name',
+                  border:
+                  OutlineInputBorder(),
+                  prefixIcon:
+                  Icon(
+                    Icons
+                        .subdirectory_arrow_right,
                   ),
                 ),
               ),
