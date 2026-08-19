@@ -36,10 +36,11 @@ class ReceiptPaper {
 
     switch (size) {
       case '58mm':
+        // Compact thermal slip — extra height wastes roll paper.
         return PdfPageFormat(
           58 * mm,
-          (120 + lines * 16) * mm,
-          marginAll: 3 * mm,
+          (72 + lines * 7) * mm,
+          marginAll: 2 * mm,
         );
       case 'A5':
         return PdfPageFormat.a5.copyWith(
@@ -59,11 +60,14 @@ class ReceiptPaper {
       default:
         return PdfPageFormat(
           80 * mm,
-          (130 + lines * 16) * mm,
-          marginAll: 4 * mm,
+          (78 + lines * 8) * mm,
+          marginAll: 3 * mm,
         );
     }
   }
+
+  static bool isThermal(String size) =>
+      size == '58mm' || size == '80mm';
 }
 
 class ReceiptScreen extends StatefulWidget {
@@ -194,6 +198,46 @@ class _ReceiptScreenState
     );
   }
 
+  bool get _thermal => ReceiptPaper.isThermal(_paperSize);
+
+  bool get _narrow => _paperSize == '58mm';
+
+  double get _titleSize {
+    if (_narrow) return 11;
+    if (_thermal) return 13;
+    if (_paperSize == 'A5') return 16;
+    return 20;
+  }
+
+  double get _subtitleSize {
+    if (_thermal) return 7;
+    return 10;
+  }
+
+  double get _bodySize {
+    if (_narrow) return 7;
+    if (_thermal) return 8;
+    return 10;
+  }
+
+  double get _totalSize {
+    if (_thermal) return 10;
+    return 14;
+  }
+
+  double get _previewWidth {
+    switch (_paperSize) {
+      case '58mm':
+        return 240;
+      case '80mm':
+        return 300;
+      case 'A5':
+        return 420;
+      default:
+        return 520;
+    }
+  }
+
   Future<void> _changePaperSize(String value) async {
     setState(() {
       _paperSize = value;
@@ -247,246 +291,91 @@ class _ReceiptScreenState
                 child: pw.Text(
                   'FIVE STAR',
                   style: pw.TextStyle(
-                    fontSize: _paperSize == '58mm' ? 14 : 18,
+                    fontSize: _titleSize,
                     fontWeight: pw.FontWeight.bold,
                   ),
                 ),
               ),
 
-              pw.SizedBox(height: 2),
+              pw.SizedBox(height: 1),
 
               pw.Center(
                 child: pw.Text(
                   'HOTEL BILL',
-                  style: const pw.TextStyle(fontSize: 9),
+                  style: pw.TextStyle(fontSize: _subtitleSize),
                 ),
               ),
 
-              pw.SizedBox(height: 8),
+              pw.SizedBox(height: _thermal ? 4 : 8),
 
-              pw.Divider(),
+              pw.Divider(height: 1),
 
-              pw.Row(
-                mainAxisAlignment:
-                    pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text(
-                    'Bill No.',
-                    style: const pw.TextStyle(fontSize: 9),
-                  ),
-                  pw.Text(
-                    '#${widget.saleId}',
-                    style: pw.TextStyle(
-                      fontSize: 9,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
+              _billMetaRow('Bill No.', '#${widget.saleId}'),
+              _billMetaRow('Date', _formatDate(DateTime.now())),
+              _billMetaRow('Payment', widget.paymentType),
 
-              pw.SizedBox(height: 3),
+              pw.SizedBox(height: _thermal ? 4 : 8),
 
-              pw.Row(
-                mainAxisAlignment:
-                    pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text(
-                    'Date',
-                    style: const pw.TextStyle(fontSize: 9),
-                  ),
-                  pw.Text(
-                    _formatDate(DateTime.now()),
-                    style: const pw.TextStyle(fontSize: 9),
-                  ),
-                ],
-              ),
+              pw.Divider(height: 1),
+
+              _itemHeaderRow(),
+
+              pw.SizedBox(height: 2),
+
+              pw.Divider(height: 1),
+
+              ...widget.lines.map(_itemRow),
+
+              pw.Divider(height: 1),
 
               pw.SizedBox(height: 3),
-
-              pw.Row(
-                mainAxisAlignment:
-                    pw.MainAxisAlignment.spaceBetween,
-                children: [
-                  pw.Text(
-                    'Payment',
-                    style: const pw.TextStyle(fontSize: 9),
-                  ),
-                  pw.Text(
-                    widget.paymentType,
-                    style: pw.TextStyle(
-                      fontSize: 9,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-
-              pw.SizedBox(height: 8),
-
-              pw.Divider(),
-
-              pw.Row(
-                children: [
-                  pw.Expanded(
-                    flex: 5,
-                    child: pw.Text(
-                      'ITEM',
-                      style: pw.TextStyle(
-                        fontSize: 8,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  pw.Expanded(
-                    flex: 2,
-                    child: pw.Text(
-                      'QTY',
-                      textAlign: pw.TextAlign.center,
-                      style: pw.TextStyle(
-                        fontSize: 8,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  pw.Expanded(
-                    flex: 3,
-                    child: pw.Text(
-                      'RATE',
-                      textAlign: pw.TextAlign.right,
-                      style: pw.TextStyle(
-                        fontSize: 8,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                  pw.Expanded(
-                    flex: 3,
-                    child: pw.Text(
-                      'AMOUNT',
-                      textAlign: pw.TextAlign.right,
-                      style: pw.TextStyle(
-                        fontSize: 8,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              pw.SizedBox(height: 5),
-
-              pw.Divider(),
-
-              ...widget.lines.map(
-                (line) {
-                  return pw.Padding(
-                    padding: const pw.EdgeInsets.symmetric(
-                      vertical: 4,
-                    ),
-                    child: pw.Row(
-                      children: [
-                        pw.Expanded(
-                          flex: 5,
-                          child: pw.Text(
-                            line.name,
-                            maxLines: 2,
-                            style: const pw.TextStyle(
-                              fontSize: 8,
-                            ),
-                          ),
-                        ),
-                        pw.Expanded(
-                          flex: 2,
-                          child: pw.Text(
-                            line.qty % 1 == 0
-                                ? line.qty.toInt().toString()
-                                : line.qty.toStringAsFixed(2),
-                            textAlign: pw.TextAlign.center,
-                            style: const pw.TextStyle(
-                              fontSize: 8,
-                            ),
-                          ),
-                        ),
-                        pw.Expanded(
-                          flex: 3,
-                          child: pw.Text(
-                            '₹${line.price.toStringAsFixed(2)}',
-                            textAlign: pw.TextAlign.right,
-                            style: const pw.TextStyle(
-                              fontSize: 8,
-                            ),
-                          ),
-                        ),
-                        pw.Expanded(
-                          flex: 3,
-                          child: pw.Text(
-                            '₹${line.amount.toStringAsFixed(2)}',
-                            textAlign: pw.TextAlign.right,
-                            style: const pw.TextStyle(
-                              fontSize: 8,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-
-              pw.Divider(),
-
-              pw.SizedBox(height: 5),
 
               _pdfAmountRow(
                 'Subtotal',
                 widget.subtotal,
+                fontSize: _bodySize,
               ),
 
-              pw.SizedBox(height: 4),
+              if (widget.tax > 0) ...[
+                pw.SizedBox(height: 2),
+                _pdfAmountRow(
+                  'Tax',
+                  widget.tax,
+                  fontSize: _bodySize,
+                ),
+              ],
 
-              _pdfAmountRow(
-                'Tax',
-                widget.tax,
-              ),
+              if (widget.discount > 0) ...[
+                pw.SizedBox(height: 2),
+                _pdfAmountRow(
+                  'Discount',
+                  widget.discount,
+                  fontSize: _bodySize,
+                ),
+              ],
 
-              pw.SizedBox(height: 4),
+              pw.SizedBox(height: 3),
 
-              _pdfAmountRow(
-                'Discount',
-                widget.discount,
-              ),
+              pw.Divider(height: 1),
 
-              pw.SizedBox(height: 7),
-
-              pw.Divider(),
-
-              pw.SizedBox(height: 5),
+              pw.SizedBox(height: 3),
 
               _pdfAmountRow(
                 'TOTAL',
                 widget.grandTotal,
                 bold: true,
-                fontSize: 14,
+                fontSize: _totalSize,
               ),
 
-              pw.SizedBox(height: 14),
+              pw.SizedBox(height: _thermal ? 8 : 14),
 
               pw.Center(
                 child: pw.Text(
-                  'Thank you for dining with us',
+                  'Thank you. Visit again',
                   style: pw.TextStyle(
-                    fontSize: 10,
+                    fontSize: _subtitleSize,
                     fontWeight: pw.FontWeight.bold,
                   ),
-                ),
-              ),
-
-              pw.SizedBox(height: 4),
-
-              pw.Center(
-                child: pw.Text(
-                  'Please visit again',
-                  style: const pw.TextStyle(fontSize: 8),
                 ),
               ),
             ],
@@ -496,6 +385,131 @@ class _ReceiptScreenState
     );
 
     return pdf.save();
+  }
+
+  pw.Widget _billMetaRow(String label, String value) {
+    return pw.Padding(
+      padding: pw.EdgeInsets.only(top: _thermal ? 1.5 : 3),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(
+            label,
+            style: pw.TextStyle(fontSize: _bodySize),
+          ),
+          pw.Text(
+            value,
+            style: pw.TextStyle(
+              fontSize: _bodySize,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _itemHeaderRow() {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.only(top: 3, bottom: 1),
+      child: pw.Row(
+        children: [
+          pw.Expanded(
+            flex: _narrow ? 6 : 5,
+            child: pw.Text(
+              'ITEM',
+              style: pw.TextStyle(
+                fontSize: _bodySize,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
+          pw.Expanded(
+            flex: 2,
+            child: pw.Text(
+              'QTY',
+              textAlign: pw.TextAlign.center,
+              style: pw.TextStyle(
+                fontSize: _bodySize,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
+          if (!_narrow)
+            pw.Expanded(
+              flex: 3,
+              child: pw.Text(
+                'RATE',
+                textAlign: pw.TextAlign.right,
+                style: pw.TextStyle(
+                  fontSize: _bodySize,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+            ),
+          pw.Expanded(
+            flex: 3,
+            child: pw.Text(
+              'AMT',
+              textAlign: pw.TextAlign.right,
+              style: pw.TextStyle(
+                fontSize: _bodySize,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  pw.Widget _itemRow(CartLine line) {
+    final qty = line.qty % 1 == 0
+        ? line.qty.toInt().toString()
+        : line.qty.toStringAsFixed(2);
+
+    return pw.Padding(
+      padding: pw.EdgeInsets.symmetric(
+        vertical: _thermal ? 1.5 : 3,
+      ),
+      child: pw.Row(
+        children: [
+          pw.Expanded(
+            flex: _narrow ? 6 : 5,
+            child: pw.Text(
+              line.name,
+              maxLines: 2,
+              style: pw.TextStyle(fontSize: _bodySize),
+            ),
+          ),
+          pw.Expanded(
+            flex: 2,
+            child: pw.Text(
+              qty,
+              textAlign: pw.TextAlign.center,
+              style: pw.TextStyle(fontSize: _bodySize),
+            ),
+          ),
+          if (!_narrow)
+            pw.Expanded(
+              flex: 3,
+              child: pw.Text(
+                '₹${line.price.toStringAsFixed(2)}',
+                textAlign: pw.TextAlign.right,
+                style: pw.TextStyle(fontSize: _bodySize),
+              ),
+            ),
+          pw.Expanded(
+            flex: 3,
+            child: pw.Text(
+              '₹${line.amount.toStringAsFixed(2)}',
+              textAlign: pw.TextAlign.right,
+              style: pw.TextStyle(fontSize: _bodySize),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // ------------------------------------------------------------
@@ -826,7 +840,7 @@ class _ReceiptScreenState
               allowSharing: false,
               pdfFileName:
               'FiveStar_Bill_${widget.saleId}.pdf',
-              maxPageWidth: 500,
+              maxPageWidth: _previewWidth,
             ),
           ),
 
