@@ -62,7 +62,7 @@ class DBHelper {
       // DATABASE VERSION
       // ========================================================
       //
-      // Version 10
+      // Version 11
       //
       // Architecture:
       //
@@ -70,7 +70,7 @@ class DBHelper {
       //      |
       //      +---- sale_items
       //      |
-      //      +---- combo_items ---- combos
+      //      +---- combo_raw_materials ---- combos
       //
       // There are NO:
       //
@@ -78,8 +78,9 @@ class DBHelper {
       // recipe_items
       //
       // Combos are built directly from raw materials.
+      // Combos may have barcode, category_id and price.
       //
-      version: 10,
+      version: 11,
 
       onConfigure: (db) async {
         await db.execute(
@@ -471,15 +472,22 @@ class DBHelper {
       CREATE TABLE combos (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
 
+        barcode TEXT UNIQUE,
+
         name TEXT NOT NULL UNIQUE,
+
+        category_id INTEGER,
+
+        price REAL NOT NULL DEFAULT 0,
 
         image_path TEXT,
 
-        selling_price REAL NOT NULL DEFAULT 0,
-
         is_active INTEGER NOT NULL DEFAULT 1,
 
-        created_at TEXT NOT NULL
+        created_at TEXT NOT NULL,
+
+        FOREIGN KEY (category_id)
+          REFERENCES categories (id)
       )
     ''');
 
@@ -489,7 +497,7 @@ class DBHelper {
     //
     // Each combo contains raw materials directly.
     //
-    // combo_items
+    // combo_raw_materials
     //      |
     //      +-- combo_id
     //      |
@@ -500,7 +508,7 @@ class DBHelper {
     // ==========================================================
 
     batch.execute('''
-      CREATE TABLE combo_items (
+      CREATE TABLE combo_raw_materials (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
 
         combo_id INTEGER NOT NULL,
@@ -584,13 +592,18 @@ class DBHelper {
     ''');
 
     batch.execute('''
-      CREATE INDEX idx_combo_items_combo
-      ON combo_items(combo_id)
+      CREATE INDEX idx_combos_barcode
+      ON combos(barcode)
     ''');
 
     batch.execute('''
-      CREATE INDEX idx_combo_items_material
-      ON combo_items(raw_material_id)
+      CREATE INDEX idx_combo_raw_materials_combo
+      ON combo_raw_materials(combo_id)
+    ''');
+
+    batch.execute('''
+      CREATE INDEX idx_combo_raw_materials_material
+      ON combo_raw_materials(raw_material_id)
     ''');
 
     // ==========================================================
@@ -1068,6 +1081,175 @@ class DBHelper {
       await db.execute('''
         CREATE INDEX IF NOT EXISTS idx_combo_items_material
         ON combo_items(raw_material_id)
+      ''');
+    }
+
+    // ==========================================================
+    // VERSION 10 -> 11
+    // ==========================================================
+    //
+    // Align the combos schema with Combo.toMap() / saveCombo():
+    //
+    //   barcode
+    //   category_id
+    //   price
+    //
+    // And create combo_raw_materials, which the repository uses
+    // (the previous schema used combo_items).
+    //
+    // ==========================================================
+
+    if (oldVersion < 11) {
+      final comboTables = await db.rawQuery(
+        '''
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name = 'combos'
+        ''',
+      );
+
+      if (comboTables.isNotEmpty) {
+        final columns = await db.rawQuery(
+          'PRAGMA table_info(combos)',
+        );
+
+        final columnNames = columns
+            .map((c) => c['name'] as String)
+            .toSet();
+
+        if (!columnNames.contains('barcode')) {
+          await db.execute(
+            '''
+            ALTER TABLE combos
+            ADD COLUMN barcode TEXT
+            ''',
+          );
+        }
+
+        if (!columnNames.contains('category_id')) {
+          await db.execute(
+            '''
+            ALTER TABLE combos
+            ADD COLUMN category_id INTEGER
+            ''',
+          );
+        }
+
+        if (!columnNames.contains('price')) {
+          await db.execute(
+            '''
+            ALTER TABLE combos
+            ADD COLUMN price REAL NOT NULL DEFAULT 0
+            ''',
+          );
+
+          if (columnNames.contains('selling_price')) {
+            await db.execute(
+              '''
+              UPDATE combos
+              SET price = COALESCE(selling_price, 0)
+              ''',
+            );
+          }
+        }
+
+        if (!columnNames.contains('image_path')) {
+          await db.execute(
+            '''
+            ALTER TABLE combos
+            ADD COLUMN image_path TEXT
+            ''',
+          );
+        }
+      } else {
+        await db.execute('''
+          CREATE TABLE combos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+            barcode TEXT UNIQUE,
+
+            name TEXT NOT NULL UNIQUE,
+
+            category_id INTEGER,
+
+            price REAL NOT NULL DEFAULT 0,
+
+            image_path TEXT,
+
+            is_active INTEGER NOT NULL DEFAULT 1,
+
+            created_at TEXT NOT NULL,
+
+            FOREIGN KEY (category_id)
+              REFERENCES categories (id)
+          )
+        ''');
+      }
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS combo_raw_materials (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+          combo_id INTEGER NOT NULL,
+
+          raw_material_id INTEGER NOT NULL,
+
+          qty REAL NOT NULL DEFAULT 1,
+
+          FOREIGN KEY (combo_id)
+            REFERENCES combos (id)
+            ON DELETE CASCADE,
+
+          FOREIGN KEY (raw_material_id)
+            REFERENCES raw_materials (id)
+            ON DELETE CASCADE
+        )
+      ''');
+
+      final comboItemTables = await db.rawQuery(
+        '''
+        SELECT name
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name = 'combo_items'
+        ''',
+      );
+
+      if (comboItemTables.isNotEmpty) {
+        await db.execute('''
+          INSERT INTO combo_raw_materials (
+            combo_id,
+            raw_material_id,
+            qty
+          )
+          SELECT
+            combo_id,
+            raw_material_id,
+            qty
+          FROM combo_items
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM combo_raw_materials crm
+            WHERE crm.combo_id = combo_items.combo_id
+              AND crm.raw_material_id = combo_items.raw_material_id
+          )
+        ''');
+      }
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_combos_barcode
+        ON combos(barcode)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_combo_raw_materials_combo
+        ON combo_raw_materials(combo_id)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_combo_raw_materials_material
+        ON combo_raw_materials(raw_material_id)
       ''');
     }
   }
