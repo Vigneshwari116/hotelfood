@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -311,106 +311,6 @@ class _RawMaterialMasterScreenState
     if (saved == true) {
       await _loadAll();
     }
-  }
-
-  // ============================================================
-  // RAW MATERIAL PASSWORD
-  // ============================================================
-
-  Future<bool> _verifyRawMaterialPassword(
-      int id,
-      ) async {
-    final controller =
-    TextEditingController();
-
-    final repository =
-        Repository.instance;
-
-    final noPassword =
-    await repository.verifyRawMaterialPin(
-      id,
-      '',
-    );
-
-    if (noPassword) {
-      controller.dispose();
-      return true;
-    }
-
-    if (!mounted) {
-      controller.dispose();
-      return false;
-    }
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (_) {
-        return AlertDialog(
-          title: const Text(
-            'Enter Entry Password',
-          ),
-          content: TextField(
-            controller: controller,
-            obscureText: true,
-            autofocus: true,
-            decoration:
-            const InputDecoration(
-              labelText: 'PIN / Password',
-              border:
-              OutlineInputBorder(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(
-                  context,
-                  false,
-                );
-              },
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                final valid =
-                await repository
-                    .verifyRawMaterialPin(
-                  id,
-                  controller.text,
-                );
-
-                if (context.mounted) {
-                  Navigator.pop(
-                    context,
-                    valid,
-                  );
-                }
-              },
-              child: const Text('Unlock'),
-            ),
-          ],
-        );
-      },
-    );
-
-    controller.dispose();
-
-    if (result != true) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Incorrect password',
-            ),
-          ),
-        );
-      }
-
-      return false;
-    }
-
-    return true;
   }
 
   // ============================================================
