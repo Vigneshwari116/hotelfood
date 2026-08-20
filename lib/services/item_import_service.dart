@@ -29,6 +29,10 @@ class ItemImportService {
     return _importRows(rows);
   }
 
+  Future<ItemImportResult> importCsvText(String text) {
+    return _importRows(_parseCsv(text));
+  }
+
   Future<ItemImportResult> _importRows(List<List<String>> rows) async {
     final result = ItemImportResult();
     if (rows.isEmpty) {
