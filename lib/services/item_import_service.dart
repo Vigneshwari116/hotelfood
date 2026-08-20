@@ -127,15 +127,16 @@ class ItemImportService {
           'upp',
         ]));
         var stock = _number(_first(map, const [
-          'stock',
           'openingstock',
           'opening',
+          'stock',
         ]));
-        if ((stock == null || stock == 0) &&
+        if (stock == null &&
             packets != null &&
             unitsPerPacket != null) {
           stock = packets * unitsPerPacket;
         }
+        stock ??= 0;
 
         await Repository.instance.saveRawMaterial(
           RawMaterial(
