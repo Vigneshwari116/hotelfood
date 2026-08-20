@@ -4,6 +4,7 @@ import 'services/repository.dart';
 
 import 'widgets/brand_logo.dart';
 import 'widgets/responsive_shell.dart';
+import 'theme/brand_theme.dart';
 
 import 'screens/dashboard_screen.dart';
 import 'screens/simple_masters_screen.dart';
@@ -36,34 +37,7 @@ class RestoPosApp extends StatelessWidget {
       title: 'Shilpa Enterprise',
       debugShowCheckedModeBanner: false,
 
-      theme: ThemeData(
-        useMaterial3: true,
-
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF0E5C56),
-          primary: const Color(0xFF0E5C56),
-          secondary: const Color(0xFFC4A14A),
-        ),
-
-        scaffoldBackgroundColor: const Color(0xFFF7EFE1),
-
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF0E5C56),
-          foregroundColor: Colors.white,
-          elevation: 0,
-        ),
-
-        inputDecorationTheme: const InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(),
-        ),
-
-        cardTheme: const CardThemeData(
-          elevation: 1,
-          margin: EdgeInsets.zero,
-        ),
-      ),
+      theme: buildBrandTheme(),
 
       home: const _StartupGate(),
     );
@@ -95,6 +69,7 @@ class _StartupGateState extends State<_StartupGate> {
     await DBHelper.instance.database;
     await Repository.instance.ensureDefaultUsers();
     await Repository.instance.ensureStandardUnits();
+    await Repository.instance.ensureDefaultCategories();
     await Repository.instance.writeOffExpiredStock();
   }
 

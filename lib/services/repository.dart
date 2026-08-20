@@ -242,6 +242,38 @@ class Repository {
             }
       }
 
+      /// Built-in menu categories. Extra names can still be added in Masters.
+      Future<void> ensureDefaultCategories() async {
+            final existing = await categories(type: 'raw_material');
+            final names = existing
+                  .map((c) => c.name.trim().toLowerCase())
+                  .toSet();
+
+            const defaults = [
+                  'Starters',
+                  'Fried Items',
+                  'Gravy',
+                  'Tandoor',
+                  'Rice',
+                  'Breads',
+                  'Chinese',
+                  'Meals',
+                  'Desserts',
+                  'Beverages',
+            ];
+
+            for (final name in defaults) {
+                  if (names.contains(name.toLowerCase())) continue;
+                  await addCategory(
+                        Category(
+                              name: name,
+                              type: 'raw_material',
+                        ),
+                  );
+                  names.add(name.toLowerCase());
+            }
+      }
+
       Future<void> ensureDefaultUsers() async {
             final db = await _db;
             final now = DateTime.now().toIso8601String();

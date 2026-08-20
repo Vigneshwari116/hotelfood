@@ -76,8 +76,7 @@ class _SimpleMastersScreenState extends State<SimpleMastersScreen>
 
 // ============================================================
 // CATEGORY TAB
-// (Raw Material categories only — Menu Item categories are
-// managed separately and are intentionally not offered here.)
+// Menu item categories. Defaults are seeded; you can still add more here.
 // ============================================================
 
 class _CategoryTab extends StatefulWidget {
@@ -254,6 +253,14 @@ class _CategoryTabState extends State<_CategoryTab> {
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Starter, Fried Items, Gravy and other menu groups are already listed. Type a new name below to add more.',
+              style: TextStyle(
+                color: Colors.grey.shade700,
+                fontSize: 13,
               ),
             ),
 
