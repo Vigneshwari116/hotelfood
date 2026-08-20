@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:foodstock/branding/app_brand.dart';
+import 'package:foodstock/widgets/brand_logo.dart';
 
 /// ============================================================
 /// BREAKPOINTS
@@ -216,37 +218,15 @@ class _DesktopSidebar extends StatelessWidget {
           // --------------------------------------------------
 
           Container(
-            height: 80,
             width: double.infinity,
             padding: const EdgeInsets.symmetric(
-              horizontal: 20,
+              horizontal: 16,
+              vertical: 12,
             ),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary,
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.storefront,
-                  color: Colors.white,
-                  size: 30,
-                ),
-
-                const SizedBox(width: 12),
-
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 19,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+            color: Colors.white,
+            child: Semantics(
+              label: title,
+              child: const BrandLogo(height: 72),
             ),
           ),
 
@@ -284,7 +264,7 @@ class _DesktopSidebar extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Text(
-              'RestoPOS',
+              AppBrand.name,
               style: TextStyle(
                 fontSize: 12,
                 color: Colors.grey.shade600,
@@ -408,55 +388,23 @@ class _AppDrawer extends StatelessWidget {
             width: double.infinity,
             padding: const EdgeInsets.fromLTRB(
               20,
-              45,
+              40,
               20,
-              20,
+              16,
             ),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary,
-            ),
-            child: Row(
+            color: Colors.white,
+            child: Column(
               children: [
-                Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.storefront,
-                    color: theme.colorScheme.primary,
-                    size: 30,
-                  ),
+                Semantics(
+                  label: title,
+                  child: const BrandLogo(height: 88),
                 ),
-
-                const SizedBox(width: 14),
-
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-
-                      const SizedBox(height: 3),
-
-                      const Text(
-                        'Order & Stock Console',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
+                const SizedBox(height: 8),
+                const Text(
+                  AppBrand.tagline,
+                  style: TextStyle(
+                    color: AppBrand.teal,
+                    fontSize: 12,
                   ),
                 ),
               ],
@@ -540,16 +488,12 @@ class _AppDrawer extends StatelessWidget {
               padding: const EdgeInsets.all(16),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.restaurant,
-                    size: 18,
-                    color: Colors.grey.shade600,
-                  ),
+                  const BrandLogo(height: 22),
 
                   const SizedBox(width: 8),
 
                   Text(
-                    'RestoPOS',
+                    AppBrand.name,
                     style: TextStyle(
                       color: Colors.grey.shade600,
                       fontSize: 12,
@@ -611,11 +555,7 @@ class _TopBar extends StatelessWidget
 
           const Spacer(),
 
-          Icon(
-            Icons.storefront,
-            size: 18,
-            color: Colors.grey.shade600,
-          ),
+          const BrandLogo(height: 22),
 
           const SizedBox(width: 8),
 

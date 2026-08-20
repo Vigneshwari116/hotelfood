@@ -58,6 +58,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       setState(() {
         _materials = materials.length;
+        _menuItems = materials.length;
         _customers = customers.length;
         _lowStock = lowStock;
         _todaySales = todayTotal;
