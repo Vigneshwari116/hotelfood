@@ -252,10 +252,13 @@ class Repository {
             const defaults = [
                   'Starters',
                   'Fried Items',
+                  'Buns',
+                  'Fillings',
                   'Gravy',
                   'Tandoor',
                   'Rice',
                   'Breads',
+                  'Sauces',
                   'Chinese',
                   'Meals',
                   'Desserts',

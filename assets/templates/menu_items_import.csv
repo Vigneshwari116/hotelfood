@@ -1,3 +1,37 @@
 category,item_name,sub_item,barcode,qty_per_sale,packets,units_per_packet,stock,cost_price,selling_price,unit
-Fried Items,Gobi 65,Gobi 65,,1.5,10,20,,40,120,pc
-Fried Items,Gobi 65,Gobi Chilli,,1,10,20,,40,130,pc
+Fried Items,Thai Crispy,1 Piece,,1,,10,,,pc
+Fried Items,Thai Crispy,5 Pieces,,5,,10,,,pc
+Fried Items,Thai Crispy,10 Pieces,,10,,10,,,pc
+Fried Items,Crunchy Masala,1 Piece,,1,,10,,,pc
+Fried Items,Crunchy Masala,5 Pieces,,5,,10,,,pc
+Fried Items,Crunchy Masala,10 Pieces,,10,,10,,,pc
+Fried Items,Chilli Burst,1 Piece,,1,,10,,,pc
+Fried Items,Chilli Burst,5 Pieces,,5,,10,,,pc
+Fried Items,Chilli Burst,10 Pieces,,10,,10,,,pc
+Fried Items,Krusty Bites,Krusty Bites,,8,,50,,,pc
+Fried Items,Chicken 65,Chicken 65,,10,,50,,,pc
+Fried Items,Peri Peri Chwings,Peri Peri Chwings,,4,,28,,,pc
+Fried Items,Chicken Popcorn,Chicken Popcorn,,1,,8,,,pc
+Fried Items,Whole Muscle Patty,Whole Muscle Patty,,1,,13,,,pc
+Fried Items,Chicken Momos,Chicken Momos,,4,,40,,,pc
+Fried Items,Crispy Chicken Patty,Crispy Chicken Patty,,1,,20,,,pc
+Fried Items,Chicken Fingers,Chicken Fingers,,3,,39,,,pc
+Fried Items,Chicken Nuggets,Chicken Nuggets,,4,,60,,,pc
+Fried Items,Chicken Strips,Chicken Strips,,3,,27,,,pc
+Fried Items,Chicken Cheese Shotz,Chicken Cheese Shotz,,6,,50,,,pc
+Fried Items,Veg Finger,Veg Finger,,3,,33,,,pc
+Fried Items,Pizza Pocket,Pizza Pocket,,4,,28,,,pc
+Fried Items,Paneer Patty,Paneer Patty,,1,,14,,,pc
+Fried Items,French Fries,French Fries,,100,,2500,,,g
+Fried Items,Veg Patty,Veg Patty,,1,,13,,,pc
+Fried Items,Tandoori Patty,Tandoori Patty,,1,,13,,,pc
+Fried Items,Hot Crispy Patty,Hot Crispy Patty,,1,,5,,,pc
+Buns,Burger Bun With Sesame,Burger Bun With Sesame,,1,,6,,,pc
+Buns,Plain Burger Bun,Plain Burger Bun,,1,,6,,,pc
+Fillings,Tandoori Filling,Tandoori Filling,,1,,,,pc
+Breads,Paratha,Paratha,,1,,,,pc
+Sauces,Paratha Sauce,Paratha Sauce,,1,,,,pc
+Sauces,Eggless Mayonnaise,Eggless Mayonnaise,,1,,,,pc
+Sauces,Tandoori Mayonnaise,Tandoori Mayonnaise,,1,,,,pc
+Sauces,BBQ Seasoning,BBQ Seasoning,,1,,,,pc
+Sauces,CP Marinade,CP Marinade,,1,,,,pc
