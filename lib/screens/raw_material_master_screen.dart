@@ -2,10 +2,12 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:foodstock/model/models.dart';
+import '../services/item_import_service.dart';
 import '../services/repository.dart';
 import '../widgets/barcode_field.dart';
 import '../widgets/responsive_shell.dart';
@@ -130,6 +132,84 @@ class _RawMaterialMasterScreenState
     }
 
     return '-';
+  }
+
+  Future<void> _saveImportTemplate() async {
+    final csv = await rootBundle.loadString(
+      'assets/templates/menu_items_import.csv',
+    );
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File(p.join(dir.path, 'menu_items_import.csv'));
+    await file.writeAsString(csv);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Template saved to ${file.path}'),
+      ),
+    );
+  }
+
+  Future<void> _importItemsFile() async {
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['csv', 'xlsx', 'xls'],
+      allowMultiple: false,
+    );
+    if (picked == null ||
+        picked.files.isEmpty ||
+        picked.files.first.path == null) {
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return const Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            ),
+          ),
+        );
+      },
+    );
+
+    try {
+      final result = await ItemImportService().importFile(
+        picked.files.first.path!,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      await _loadAll();
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Import complete'),
+            content: Text(
+              'Added ${result.created} item(s).\n'
+              'Skipped ${result.skipped} existing item(s).'
+              '${result.errors.isEmpty ? '' : '\n\n${result.errors.take(8).join('\n')}'}',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Import failed: $e')),
+      );
+    }
   }
 
   // ============================================================
@@ -570,7 +650,21 @@ class _RawMaterialMasterScreenState
               ),
             ),
 
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
+
+            IconButton(
+              tooltip: 'Save Excel/CSV template',
+              onPressed: _saveImportTemplate,
+              icon: const Icon(Icons.download_outlined),
+            ),
+
+            OutlinedButton.icon(
+              onPressed: _importItemsFile,
+              icon: const Icon(Icons.upload_file),
+              label: Text(isMobile ? 'CSV' : 'Import CSV / Excel'),
+            ),
+
+            const SizedBox(width: 8),
 
             FilledButton.icon(
               onPressed: () {
@@ -1420,7 +1514,17 @@ class _RawMaterialEditorDialogState
           item.barcode ?? '';
 
       _openingController.text =
-          item.openingStock.toString();
+          item.currentStock.toString();
+
+      if (item.unitsPerPacket != null &&
+          item.unitsPerPacket! > 0 &&
+          item.currentStock > 0) {
+        final packets =
+            item.currentStock / item.unitsPerPacket!;
+        _packetsController.text = packets % 1 == 0
+            ? packets.toStringAsFixed(0)
+            : packets.toStringAsFixed(2);
+      }
 
       _reorderController.text =
           item.reorderLevel.toString();
@@ -1471,8 +1575,6 @@ class _RawMaterialEditorDialogState
   }
 
   void _recalculateStock() {
-    if (widget.existing != null) return;
-
     final packets =
         double.tryParse(_packetsController.text.trim()) ?? 0;
     final perPacket =
@@ -1593,8 +1695,11 @@ class _RawMaterialEditorDialogState
         ) ??
             0,
         currentStock:
-        widget.existing
-            ?.currentStock ??
+        double.tryParse(
+          _openingController
+              .text
+              .trim(),
+        ) ??
             0,
         reorderLevel:
         double.tryParse(
@@ -1841,7 +1946,6 @@ class _RawMaterialEditorDialogState
                 ),
                 TextField(
                   controller: _packetsController,
-                  enabled: widget.existing == null,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
@@ -1861,7 +1965,6 @@ class _RawMaterialEditorDialogState
                 ),
                 TextField(
                   controller: _openingController,
-                  enabled: widget.existing == null,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
