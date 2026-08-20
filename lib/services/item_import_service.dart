@@ -33,6 +33,10 @@ class ItemImportService {
     return _importRows(_parseCsv(text));
   }
 
+  Future<ItemImportResult> importXlsxBytes(Uint8List bytes) {
+    return _importRows(_parseXlsx(bytes));
+  }
+
   Future<ItemImportResult> _importRows(List<List<String>> rows) async {
     final result = ItemImportResult();
     if (rows.isEmpty) {

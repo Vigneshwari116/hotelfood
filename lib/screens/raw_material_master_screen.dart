@@ -45,7 +45,20 @@ class _RawMaterialMasterScreenState
       vsync: this,
     );
 
-    _loadAll();
+    _loadMenuFromExcelThenItems();
+  }
+
+  Future<void> _loadMenuFromExcelThenItems() async {
+    try {
+      await ItemImportService().importXlsxBytes(
+        (await rootBundle.load(
+          'assets/templates/menu_items_import.xlsx',
+        ))
+            .buffer
+            .asUint8List(),
+      );
+    } catch (_) {}
+    await _loadAll();
   }
 
   @override
