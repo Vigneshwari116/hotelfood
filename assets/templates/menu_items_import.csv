@@ -1,13 +1,7 @@
 category,item_name,sub_item,barcode,qty_per_sale,packets,units_per_packet,stock,cost_price,selling_price,unit
-Fried Items,Thai Crispy,1 Piece,,1,,10,,,pc
-Fried Items,Thai Crispy,5 Pieces,,5,,10,,,pc
-Fried Items,Thai Crispy,10 Pieces,,10,,10,,,pc
-Fried Items,Crunchy Masala,1 Piece,,1,,10,,,pc
-Fried Items,Crunchy Masala,5 Pieces,,5,,10,,,pc
-Fried Items,Crunchy Masala,10 Pieces,,10,,10,,,pc
-Fried Items,Chilli Burst,1 Piece,,1,,10,,,pc
-Fried Items,Chilli Burst,5 Pieces,,5,,10,,,pc
-Fried Items,Chilli Burst,10 Pieces,,10,,10,,,pc
+Fried Items,Thai Crispy,Thai Crispy,,1,,10,,,pc
+Fried Items,Crunchy Masala,Crunchy Masala,,1,,10,,,pc
+Fried Items,Chilli Burst,Chilli Burst,,1,,10,,,pc
 Fried Items,Krusty Bites,Krusty Bites,,8,,50,,,pc
 Fried Items,Chicken 65,Chicken 65,,10,,50,,,pc
 Fried Items,Peri Peri Chwings,Peri Peri Chwings,,4,,28,,,pc

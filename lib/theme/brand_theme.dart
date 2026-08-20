@@ -41,9 +41,9 @@ ThemeData buildBrandTheme() {
       foregroundColor: BrandColors.onTeal,
     ),
     tabBarTheme: const TabBarThemeData(
-      labelColor: BrandColors.onTeal,
-      unselectedLabelColor: Color(0xB3FFFFFF),
-      indicatorColor: BrandColors.onTeal,
+      labelColor: Colors.black,
+      unselectedLabelColor: Colors.black54,
+      indicatorColor: BrandColors.teal,
     ),
     inputDecorationTheme: const InputDecorationTheme(
       filled: true,
