@@ -1,11 +1,15 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:foodstock/model/models.dart';
+import '../services/item_import_service.dart';
 import '../services/repository.dart';
 import '../widgets/barcode_field.dart';
 import '../widgets/responsive_shell.dart';
@@ -56,8 +60,8 @@ class _RawMaterialMasterScreenState
   // LOAD EVERYTHING
   // ============================================================
 
-  Future<void> _loadAll() async {
-    if (_loading) return;
+  Future<void> _loadAll({bool force = false}) async {
+    if (_loading && !force) return;
 
     setState(() {
       _loading = true;
@@ -177,6 +181,180 @@ class _RawMaterialMasterScreenState
     await File(sourcePath).copy(destination);
 
     return destination;
+  }
+
+  // ============================================================
+  // CSV / EXCEL IMPORT
+  // ============================================================
+
+  Future<void> _downloadImportTemplate() async {
+    try {
+      final csv = await rootBundle.loadString(
+        'assets/templates/menu_items_import_template.csv',
+      );
+
+      final saved = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save item import template',
+        fileName: 'menu_items_import_template.csv',
+        type: FileType.custom,
+        allowedExtensions: const ['csv'],
+        bytes: Uint8List.fromList(utf8.encode(csv)),
+      );
+
+      if (!mounted || saved == null) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Template saved. Fill it, then use Import.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not save template: $e'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _importItemsFromFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['csv', 'xlsx', 'xls'],
+      withData: true,
+    );
+
+    if (result == null || result.files.isEmpty) {
+      return;
+    }
+
+    final file = result.files.first;
+    Uint8List? bytes = file.bytes;
+
+    if ((bytes == null || bytes.isEmpty) && file.path != null) {
+      bytes = await File(file.path!).readAsBytes();
+    }
+
+    if (bytes == null || bytes.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not read the selected file.'),
+        ),
+      );
+      return;
+    }
+
+    final parsed = ItemSpreadsheetParser.parseFile(
+      fileName: file.name,
+      bytes: bytes,
+    );
+
+    if (parsed.rows.isEmpty) {
+      if (!mounted) return;
+      await _showImportResult(
+        ItemImportResult(
+          created: 0,
+          updated: 0,
+          skipped: 0,
+          errors: parsed.errors.isEmpty
+              ? const ['No items were found in the file.']
+              : parsed.errors,
+        ),
+      );
+      return;
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _loading = true;
+    });
+
+    try {
+      final imported = await Repository.instance.importParsedItems(
+        parsed.rows,
+      );
+
+      final errors = [
+        ...parsed.errors,
+        ...imported.errors,
+      ];
+
+      await _loadAll(force: true);
+
+      if (!mounted) return;
+
+      await _showImportResult(
+        ItemImportResult(
+          created: imported.created,
+          updated: imported.updated,
+          skipped: imported.skipped,
+          errors: errors,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Import failed: $e'),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _showImportResult(ItemImportResult result) {
+    return showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Import complete'),
+          content: SizedBox(
+            width: 420,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Created: ${result.created}'),
+                Text('Updated: ${result.updated}'),
+                Text('Skipped: ${result.skipped}'),
+                if (result.errors.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Notes',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 6),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 220),
+                    child: SingleChildScrollView(
+                      child: Text(result.errors.join('\n')),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   // ============================================================
@@ -628,7 +806,7 @@ class _RawMaterialMasterScreenState
               ),
             ),
 
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
 
             FilledButton.icon(
               onPressed: () {
@@ -638,11 +816,54 @@ class _RawMaterialMasterScreenState
                 Icons.add,
               ),
               label: Text(
-                isMobile
-                    ? 'Add'
-                    : 'Add Item',
+                isMobile ? 'Add' : 'Add Item',
               ),
             ),
+
+            const SizedBox(width: 8),
+
+            if (isMobile)
+              PopupMenuButton<String>(
+                tooltip: 'Import items',
+                onSelected: (value) {
+                  if (value == 'import') {
+                    _importItemsFromFile();
+                  }
+                  if (value == 'template') {
+                    _downloadImportTemplate();
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'import',
+                    child: ListTile(
+                      leading: Icon(Icons.upload_file),
+                      title: Text('Import CSV / Excel'),
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'template',
+                    child: ListTile(
+                      leading: Icon(Icons.download),
+                      title: Text('Download template'),
+                    ),
+                  ),
+                ],
+                icon: const Icon(Icons.more_vert),
+              )
+            else ...[
+              OutlinedButton.icon(
+                onPressed: _importItemsFromFile,
+                icon: const Icon(Icons.upload_file),
+                label: const Text('Import CSV / Excel'),
+              ),
+              const SizedBox(width: 8),
+              OutlinedButton.icon(
+                onPressed: _downloadImportTemplate,
+                icon: const Icon(Icons.download),
+                label: const Text('Template'),
+              ),
+            ],
           ],
         ),
 
@@ -1314,7 +1535,7 @@ class _RawMaterialMasterScreenState
           ),
           SizedBox(height: 5),
           Text(
-            'Add your first raw material.',
+            'Add an item, or import a CSV / Excel file.',
           ),
         ],
       ),

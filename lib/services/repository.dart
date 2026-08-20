@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/item_import_service.dart';
 import 'package:sqflite/sqflite.dart';
 
 // ============================================================
@@ -79,6 +80,43 @@ class Repository {
                   category.toMap()..remove('id'),
                   conflictAlgorithm: ConflictAlgorithm.abort,
             );
+      }
+
+      Future<int> findOrCreateCategory(String name) async {
+            final trimmed = name.trim();
+
+            if (trimmed.isEmpty) {
+                  throw InvalidInventoryException(
+                        'Category name cannot be empty.',
+                  );
+            }
+
+            final existing = await categories();
+
+            for (final category in existing) {
+                  if (category.name.toLowerCase() == trimmed.toLowerCase()) {
+                    return category.id!;
+                  }
+            }
+
+            try {
+                  return await addCategory(
+                        Category(
+                              name: trimmed,
+                              type: 'raw_material',
+                        ),
+                  );
+            } on DatabaseException {
+                  final retried = await categories();
+
+                  for (final category in retried) {
+                    if (category.name.toLowerCase() == trimmed.toLowerCase()) {
+                      return category.id!;
+                    }
+                  }
+
+                  rethrow;
+            }
       }
 
       Future<List<Category>> categories({
@@ -189,6 +227,52 @@ class Repository {
                   unit.toMap()..remove('id'),
                   conflictAlgorithm: ConflictAlgorithm.abort,
             );
+      }
+
+      Future<int> findOrCreateUnit({
+            required String name,
+            String? shortCode,
+      }) async {
+            final trimmed = name.trim();
+
+            if (trimmed.isEmpty) {
+                  throw InvalidInventoryException(
+                        'Unit name cannot be empty.',
+                  );
+            }
+
+            final code = (shortCode == null || shortCode.trim().isEmpty)
+                  ? (trimmed.length <= 6 ? trimmed : trimmed.substring(0, 6))
+                  : shortCode.trim();
+
+            final existing = await units();
+
+            for (final unit in existing) {
+                  if (unit.name.toLowerCase() == trimmed.toLowerCase() ||
+                      unit.shortCode.toLowerCase() == code.toLowerCase() ||
+                      unit.shortCode.toLowerCase() == trimmed.toLowerCase()) {
+                    return unit.id!;
+                  }
+            }
+
+            try {
+                  return await addUnit(
+                        UnitM(
+                              name: trimmed,
+                              shortCode: code,
+                        ),
+                  );
+            } on DatabaseException {
+                  final retried = await units();
+
+                  for (final unit in retried) {
+                    if (unit.name.toLowerCase() == trimmed.toLowerCase()) {
+                      return unit.id!;
+                    }
+                  }
+
+                  rethrow;
+            }
       }
 
       Future<List<UnitM>> units() async {
@@ -482,6 +566,146 @@ class Repository {
             }
 
             return RawMaterial.fromMap(rows.first);
+      }
+
+      Future<RawMaterial?> rawMaterialByName(
+            String name,
+      ) async {
+            final trimmed = name.trim().toLowerCase();
+
+            if (trimmed.isEmpty) {
+                  return null;
+            }
+
+            final items = await rawMaterials();
+
+            for (final item in items) {
+                  if (item.name.toLowerCase() == trimmed) {
+                    return item;
+                  }
+            }
+
+            return null;
+      }
+
+      /// Bulk-load catalog items from a parsed CSV/Excel sheet.
+      ///
+      /// Matching order: barcode, then exact item name (case-insensitive).
+      /// Opening stock is applied only when a new item is created.
+      Future<ItemImportResult> importParsedItems(
+            List<ParsedItemRow> rows,
+      ) async {
+            var created = 0;
+            var updated = 0;
+            var skipped = 0;
+            final errors = <String>[];
+
+            for (final row in rows) {
+                  try {
+                    int? categoryId;
+                    if (row.category != null) {
+                      categoryId = await findOrCreateCategory(row.category!);
+                    }
+
+                    int? unitId;
+                    final unitName = row.unit ?? row.unitCode;
+                    if (unitName != null) {
+                      unitId = await findOrCreateUnit(
+                            name: unitName,
+                            shortCode: row.unitCode,
+                      );
+                    }
+
+                    RawMaterial? existing;
+
+                    if (row.barcode != null) {
+                      existing = await rawMaterialByBarcode(row.barcode!);
+                    }
+
+                    existing ??= await rawMaterialByName(row.name);
+
+                    if (existing != null) {
+                      if (row.barcode != null) {
+                            final taken = await rawMaterialByBarcode(row.barcode!);
+                            if (taken != null && taken.id != existing.id) {
+                              skipped += 1;
+                              errors.add(
+                                    'Row ${row.lineNumber}: barcode ${row.barcode} '
+                                    'already belongs to ${taken.name}.',
+                              );
+                              continue;
+                            }
+                      }
+
+                      await saveRawMaterial(
+                            RawMaterial(
+                              id: existing.id,
+                              barcode: row.barcode ?? existing.barcode,
+                              name: row.name,
+                              categoryId: categoryId ?? existing.categoryId,
+                              unitId: unitId ?? existing.unitId,
+                              openingStock: existing.openingStock,
+                              currentStock: existing.currentStock,
+                              reorderLevel:
+                                    row.reorderLevel ?? existing.reorderLevel,
+                              shelfLifeDays:
+                                    row.shelfLifeDays ?? existing.shelfLifeDays,
+                              unitsPerPacket:
+                                    row.unitsPerPacket ?? existing.unitsPerPacket,
+                              entryPasswordHash: existing.entryPasswordHash,
+                              costPrice: row.costPrice ?? existing.costPrice,
+                              sellingPrice:
+                                    row.sellingPrice ?? existing.sellingPrice,
+                              imagePath: existing.imagePath,
+                              createdAt: existing.createdAt,
+                            ),
+                      );
+
+                      updated += 1;
+                      continue;
+                    }
+
+                    if (row.barcode != null) {
+                      final taken = await rawMaterialByBarcode(row.barcode!);
+                      if (taken != null) {
+                            skipped += 1;
+                            errors.add(
+                              'Row ${row.lineNumber}: barcode ${row.barcode} '
+                              'already belongs to ${taken.name}.',
+                            );
+                            continue;
+                      }
+                    }
+
+                    await saveRawMaterial(
+                          RawMaterial(
+                            barcode: row.barcode,
+                            name: row.name,
+                            categoryId: categoryId,
+                            unitId: unitId,
+                            openingStock: row.openingStock ?? 0,
+                            currentStock: row.openingStock ?? 0,
+                            reorderLevel: row.reorderLevel ?? 0,
+                            shelfLifeDays: row.shelfLifeDays,
+                            unitsPerPacket: row.unitsPerPacket,
+                            costPrice: row.costPrice,
+                            sellingPrice: row.sellingPrice,
+                          ),
+                    );
+
+                    created += 1;
+                  } catch (e) {
+                    skipped += 1;
+                    errors.add('Row ${row.lineNumber}: $e');
+                  }
+            }
+
+            return ItemImportResult(
+                  created: created,
+                  updated: updated,
+                  skipped: skipped,
+                  errors: errors,
+            );
       }
 
       Future<void> deleteRawMaterial(

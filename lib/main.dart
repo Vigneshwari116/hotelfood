@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:foodstock/branding/app_brand.dart';
 import 'package:foodstock/database/database_helper.dart';
 import 'services/repository.dart';
+import 'widgets/brand_logo.dart';
 
 import 'widgets/responsive_shell.dart';
 
@@ -32,22 +34,22 @@ class RestoPosApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Five Star — Order & Stock Console',
+      title: AppBrand.appTitle,
       debugShowCheckedModeBanner: false,
 
       theme: ThemeData(
         useMaterial3: true,
 
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF8B1E1E),
-          primary: const Color(0xFF8B1E1E),
-          secondary: const Color(0xFFE0A526),
+          seedColor: AppBrand.teal,
+          primary: AppBrand.teal,
+          secondary: AppBrand.bronze,
         ),
 
-        scaffoldBackgroundColor: const Color(0xFFF7EFE1),
+        scaffoldBackgroundColor: AppBrand.canvas,
 
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF8B1E1E),
+          backgroundColor: AppBrand.teal,
           foregroundColor: Colors.white,
           elevation: 0,
         ),
@@ -286,29 +288,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // LOGO
-                    const Icon(
-                      Icons.storefront,
-                      size: 60,
-                      color: Color(0xFF8B1E1E),
-                    ),
+                    const BrandLogo(height: 148),
 
-                    const SizedBox(height: 12),
-
-                    const Text(
-                      'FIVE STAR',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF8B1E1E),
-                      ),
-                    ),
-
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 8),
 
                     Text(
-                      'Order & Stock Console',
+                      AppBrand.tagline,
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 14,
@@ -410,7 +395,7 @@ class MainShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ResponsiveShell(
-      title: 'RestoPOS',
+      title: AppBrand.name,
 
       items: [
         // ----------------------------------------------------
