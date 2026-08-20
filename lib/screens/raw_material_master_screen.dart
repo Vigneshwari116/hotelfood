@@ -149,27 +149,37 @@ class _RawMaterialMasterScreenState
   }
 
   Future<void> _saveImportTemplate() async {
-    final data = await rootBundle.load(
-      'assets/templates/menu_items_import.xlsx',
+    final items = await Repository.instance.rawMaterials();
+    final categories =
+        await Repository.instance.categories(type: 'raw_material');
+    final units = await Repository.instance.units();
+    final csv = ItemImportService().exportCsv(
+      items: items,
+      categories: categories,
+      units: units,
     );
-    final bytes = data.buffer.asUint8List();
     String? path;
-    if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+    if (!kIsWeb &&
+        (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
       path = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save menu Excel',
-        fileName: 'Shilpa_Enterprise_menu_items.xlsx',
+        dialogTitle: 'Save menu Excel/CSV',
+        fileName: 'Shilpa_Enterprise_menu_items.csv',
         type: FileType.custom,
-        allowedExtensions: const ['xlsx'],
+        allowedExtensions: const ['csv', 'xlsx'],
       );
     }
     path ??= p.join(
       (await getApplicationDocumentsDirectory()).path,
-      'Shilpa_Enterprise_menu_items.xlsx',
+      'Shilpa_Enterprise_menu_items.csv',
     );
-    await File(path).writeAsBytes(bytes);
+    if (!path.toLowerCase().endsWith('.csv') &&
+        !path.toLowerCase().endsWith('.xlsx')) {
+      path = '$path.csv';
+    }
+    await File(path).writeAsString(csv);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Excel saved to $path')),
+      SnackBar(content: Text('Menu file saved to $path')),
     );
   }
 
@@ -214,8 +224,8 @@ class _RawMaterialMasterScreenState
           return AlertDialog(
             title: const Text('Import complete'),
             content: Text(
-              'Added ${result.created} item(s).\n'
-              'Skipped ${result.skipped} existing item(s).'
+              'Added ${result.created} new item(s).\n'
+              'Updated ${result.updated} existing item(s).'
               '${result.errors.isEmpty ? '' : '\n\n${result.errors.take(8).join('\n')}'}',
             ),
             actions: [

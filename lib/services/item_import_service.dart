@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 
 class ItemImportResult {
   int created = 0;
+  int updated = 0;
   int skipped = 0;
   final List<String> errors = [];
 }
@@ -26,18 +27,84 @@ class ItemImportService {
         ? _parseXlsx(bytes)
         : _parseCsv(utf8.decode(bytes, allowMalformed: true));
 
-    return _importRows(rows);
+    return _importRows(rows, updateExisting: true);
   }
 
   Future<ItemImportResult> importCsvText(String text) {
-    return _importRows(_parseCsv(text));
+    return _importRows(_parseCsv(text), updateExisting: false);
   }
 
   Future<ItemImportResult> importXlsxBytes(Uint8List bytes) {
-    return _importRows(_parseXlsx(bytes));
+    return _importRows(_parseXlsx(bytes), updateExisting: false);
   }
 
-  Future<ItemImportResult> _importRows(List<List<String>> rows) async {
+  String exportCsv({
+    required List<RawMaterial> items,
+    required List<Category> categories,
+    required List<UnitM> units,
+  }) {
+    String categoryName(int? id) {
+      for (final category in categories) {
+        if (category.id == id) return category.name;
+      }
+      return '';
+    }
+
+    String unitCode(int? id) {
+      for (final unit in units) {
+        if (unit.id == id) return unit.shortCode;
+      }
+      return '';
+    }
+
+    String numOrEmpty(double? value) {
+      if (value == null) return '';
+      return value % 1 == 0 ? value.toStringAsFixed(0) : value.toStringAsFixed(2);
+    }
+
+    final buffer = StringBuffer();
+    buffer.writeln(
+      'category,item_name,sub_item,barcode,qty_per_sale,packets,units_per_packet,unit,opening stock,cost_price,selling_price',
+    );
+    for (final item in items) {
+      String packets = '';
+      if (item.unitsPerPacket != null &&
+          item.unitsPerPacket! > 0 &&
+          item.currentStock > 0) {
+        packets = numOrEmpty(item.currentStock / item.unitsPerPacket!);
+      }
+      buffer.writeln(
+        [
+          categoryName(item.categoryId),
+          item.name,
+          item.subItem ?? item.name,
+          item.barcode ?? '',
+          numOrEmpty(item.qtyNeeded),
+          packets,
+          numOrEmpty(item.unitsPerPacket),
+          unitCode(item.unitId),
+          numOrEmpty(item.currentStock),
+          numOrEmpty(item.costPrice),
+          numOrEmpty(item.sellingPrice),
+        ].map(_csvCell).join(','),
+      );
+    }
+    return '\uFEFF${buffer.toString()}';
+  }
+
+  String _csvCell(String value) {
+    if (value.contains(',') ||
+        value.contains('"') ||
+        value.contains('\n')) {
+      return '"${value.replaceAll('"', '""')}"';
+    }
+    return value;
+  }
+
+  Future<ItemImportResult> _importRows(
+    List<List<String>> rows, {
+    required bool updateExisting,
+  }) async {
     final result = ItemImportResult();
     if (rows.isEmpty) {
       result.errors.add('The file is empty.');
@@ -57,9 +124,9 @@ class ItemImportService {
         .toList();
 
     final existing = await Repository.instance.rawMaterials();
-    final existingKeys = {
+    final existingByKey = <String, RawMaterial>{
       for (final item in existing)
-        _itemKey(item.name, item.subItem),
+        _itemKey(item.name, item.subItem): item,
     };
 
     var categories = await Repository.instance.categories(type: 'raw_material');
@@ -93,7 +160,8 @@ class ItemImportService {
         'variant',
       ]);
       final key = _itemKey(name, subItem);
-      if (existingKeys.contains(key)) {
+      final existingItem = existingByKey[key];
+      if (existingItem != null && !updateExisting) {
         result.skipped++;
         continue;
       }
@@ -106,6 +174,8 @@ class ItemImportService {
           categories = await Repository.instance.categories(
             type: 'raw_material',
           );
+        } else {
+          categoryId = existingItem?.categoryId;
         }
 
         final unitName = _first(map, const ['unit', 'uom']);
@@ -113,6 +183,8 @@ class ItemImportService {
         if (unitName.isNotEmpty) {
           unitId = await _ensureUnit(unitName, units);
           units = await Repository.instance.units();
+        } else if (existingItem?.unitId != null) {
+          unitId = existingItem!.unitId;
         } else if (units.isNotEmpty) {
           unitId = units.first.id;
         }
@@ -142,8 +214,8 @@ class ItemImportService {
         }
         stock ??= 0;
 
-        await Repository.instance.saveRawMaterial(
-          RawMaterial(
+        final saved = RawMaterial(
+            id: existingItem?.id,
             barcode: _emptyToNull(_first(map, const ['barcode', 'code'])),
             name: name,
             subItem: subItem.isEmpty ? name : subItem,
@@ -152,7 +224,10 @@ class ItemImportService {
             unitId: unitId,
             openingStock: stock ?? 0,
             currentStock: stock ?? 0,
-            unitsPerPacket: unitsPerPacket,
+            reorderLevel: existingItem?.reorderLevel ?? 0,
+            shelfLifeDays: existingItem?.shelfLifeDays,
+            unitsPerPacket: unitsPerPacket ?? existingItem?.unitsPerPacket,
+            entryPasswordHash: existingItem?.entryPasswordHash,
             costPrice: _number(_first(map, const [
               'costprice',
               'cp',
@@ -164,11 +239,35 @@ class ItemImportService {
               'selling',
               'price',
             ])),
-          ),
-        );
+            imagePath: existingItem?.imagePath,
+            createdAt: existingItem?.createdAt,
+          );
+        final id = await Repository.instance.saveRawMaterial(saved);
 
-        existingKeys.add(key);
-        result.created++;
+        existingByKey[key] = RawMaterial(
+          id: id,
+          barcode: saved.barcode,
+          name: saved.name,
+          subItem: saved.subItem,
+          qtyNeeded: saved.qtyNeeded,
+          categoryId: saved.categoryId,
+          unitId: saved.unitId,
+          openingStock: saved.openingStock,
+          currentStock: saved.currentStock,
+          reorderLevel: saved.reorderLevel,
+          shelfLifeDays: saved.shelfLifeDays,
+          unitsPerPacket: saved.unitsPerPacket,
+          entryPasswordHash: saved.entryPasswordHash,
+          costPrice: saved.costPrice,
+          sellingPrice: saved.sellingPrice,
+          imagePath: saved.imagePath,
+          createdAt: saved.createdAt,
+        );
+        if (existingItem == null) {
+          result.created++;
+        } else {
+          result.updated++;
+        }
       } catch (e) {
         result.errors.add('Row ${i + 1} ($name): $e');
       }
