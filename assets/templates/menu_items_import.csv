@@ -1,0 +1,3 @@
+category,item_name,sub_item,barcode,qty_per_sale,packets,units_per_packet,stock,cost_price,selling_price,unit
+Fried Items,Gobi 65,Gobi 65,,1.5,10,20,,40,120,pc
+Fried Items,Gobi 65,Gobi Chilli,,1,10,20,,40,130,pc

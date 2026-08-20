@@ -297,7 +297,7 @@ class _PrinterSettingsScreenState
       final bool result =
       await Printing.directPrintPdf(
         printer: printer,
-        name: 'Five Star Test Bill',
+        name: 'Shilpa Enterprise Test Bill',
         format: format,
         onLayout: (format) async {
           return _buildTestReceipt(format);
@@ -371,7 +371,7 @@ class _PrinterSettingsScreenState
               // ------------------------------------------------
 
               pw.Text(
-                'FIVE STAR',
+                'SHILPA ENTERPRISE',
                 textAlign:
                 pw.TextAlign.center,
                 style: pw.TextStyle(

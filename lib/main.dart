@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:foodstock/database/database_helper.dart';
 import 'services/repository.dart';
 
+import 'widgets/brand_logo.dart';
 import 'widgets/responsive_shell.dart';
 
 import 'screens/dashboard_screen.dart';
@@ -32,22 +33,22 @@ class RestoPosApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Five Star — Order & Stock Console',
+      title: 'Shilpa Enterprise',
       debugShowCheckedModeBanner: false,
 
       theme: ThemeData(
         useMaterial3: true,
 
         colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF8B1E1E),
-          primary: const Color(0xFF8B1E1E),
-          secondary: const Color(0xFFE0A526),
+          seedColor: const Color(0xFF0E5C56),
+          primary: const Color(0xFF0E5C56),
+          secondary: const Color(0xFFC4A14A),
         ),
 
         scaffoldBackgroundColor: const Color(0xFFF7EFE1),
 
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF8B1E1E),
+          backgroundColor: Color(0xFF0E5C56),
           foregroundColor: Colors.white,
           elevation: 0,
         ),
@@ -264,35 +265,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // LOGO
-                    const Icon(
-                      Icons.storefront,
-                      size: 60,
-                      color: Color(0xFF8B1E1E),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    const Text(
-                      'FIVE STAR',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF8B1E1E),
-                      ),
-                    ),
-
-                    const SizedBox(height: 4),
-
-                    Text(
-                      'Order & Stock Console',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
+                    const BrandLogo(height: 168),
 
                     const SizedBox(height: 28),
 
@@ -434,7 +407,7 @@ class MainShell extends StatelessWidget {
         : [salesItem];
 
     return ResponsiveShell(
-      title: 'Five Star',
+      title: 'Shilpa Enterprise',
       userLabel: username,
       items: items,
       onLogout: () {
