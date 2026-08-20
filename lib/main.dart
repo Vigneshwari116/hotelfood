@@ -73,22 +73,12 @@ class _StartupGateState extends State<_StartupGate> {
     await Repository.instance.ensureStandardUnits();
     await Repository.instance.ensureDefaultCategories();
     try {
-      await ItemImportService().importXlsxBytes(
-        (await rootBundle.load(
-          'assets/templates/menu_items_import.xlsx',
-        ))
-            .buffer
-            .asUint8List(),
+      await ItemImportService().importCsvText(
+        await rootBundle.loadString(
+          'assets/templates/menu_items_import.csv',
+        ),
       );
-    } catch (_) {
-      try {
-        await ItemImportService().importCsvText(
-          await rootBundle.loadString(
-            'assets/templates/menu_items_import.csv',
-          ),
-        );
-      } catch (_) {}
-    }
+    } catch (_) {}
     await Repository.instance.writeOffExpiredStock();
   }
 

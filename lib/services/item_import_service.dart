@@ -405,11 +405,14 @@ class ItemImportService {
 
     final xml = utf8.decode(sheet.content as List<int>, allowMalformed: true);
     final rows = <List<String>>[];
-    final rowMatches = RegExp(r'<row[^>]*>([\s\S]*?)</row>').allMatches(xml);
+    final rowMatches =
+        RegExp(r'<(?:\w+:)?row\b[^>]*>([\s\S]*?)</(?:\w+:)?row>')
+            .allMatches(xml);
     for (final rowMatch in rowMatches) {
       final cells = <int, String>{};
       final cellMatches =
-          RegExp(r'<c([^>]*)>([\s\S]*?)</c>').allMatches(rowMatch.group(1)!);
+          RegExp(r'<(?:\w+:)?c\b([^>]*)>([\s\S]*?)</(?:\w+:)?c>')
+              .allMatches(rowMatch.group(1)!);
       var maxCol = 0;
       for (final cell in cellMatches) {
         final attrs = cell.group(1)!;
