@@ -172,8 +172,10 @@ class _RawMaterialMasterScreenState
       (await getApplicationDocumentsDirectory()).path,
       'Shilpa_Enterprise_menu_items.csv',
     );
-    if (!path.toLowerCase().endsWith('.csv') &&
-        !path.toLowerCase().endsWith('.xlsx')) {
+    if (path.toLowerCase().endsWith('.xlsx')) {
+      path = '${path.substring(0, path.length - 5)}.csv';
+    }
+    if (!path.toLowerCase().endsWith('.csv')) {
       path = '$path.csv';
     }
     await File(path).writeAsString(csv);
