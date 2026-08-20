@@ -672,7 +672,7 @@ class _RawMaterialMasterScreenState
             OutlinedButton.icon(
               onPressed: _importItemsFile,
               icon: const Icon(Icons.upload_file),
-              label: Text(isMobile ? 'CSV' : 'Import CSV / Excel'),
+              label: Text(isMobile ? 'Import' : 'Import CSV / Excel'),
             ),
 
             const SizedBox(width: 8),
