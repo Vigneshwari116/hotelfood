@@ -496,7 +496,11 @@ class Repository {
 
             await db.update(
                   'raw_materials',
-                  map,
+                  {
+                        ...map,
+                        'current_stock': rm.currentStock,
+                        'opening_stock': rm.openingStock,
+                  },
                   where: 'id = ?',
                   whereArgs: [rm.id],
             );

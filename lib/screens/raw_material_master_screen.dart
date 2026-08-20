@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
@@ -135,17 +136,27 @@ class _RawMaterialMasterScreenState
   }
 
   Future<void> _saveImportTemplate() async {
-    final csv = await rootBundle.loadString(
-      'assets/templates/menu_items_import.csv',
+    final data = await rootBundle.load(
+      'assets/templates/menu_items_import.xlsx',
     );
-    final dir = await getApplicationDocumentsDirectory();
-    final file = File(p.join(dir.path, 'menu_items_import.csv'));
-    await file.writeAsString(csv);
+    final bytes = data.buffer.asUint8List();
+    String? path;
+    if (!kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save menu Excel',
+        fileName: 'Shilpa_Enterprise_menu_items.xlsx',
+        type: FileType.custom,
+        allowedExtensions: const ['xlsx'],
+      );
+    }
+    path ??= p.join(
+      (await getApplicationDocumentsDirectory()).path,
+      'Shilpa_Enterprise_menu_items.xlsx',
+    );
+    await File(path).writeAsBytes(bytes);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Template saved to ${file.path}'),
-      ),
+      SnackBar(content: Text('Excel saved to $path')),
     );
   }
 
@@ -1946,6 +1957,8 @@ class _RawMaterialEditorDialogState
                 ),
                 TextField(
                   controller: _packetsController,
+                  enabled: true,
+                  readOnly: false,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
@@ -1965,6 +1978,8 @@ class _RawMaterialEditorDialogState
                 ),
                 TextField(
                   controller: _openingController,
+                  enabled: true,
+                  readOnly: false,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
