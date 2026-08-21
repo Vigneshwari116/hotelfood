@@ -1144,22 +1144,11 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
           const SizedBox(height: 8),
 
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final width = (constraints.maxWidth * 0.5).clamp(260.0, 420.0);
-              return Align(
-                alignment: Alignment.centerLeft,
-                child: SizedBox(
-                  width: width,
-                  child: _PurchaseItemTypeahead(
-                    materials: _materials,
-                    value: line.material,
-                    enabled: !_saving,
-                    onSelected: (material) => _applyMaterial(line, material),
-                  ),
-                ),
-              );
-            },
+          _PurchaseItemTypeahead(
+            materials: _materials,
+            value: line.material,
+            enabled: !_saving,
+            onSelected: (material) => _applyMaterial(line, material),
           ),
 
           // PACKETS (only for materials with a known packet size)
@@ -1473,15 +1462,19 @@ class _PurchaseItemTypeahead extends StatefulWidget {
 }
 
 class _PurchaseItemTypeaheadState extends State<_PurchaseItemTypeahead> {
+  static const _tapGroup = 'purchase-item-search';
+
   final _controller = TextEditingController();
   final _focus = FocusNode();
-  bool _open = false;
+  final _fieldKey = GlobalKey();
+  final _link = LayerLink();
+  final _portal = OverlayPortalController();
+  double _fieldWidth = 0;
 
   @override
   void initState() {
     super.initState();
     _syncTextFromValue();
-    _focus.addListener(_handleFocus);
   }
 
   @override
@@ -1489,13 +1482,11 @@ class _PurchaseItemTypeaheadState extends State<_PurchaseItemTypeahead> {
     super.didUpdateWidget(oldWidget);
     if (widget.value?.id != oldWidget.value?.id && !_focus.hasFocus) {
       _syncTextFromValue();
-      _open = false;
     }
   }
 
   @override
   void dispose() {
-    _focus.removeListener(_handleFocus);
     _controller.dispose();
     _focus.dispose();
     super.dispose();
@@ -1506,12 +1497,6 @@ class _PurchaseItemTypeaheadState extends State<_PurchaseItemTypeahead> {
     if (_controller.text != next) {
       _controller.text = next;
     }
-  }
-
-  void _handleFocus() {
-    setState(() {
-      _open = _focus.hasFocus && widget.enabled;
-    });
   }
 
   List<RawMaterial> _matchesFor(String query) {
@@ -1528,128 +1513,190 @@ class _PurchaseItemTypeaheadState extends State<_PurchaseItemTypeahead> {
         return words.every((word) => haystack.contains(word));
       });
     }
-    return list.take(8).toList();
+    return list.take(12).toList();
+  }
+
+  void _openList() {
+    if (!widget.enabled) return;
+    final box = _fieldKey.currentContext?.findRenderObject() as RenderBox?;
+    setState(() {
+      _fieldWidth = box?.size.width ?? MediaQuery.sizeOf(context).width;
+    });
+    if (!_portal.isShowing) {
+      _portal.show();
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _closeList() {
+    if (_portal.isShowing) {
+      _portal.hide();
+    }
   }
 
   void _pick(RawMaterial material) {
     _controller.text = _purchaseItemName(material);
+    _closeList();
     _focus.unfocus();
-    setState(() => _open = false);
     widget.onSelected(material);
   }
 
   @override
   Widget build(BuildContext context) {
     final matches = _matchesFor(_controller.text);
-    final showList = _open && widget.enabled;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        TextField(
-          controller: _controller,
-          focusNode: _focus,
-          enabled: widget.enabled,
-          onChanged: (_) => setState(() {}),
-          decoration: InputDecoration(
-            isDense: true,
-            filled: true,
-            fillColor: Colors.white,
-            labelText: 'Item',
-            hintText: 'Type to search',
-            prefixIcon: const Icon(Icons.search, size: 20),
-            suffixIcon: _controller.text.isEmpty
-                ? null
-                : IconButton(
-                    tooltip: 'Clear',
-                    icon: const Icon(Icons.close, size: 18),
-                    onPressed: () {
-                      _controller.clear();
-                      _focus.requestFocus();
-                      setState(() {});
-                    },
-                  ),
-            border: const OutlineInputBorder(),
-          ),
-        ),
-        if (showList) ...[
-          const SizedBox(height: 4),
-          Material(
-            color: Colors.white,
-            elevation: 2,
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              constraints: const BoxConstraints(maxHeight: 168),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFFD5DDDB)),
-              ),
-              child: matches.isEmpty
-                  ? const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-                      child: Text(
-                        'No matching items',
-                        style: TextStyle(color: Colors.black54, fontSize: 13),
-                      ),
-                    )
-                  : ListView.separated(
-                      padding: EdgeInsets.zero,
-                      shrinkWrap: true,
-                      itemCount: matches.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, i) {
-                        final material = matches[i];
-                        final extra = _purchaseItemExtra(material);
-                        final selected = material.id != null &&
-                            material.id == widget.value?.id;
-                        return InkWell(
-                          onTap: () => _pick(material),
-                          child: ColoredBox(
-                            color: selected
-                                ? BrandColors.teal.withOpacity(0.08)
-                                : Colors.white,
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 8,
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _purchaseItemName(material),
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: selected
-                                          ? FontWeight.w600
-                                          : FontWeight.w500,
-                                      color: selected
-                                          ? BrandColors.teal
-                                          : Colors.black87,
-                                    ),
+    return TapRegion(
+      groupId: _tapGroup,
+      onTapOutside: (_) {
+        _closeList();
+        _focus.unfocus();
+      },
+      child: OverlayPortal(
+        controller: _portal,
+        overlayChildBuilder: (context) {
+          return CompositedTransformFollower(
+            link: _link,
+            showWhenUnlinked: false,
+            targetAnchor: Alignment.bottomLeft,
+            followerAnchor: Alignment.topLeft,
+            offset: const Offset(0, 4),
+            child: Align(
+              alignment: Alignment.topLeft,
+              widthFactor: 1,
+              heightFactor: 1,
+              child: TapRegion(
+                groupId: _tapGroup,
+                child: Material(
+                  color: Colors.white,
+                  elevation: 6,
+                  shadowColor: Colors.black26,
+                  borderRadius: BorderRadius.circular(8),
+                  child: SizedBox(
+                    width: _fieldWidth,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 220),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFD5DDDB)),
+                        ),
+                        child: matches.isEmpty
+                            ? const Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 14,
+                                ),
+                                child: Text(
+                                  'No matching items',
+                                  style: TextStyle(
+                                    color: Colors.black54,
+                                    fontSize: 13,
                                   ),
-                                  if (extra != null)
-                                    Text(
-                                      extra,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.black54,
+                                ),
+                              )
+                            : ListView.separated(
+                                padding: EdgeInsets.zero,
+                                shrinkWrap: true,
+                                itemCount: matches.length,
+                                separatorBuilder: (_, __) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (context, i) {
+                                  final material = matches[i];
+                                  final extra = _purchaseItemExtra(material);
+                                  final selected = material.id != null &&
+                                      material.id == widget.value?.id;
+                                  return InkWell(
+                                    onTapDown: (_) => _pick(material),
+                                    child: ColoredBox(
+                                      color: selected
+                                          ? BrandColors.teal.withOpacity(0.08)
+                                          : Colors.white,
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 10,
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              _purchaseItemName(material),
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: selected
+                                                    ? FontWeight.w600
+                                                    : FontWeight.w500,
+                                                color: selected
+                                                    ? BrandColors.teal
+                                                    : Colors.black87,
+                                              ),
+                                            ),
+                                            if (extra != null)
+                                              Text(
+                                                extra,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.black54,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
                                       ),
                                     ),
-                                ],
+                                  );
+                                },
                               ),
-                            ),
-                          ),
-                        );
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+        child: CompositedTransformTarget(
+          link: _link,
+          child: TextField(
+            key: _fieldKey,
+            controller: _controller,
+            focusNode: _focus,
+            enabled: widget.enabled,
+            onTap: _openList,
+            onChanged: (_) => _openList(),
+            onSubmitted: (value) {
+              final matches = _matchesFor(value);
+              if (matches.isNotEmpty) {
+                _pick(matches.first);
+              }
+            },
+            decoration: InputDecoration(
+              isDense: true,
+              filled: true,
+              fillColor: Colors.white,
+              labelText: 'Item',
+              hintText: 'Type name, sub item or barcode',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              suffixIcon: _controller.text.isEmpty
+                  ? const Icon(Icons.arrow_drop_down)
+                  : IconButton(
+                      tooltip: 'Clear',
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () {
+                        _controller.clear();
+                        _focus.requestFocus();
+                        _openList();
                       },
                     ),
+              border: const OutlineInputBorder(),
             ),
           ),
-        ],
-      ],
+        ),
+      ),
     );
   }
 }
