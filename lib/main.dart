@@ -16,6 +16,7 @@ import 'screens/inventory_screen.dart';
 import 'screens/pos_screen.dart';
 import 'screens/reports_screen.dart';
 import 'screens/printer_settings_screen.dart';
+import 'screens/backup_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -386,6 +387,11 @@ class MainShell extends StatelessWidget {
               icon: Icons.print_outlined,
               label: 'Printers',
               page: const PrinterSettingsScreen(),
+            ),
+            NavItem(
+              icon: Icons.backup_outlined,
+              label: 'Backup',
+              page: const BackupScreen(),
             ),
           ]
         : [salesItem];

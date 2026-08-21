@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import '../services/report_pdf.dart';
 import '../services/repository.dart';
 import '../widgets/responsive_shell.dart';
 
@@ -229,26 +230,75 @@ class _ItemSalesTabState extends State<_ItemSalesTab> {
       return const Center(child: Text('No item sales yet'));
     }
 
+    final totalQty = _rows.fold<double>(
+      0,
+      (sum, r) => sum + ((r['sold_qty'] as num?)?.toDouble() ?? 0),
+    );
+    final totalAmt = _rows.fold<double>(
+      0,
+      (sum, r) => sum + ((r['total_amount'] as num?)?.toDouble() ?? 0),
+    );
+
     return ResponsivePage(
-      child: ListView.separated(
-        itemCount: _rows.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
-        itemBuilder: (context, i) {
-          final r = _rows[i];
-          final sub = (r['sub_item'] as String?)?.trim();
-          final stock = (r['current_stock'] as num?)?.toDouble();
-          return ListTile(
-            title: Text(r['item_name']?.toString() ?? ''),
-            subtitle: Text(
-              [
-                if (sub != null && sub.isNotEmpty) sub,
-                'Sold ${r['sold_qty']}',
-                if (stock != null) 'Stock left ${_formatNumber(stock)}',
-              ].join('  •  '),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Total sold: ${_formatNumber(totalQty)}  •  ₹${totalAmt.toStringAsFixed(2)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: () async {
+                  await ReportPdf.shareTable(
+                    title: 'Item Sales',
+                    headers: const ['Item', 'Sub item', 'Sold qty', 'Amount'],
+                    rows: _rows
+                        .map(
+                          (r) => [
+                            r['item_name']?.toString() ?? '',
+                            (r['sub_item'] as String?)?.trim() ?? '',
+                            r['sold_qty']?.toString() ?? '',
+                            '₹${r['total_amount']}',
+                          ],
+                        )
+                        .toList(),
+                    totalLine:
+                        'Total sold ${_formatNumber(totalQty)}  •  Amount ₹${totalAmt.toStringAsFixed(2)}',
+                  );
+                },
+                icon: const Icon(Icons.picture_as_pdf, size: 18),
+                label: const Text('Share PDF'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: ListView.separated(
+              itemCount: _rows.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, i) {
+                final r = _rows[i];
+                final sub = (r['sub_item'] as String?)?.trim();
+                final stock = (r['current_stock'] as num?)?.toDouble();
+                return ListTile(
+                  title: Text(r['item_name']?.toString() ?? ''),
+                  subtitle: Text(
+                    [
+                      if (sub != null && sub.isNotEmpty) sub,
+                      'Sold ${r['sold_qty']}',
+                      if (stock != null) 'Stock left ${_formatNumber(stock)}',
+                    ].join('  •  '),
+                  ),
+                  trailing: Text('₹${r['total_amount']}'),
+                );
+              },
             ),
-            trailing: Text('₹${r['total_amount']}'),
-          );
-        },
+          ),
+        ],
       ),
     );
   }
@@ -473,18 +523,80 @@ class _PurchaseReportTabState extends State<_PurchaseReportTab> {
 
   @override
   Widget build(BuildContext context) {
+    final totalAmt = _rows.fold<double>(
+      0,
+      (sum, r) => sum + ((r['amount'] as num?)?.toDouble() ?? 0),
+    );
+
     return ResponsivePage(
-      child: ListView.separated(
-        itemCount: _rows.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
-        itemBuilder: (context, i) {
-          final r = _rows[i];
-          return ListTile(
-            title: Text('${r['material_name']}  •  qty ${r['qty']} @ ₹${r['rate']}'),
-            subtitle: Text('${r['supplier_name'] ?? '-'}  •  ${r['purchase_date']}'),
-            trailing: Text('₹${r['amount']}'),
-          );
-        },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Total purchase: ₹${totalAmt.toStringAsFixed(2)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: _rows.isEmpty
+                    ? null
+                    : () async {
+                        await ReportPdf.shareTable(
+                          title: 'Purchase Report',
+                          headers: const [
+                            'Date',
+                            'Supplier',
+                            'Item',
+                            'Qty',
+                            'Rate',
+                            'Amount',
+                          ],
+                          rows: _rows
+                              .map(
+                                (r) => [
+                                  r['purchase_date']?.toString() ?? '',
+                                  r['supplier_name']?.toString() ?? '-',
+                                  r['material_name']?.toString() ?? '',
+                                  r['qty']?.toString() ?? '',
+                                  '₹${r['rate']}',
+                                  '₹${r['amount']}',
+                                ],
+                              )
+                              .toList(),
+                          totalLine:
+                              'Total purchase ₹${totalAmt.toStringAsFixed(2)}',
+                        );
+                      },
+                icon: const Icon(Icons.picture_as_pdf, size: 18),
+                label: const Text('Share PDF'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _rows.isEmpty
+                ? const Center(child: Text('No purchases yet'))
+                : ListView.separated(
+                    itemCount: _rows.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, i) {
+                      final r = _rows[i];
+                      return ListTile(
+                        title: Text(
+                          '${r['material_name']}  •  qty ${r['qty']} @ ₹${r['rate']}',
+                        ),
+                        subtitle: Text(
+                          '${r['supplier_name'] ?? '-'}  •  ${r['purchase_date']}',
+                        ),
+                        trailing: Text('₹${r['amount']}'),
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }

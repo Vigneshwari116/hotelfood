@@ -103,6 +103,42 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
   String? _error;
 
+  String _materialLabel(RawMaterial material) {
+    final sub = material.trimmedSubItem;
+    if (sub == null) return material.name;
+    return '${material.name} ($sub)';
+  }
+
+  Iterable<RawMaterial> _searchMaterials(String query) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) {
+      return _materials.take(40);
+    }
+    final words = q.split(RegExp(r'\s+'));
+    return _materials.where((material) {
+      final haystack = [
+        material.name,
+        material.trimmedSubItem ?? '',
+        material.barcode ?? '',
+      ].join(' ').toLowerCase();
+      return words.every((word) => haystack.contains(word));
+    }).take(40);
+  }
+
+  void _applyMaterial(_PurchaseLine line, RawMaterial? value) {
+    setState(() {
+      line.material = value;
+      line.packetsCtrl.clear();
+      if (line.rateCtrl.text.trim().isEmpty &&
+          value?.costPrice != null &&
+          value!.costPrice! > 0) {
+        final cp = value.costPrice!;
+        line.rateCtrl.text =
+            cp % 1 == 0 ? cp.toStringAsFixed(0) : cp.toStringAsFixed(2);
+      }
+    });
+  }
+
   // ==========================================================
   // INIT
   // ==========================================================
@@ -1122,39 +1158,67 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
           const SizedBox(height: 8),
 
-          // RAW MATERIAL
-          DropdownButtonFormField<RawMaterial>(
-            value: line.material,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              isDense: true,
-              labelText: 'Raw Material',
-              border: OutlineInputBorder(),
+          Autocomplete<RawMaterial>(
+            displayStringForOption: _materialLabel,
+            initialValue: TextEditingValue(
+              text: line.material == null ? '' : _materialLabel(line.material!),
             ),
-            items: _materials.map((material) {
-              return DropdownMenuItem<RawMaterial>(
-                value: material,
-                child: Text(
-                  material.trimmedSubItem == null
-                      ? material.name
-                      : '${material.name} (${material.trimmedSubItem})',
-                  overflow: TextOverflow.ellipsis,
+            optionsBuilder: (textEditingValue) {
+              return _searchMaterials(textEditingValue.text);
+            },
+            onSelected: _saving
+                ? (_) {}
+                : (value) => _applyMaterial(line, value),
+            fieldViewBuilder: (
+              context,
+              textController,
+              focusNode,
+              onFieldSubmitted,
+            ) {
+              return TextFormField(
+                controller: textController,
+                focusNode: focusNode,
+                enabled: !_saving,
+                decoration: const InputDecoration(
+                  isDense: true,
+                  labelText: 'Item',
+                  hintText: 'Type name, sub item or barcode',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.search, size: 20),
+                ),
+                onFieldSubmitted: (_) => onFieldSubmitted(),
+              );
+            },
+            optionsViewBuilder: (context, onSelected, options) {
+              return Align(
+                alignment: Alignment.topLeft,
+                child: Material(
+                  elevation: 4,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 240, maxWidth: 520),
+                    child: ListView.builder(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: options.length,
+                      itemBuilder: (context, i) {
+                        final material = options.elementAt(i);
+                        return ListTile(
+                          dense: true,
+                          title: Text(
+                            _materialLabel(material),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          subtitle: material.barcode == null ||
+                                  material.barcode!.trim().isEmpty
+                              ? null
+                              : Text(material.barcode!),
+                          onTap: () => onSelected(material),
+                        );
+                      },
+                    ),
+                  ),
                 ),
               );
-            }).toList(),
-            onChanged: _saving
-                ? null
-                : (value) {
-              setState(() {
-                line.material = value;
-                line.packetsCtrl.clear();
-                if (line.rateCtrl.text.trim().isEmpty && value?.costPrice != null &&
-                    value!.costPrice! > 0) {
-                  final cp = value.costPrice!;
-                  line.rateCtrl.text =
-                  cp % 1 == 0 ? cp.toStringAsFixed(0) : cp.toStringAsFixed(2);
-    }
-              });
             },
           ),
 
