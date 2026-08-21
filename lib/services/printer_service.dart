@@ -289,7 +289,7 @@ class _ReceiptScreenState
             children: [
               pw.Center(
                 child: pw.Text(
-                  'FIVE STAR',
+                  'SHILPA ENTERPRISE',
                   style: pw.TextStyle(
                     fontSize: _titleSize,
                     fontWeight: pw.FontWeight.bold,
@@ -595,7 +595,7 @@ class _ReceiptScreenState
       final result =
       await Printing.directPrintPdf(
         printer: _selectedPrinter!,
-        name: 'Five Star Bill #${widget.saleId}',
+        name: 'Shilpa Enterprise Bill #${widget.saleId}',
         format: _receiptFormat,
         onLayout: (format) {
           return _buildReceipt(
@@ -638,7 +638,7 @@ class _ReceiptScreenState
     try {
       await Printing.layoutPdf(
         name:
-        'Five Star Bill #${widget.saleId}',
+        'Shilpa Enterprise Bill #${widget.saleId}',
         format: _receiptFormat,
         onLayout: (format) {
           return _buildReceipt(

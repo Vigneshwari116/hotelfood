@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'brand_logo.dart';
+
 /// ============================================================
 /// BREAKPOINTS
 /// ============================================================
@@ -237,37 +239,16 @@ class _DesktopSidebar extends StatelessWidget {
           // --------------------------------------------------
 
           Container(
-            height: 80,
+            height: 108,
             width: double.infinity,
             padding: const EdgeInsets.symmetric(
-              horizontal: 20,
+              horizontal: 16,
+              vertical: 10,
             ),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary,
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.storefront,
-                  color: Colors.white,
-                  size: 30,
-                ),
-
-                const SizedBox(width: 12),
-
-                Expanded(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 19,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
+            color: Colors.white,
+            child: Semantics(
+              label: title,
+              child: const BrandLogo(height: 88),
             ),
           ),
 
@@ -436,60 +417,16 @@ class _AppDrawer extends StatelessWidget {
 
           Container(
             width: double.infinity,
+            color: Colors.white,
             padding: const EdgeInsets.fromLTRB(
-              20,
-              45,
-              20,
-              20,
+              16,
+              40,
+              16,
+              16,
             ),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.primary,
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Icons.storefront,
-                    color: theme.colorScheme.primary,
-                    size: 30,
-                  ),
-                ),
-
-                const SizedBox(width: 14),
-
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment:
-                    CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-
-                      const SizedBox(height: 3),
-
-                      const Text(
-                        'Order & Stock Console',
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+            child: Semantics(
+              label: title,
+              child: const BrandLogo(height: 110),
             ),
           ),
 

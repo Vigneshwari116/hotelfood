@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:foodstock/database/database_helper.dart';
+import 'services/item_import_service.dart';
 import 'services/repository.dart';
 
+import 'widgets/brand_logo.dart';
 import 'widgets/responsive_shell.dart';
+import 'theme/brand_theme.dart';
 
 import 'screens/dashboard_screen.dart';
 import 'screens/simple_masters_screen.dart';
@@ -12,6 +16,7 @@ import 'screens/inventory_screen.dart';
 import 'screens/pos_screen.dart';
 import 'screens/reports_screen.dart';
 import 'screens/printer_settings_screen.dart';
+import 'screens/backup_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,37 +37,10 @@ class RestoPosApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Five Star — Order & Stock Console',
+      title: 'Shilpa Enterprise',
       debugShowCheckedModeBanner: false,
 
-      theme: ThemeData(
-        useMaterial3: true,
-
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF8B1E1E),
-          primary: const Color(0xFF8B1E1E),
-          secondary: const Color(0xFFE0A526),
-        ),
-
-        scaffoldBackgroundColor: const Color(0xFFF7EFE1),
-
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF8B1E1E),
-          foregroundColor: Colors.white,
-          elevation: 0,
-        ),
-
-        inputDecorationTheme: const InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(),
-        ),
-
-        cardTheme: const CardThemeData(
-          elevation: 1,
-          margin: EdgeInsets.zero,
-        ),
-      ),
+      theme: buildBrandTheme(),
 
       home: const _StartupGate(),
     );
@@ -94,6 +72,14 @@ class _StartupGateState extends State<_StartupGate> {
     await DBHelper.instance.database;
     await Repository.instance.ensureDefaultUsers();
     await Repository.instance.ensureStandardUnits();
+    await Repository.instance.ensureDefaultCategories();
+    try {
+      await ItemImportService().importCsvText(
+        await rootBundle.loadString(
+          'assets/templates/menu_items_import.csv',
+        ),
+      );
+    } catch (_) {}
     await Repository.instance.writeOffExpiredStock();
   }
 
@@ -264,35 +250,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // LOGO
-                    const Icon(
-                      Icons.storefront,
-                      size: 60,
-                      color: Color(0xFF8B1E1E),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    const Text(
-                      'FIVE STAR',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF8B1E1E),
-                      ),
-                    ),
-
-                    const SizedBox(height: 4),
-
-                    Text(
-                      'Order & Stock Console',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
+                    const BrandLogo(height: 168),
 
                     const SizedBox(height: 28),
 
@@ -430,11 +388,16 @@ class MainShell extends StatelessWidget {
               label: 'Printers',
               page: const PrinterSettingsScreen(),
             ),
+            NavItem(
+              icon: Icons.backup_outlined,
+              label: 'Backup',
+              page: const BackupScreen(),
+            ),
           ]
         : [salesItem];
 
     return ResponsiveShell(
-      title: 'Five Star',
+      title: 'Shilpa Enterprise',
       userLabel: username,
       items: items,
       onLogout: () {

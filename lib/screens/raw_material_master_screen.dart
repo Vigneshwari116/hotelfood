@@ -1,11 +1,14 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:foodstock/model/models.dart';
+import '../services/item_import_service.dart';
 import '../services/repository.dart';
 import '../widgets/barcode_field.dart';
 import '../widgets/responsive_shell.dart';
@@ -42,7 +45,18 @@ class _RawMaterialMasterScreenState
       vsync: this,
     );
 
-    _loadAll();
+    _loadMenuFromExcelThenItems();
+  }
+
+  Future<void> _loadMenuFromExcelThenItems() async {
+    try {
+      await ItemImportService().importCsvText(
+        await rootBundle.loadString(
+          'assets/templates/menu_items_import.csv',
+        ),
+      );
+    } catch (_) {}
+    await _loadAll();
   }
 
   @override
@@ -132,6 +146,106 @@ class _RawMaterialMasterScreenState
     return '-';
   }
 
+  Future<void> _saveImportTemplate() async {
+    final items = await Repository.instance.rawMaterials();
+    final categories =
+        await Repository.instance.categories(type: 'raw_material');
+    final units = await Repository.instance.units();
+    final csv = ItemImportService().exportCsv(
+      items: items,
+      categories: categories,
+      units: units,
+    );
+    String? path;
+    if (!kIsWeb &&
+        (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save menu Excel/CSV',
+        fileName: 'Shilpa_Enterprise_menu_items.csv',
+        type: FileType.custom,
+        allowedExtensions: const ['csv', 'xlsx'],
+      );
+    }
+    path ??= p.join(
+      (await getApplicationDocumentsDirectory()).path,
+      'Shilpa_Enterprise_menu_items.csv',
+    );
+    if (path.toLowerCase().endsWith('.xlsx')) {
+      path = '${path.substring(0, path.length - 5)}.csv';
+    }
+    if (!path.toLowerCase().endsWith('.csv')) {
+      path = '$path.csv';
+    }
+    await File(path).writeAsString(csv);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Menu file saved to $path')),
+    );
+  }
+
+  Future<void> _importItemsFile() async {
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['csv', 'xlsx', 'xls'],
+      allowMultiple: false,
+    );
+    if (picked == null ||
+        picked.files.isEmpty ||
+        picked.files.first.path == null) {
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return const Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            ),
+          ),
+        );
+      },
+    );
+
+    try {
+      final result = await ItemImportService().importFile(
+        picked.files.first.path!,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      await _loadAll();
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Import complete'),
+            content: Text(
+              'Added ${result.created} new item(s).\n'
+              'Updated ${result.updated} existing item(s).'
+              '${result.errors.isEmpty ? '' : '\n\n${result.errors.take(8).join('\n')}'}',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Import failed: $e')),
+      );
+    }
+  }
+
   // ============================================================
   // IMAGE PICKER
   // ============================================================
@@ -207,106 +321,6 @@ class _RawMaterialMasterScreenState
     if (saved == true) {
       await _loadAll();
     }
-  }
-
-  // ============================================================
-  // RAW MATERIAL PASSWORD
-  // ============================================================
-
-  Future<bool> _verifyRawMaterialPassword(
-      int id,
-      ) async {
-    final controller =
-    TextEditingController();
-
-    final repository =
-        Repository.instance;
-
-    final noPassword =
-    await repository.verifyRawMaterialPin(
-      id,
-      '',
-    );
-
-    if (noPassword) {
-      controller.dispose();
-      return true;
-    }
-
-    if (!mounted) {
-      controller.dispose();
-      return false;
-    }
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (_) {
-        return AlertDialog(
-          title: const Text(
-            'Enter Entry Password',
-          ),
-          content: TextField(
-            controller: controller,
-            obscureText: true,
-            autofocus: true,
-            decoration:
-            const InputDecoration(
-              labelText: 'PIN / Password',
-              border:
-              OutlineInputBorder(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(
-                  context,
-                  false,
-                );
-              },
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                final valid =
-                await repository
-                    .verifyRawMaterialPin(
-                  id,
-                  controller.text,
-                );
-
-                if (context.mounted) {
-                  Navigator.pop(
-                    context,
-                    valid,
-                  );
-                }
-              },
-              child: const Text('Unlock'),
-            ),
-          ],
-        );
-      },
-    );
-
-    controller.dispose();
-
-    if (result != true) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Incorrect password',
-            ),
-          ),
-        );
-      }
-
-      return false;
-    }
-
-    return true;
   }
 
   // ============================================================
@@ -570,7 +584,21 @@ class _RawMaterialMasterScreenState
               ),
             ),
 
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
+
+            IconButton(
+              tooltip: 'Save Excel/CSV template',
+              onPressed: _saveImportTemplate,
+              icon: const Icon(Icons.download_outlined),
+            ),
+
+            OutlinedButton.icon(
+              onPressed: _importItemsFile,
+              icon: const Icon(Icons.upload_file),
+              label: Text(isMobile ? 'Import' : 'Import CSV / Excel'),
+            ),
+
+            const SizedBox(width: 8),
 
             FilledButton.icon(
               onPressed: () {
@@ -1420,7 +1448,17 @@ class _RawMaterialEditorDialogState
           item.barcode ?? '';
 
       _openingController.text =
-          item.openingStock.toString();
+          item.currentStock.toString();
+
+      if (item.unitsPerPacket != null &&
+          item.unitsPerPacket! > 0 &&
+          item.currentStock > 0) {
+        final packets =
+            item.currentStock / item.unitsPerPacket!;
+        _packetsController.text = packets % 1 == 0
+            ? packets.toStringAsFixed(0)
+            : packets.toStringAsFixed(2);
+      }
 
       _reorderController.text =
           item.reorderLevel.toString();
@@ -1471,8 +1509,6 @@ class _RawMaterialEditorDialogState
   }
 
   void _recalculateStock() {
-    if (widget.existing != null) return;
-
     final packets =
         double.tryParse(_packetsController.text.trim()) ?? 0;
     final perPacket =
@@ -1593,8 +1629,11 @@ class _RawMaterialEditorDialogState
         ) ??
             0,
         currentStock:
-        widget.existing
-            ?.currentStock ??
+        double.tryParse(
+          _openingController
+              .text
+              .trim(),
+        ) ??
             0,
         reorderLevel:
         double.tryParse(
@@ -1841,7 +1880,8 @@ class _RawMaterialEditorDialogState
                 ),
                 TextField(
                   controller: _packetsController,
-                  enabled: widget.existing == null,
+                  enabled: true,
+                  readOnly: false,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
@@ -1861,7 +1901,8 @@ class _RawMaterialEditorDialogState
                 ),
                 TextField(
                   controller: _openingController,
-                  enabled: widget.existing == null,
+                  enabled: true,
+                  readOnly: false,
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),

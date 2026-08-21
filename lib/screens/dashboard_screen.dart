@@ -11,7 +11,6 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   int _materials = 0;
-  int _menuItems = 0;
   int _lowStock = 0;
 
   double _todaySales = 0;
@@ -101,28 +100,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           'Today\'s Sales',
                           '₹${_todaySales.toStringAsFixed(2)}',
                           Icons.point_of_sale,
-                          Colors.green,
                         ),
-
                         _statCard(
                           'Menu Items',
                           '$_materials',
                           Icons.inventory_2,
-                          Colors.blue,
                         ),
-
-                        _statCard(
-                          'Menu Items',
-                          '$_menuItems',
-                          Icons.restaurant_menu,
-                          Colors.orange,
-                        ),
-
                         _statCard(
                           'Low Stock Alerts',
                           '$_lowStock',
                           Icons.warning_amber,
-                          Colors.red,
                         ),
                       ],
                     ),
@@ -139,8 +126,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       String label,
       String value,
       IconData icon,
-      Color color,
       ) {
+    final color = Theme.of(context).colorScheme.primary;
     return Card(
       elevation: 2,
       clipBehavior: Clip.antiAlias,

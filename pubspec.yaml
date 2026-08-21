@@ -47,6 +47,7 @@ dependencies:
   file_picker: 10.3.8
   pdf: 3.11.1
   printing: 5.13.3
+  archive: ^3.6.1
 
   shared_preferences: ^2.5.3
 dev_dependencies:
@@ -60,6 +61,14 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^6.0.0
   msix: ^3.16.7
+
+msix_config:
+  display_name: Shilpa Enterprise
+  publisher_display_name: Shilpa Enterprise
+  identity_name: ShilpaEnterprise.POS
+  msix_version: 1.0.0.0
+  logo_path: assets/branding/shilpa_icon.png
+  output_name: ShilpaEnterprise
 
 
 # For information on the generic Dart part of this file, see the
@@ -80,6 +89,10 @@ flutter:
   assets:
     - assets/fonts/NotoSans-Regular.ttf
     - assets/fonts/NotoSans-Bold.ttf
+    - assets/branding/shilpa_logo.png
+    - assets/branding/shilpa_icon.png
+    - assets/templates/menu_items_import.csv
+    - assets/templates/menu_items_import.xlsx
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

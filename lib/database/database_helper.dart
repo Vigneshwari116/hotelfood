@@ -62,9 +62,7 @@ class DBHelper {
       // DATABASE VERSION
       // ========================================================
       //
-      // Version 12
-      //
-      // Architecture:
+      // Version 13 — sale_items.combo_id (nullable) for combo lines.
       //
       // raw_materials
       //      |
@@ -72,14 +70,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      // There are NO:
-      //
-      // menu_items
-      // recipe_items
-      //
-      // Combos are built directly from raw materials.
-      //
-      version: 12,
+      version: 13,
 
       onConfigure: (db) async {
         await db.execute(
@@ -435,6 +426,8 @@ class DBHelper {
         sale_id INTEGER NOT NULL,
 
         raw_material_id INTEGER NOT NULL,
+
+        combo_id INTEGER,
 
         item_name TEXT NOT NULL,
 
@@ -1124,6 +1117,31 @@ class DBHelper {
       final saleNames = saleColumns
           .map((c) => c['name'] as String)
           .toSet();
+
+      if (!saleNames.contains('sub_item')) {
+        await db.execute(
+          'ALTER TABLE sale_items ADD COLUMN sub_item TEXT',
+        );
+      }
+    }
+
+    // ==========================================================
+    // VERSION 12 -> 13
+    // ==========================================================
+
+    if (oldVersion < 13) {
+      final saleColumns = await db.rawQuery(
+        'PRAGMA table_info(sale_items)',
+      );
+      final saleNames = saleColumns
+          .map((c) => c['name'] as String)
+          .toSet();
+
+      if (!saleNames.contains('combo_id')) {
+        await db.execute(
+          'ALTER TABLE sale_items ADD COLUMN combo_id INTEGER',
+        );
+      }
 
       if (!saleNames.contains('sub_item')) {
         await db.execute(

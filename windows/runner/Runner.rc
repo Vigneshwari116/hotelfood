@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "foodstock" "\0"
+            VALUE "CompanyName", "Shilpa Enterprise" "\0"
+            VALUE "FileDescription", "Shilpa Enterprise" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "foodstock" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "foodstock.exe" "\0"
-            VALUE "ProductName", "foodstock" "\0"
+            VALUE "InternalName", "ShilpaEnterprise" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Shilpa Enterprise. All rights reserved." "\0"
+            VALUE "OriginalFilename", "ShilpaEnterprise.exe" "\0"
+            VALUE "ProductName", "Shilpa Enterprise" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
