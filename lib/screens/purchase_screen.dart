@@ -28,10 +28,21 @@ class _PurchaseLine {
   final TextEditingController rateCtrl =
   TextEditingController();
 
+  /// Bumped when the line is cleared so the item search field resets.
+  Key searchKey = UniqueKey();
+
   void dispose() {
     packetsCtrl.dispose();
     qtyCtrl.dispose();
     rateCtrl.dispose();
+  }
+
+  void reset() {
+    material = null;
+    packetsCtrl.clear();
+    qtyCtrl.clear();
+    rateCtrl.clear();
+    searchKey = UniqueKey();
   }
 
   double get packets {
@@ -426,16 +437,19 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
   void _removeLine(int index) {
     if (_saving) return;
+    if (index < 0 || index >= _lines.length) return;
 
-    if (_lines.length == 1) {
-      return;
-    }
+    FocusScope.of(context).unfocus();
 
-    final line = _lines.removeAt(index);
+    setState(() {
+      if (_lines.length == 1) {
+        _lines.first.reset();
+        return;
+      }
 
-    line.dispose();
-
-    setState(() {});
+      final line = _lines.removeAt(index);
+      line.dispose();
+    });
   }
 
   // ==========================================================
@@ -1141,17 +1155,14 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               ),
               const Spacer(),
               IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                tooltip: 'Remove item',
-                iconSize: 20,
+                tooltip: _lines.length == 1 ? 'Clear item' : 'Remove item',
+                iconSize: 22,
+                visualDensity: VisualDensity.compact,
                 icon: const Icon(
                   Icons.delete_outline,
                   color: Colors.red,
                 ),
-                onPressed: _saving || _lines.length == 1
-                    ? null
-                    : () => _removeLine(index),
+                onPressed: _saving ? null : () => _removeLine(index),
               ),
             ],
           ),
@@ -1159,6 +1170,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           const SizedBox(height: 8),
 
           Autocomplete<RawMaterial>(
+            key: line.searchKey,
             displayStringForOption: _materialLabel,
             initialValue: TextEditingValue(
               text: line.material == null ? '' : _materialLabel(line.material!),
@@ -1194,8 +1206,14 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 alignment: Alignment.topLeft,
                 child: Material(
                   elevation: 4,
+                  borderRadius: BorderRadius.circular(8),
+                  clipBehavior: Clip.antiAlias,
                   child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 240, maxWidth: 520),
+                    constraints: const BoxConstraints(
+                      maxHeight: 220,
+                      minWidth: 280,
+                      maxWidth: 480,
+                    ),
                     child: ListView.builder(
                       padding: EdgeInsets.zero,
                       shrinkWrap: true,
