@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:foodstock/model/models.dart';
 
 import '../services/repository.dart';
+import '../theme/brand_theme.dart';
 import '../widgets/responsive_shell.dart';
 
 class PurchaseScreen extends StatefulWidget {
@@ -109,37 +110,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   bool _saving = false;
 
   String? _error;
-
-  String _itemName(RawMaterial material) => material.name.trim();
-
-  String? _itemExtra(RawMaterial material) {
-    final name = _itemName(material).toLowerCase();
-    final sub = material.trimmedSubItem;
-    final barcode = material.barcode?.trim();
-    final parts = <String>[];
-    if (sub != null && sub.toLowerCase() != name) {
-      parts.add(sub);
-    }
-    if (barcode != null && barcode.isNotEmpty) {
-      parts.add(barcode);
-    }
-    if (parts.isEmpty) return null;
-    return parts.join('  •  ');
-  }
-
-  Future<void> _pickMaterial(_PurchaseLine line) async {
-    if (_saving) return;
-    final selected = await showDialog<RawMaterial>(
-      context: context,
-      builder: (context) => _PurchaseItemSearchDialog(
-        materials: _materials,
-        selectedId: line.material?.id,
-      ),
-    );
-    if (selected != null && mounted) {
-      _applyMaterial(line, selected);
-    }
-  }
 
   void _applyMaterial(_PurchaseLine line, RawMaterial? value) {
     setState(() {
@@ -1174,40 +1144,22 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
           const SizedBox(height: 8),
 
-          InkWell(
-            onTap: _saving ? null : () => _pickMaterial(line),
-            child: InputDecorator(
-              isEmpty: line.material == null,
-              decoration: const InputDecoration(
-                isDense: true,
-                labelText: 'Item',
-                hintText: 'Search item',
-                border: OutlineInputBorder(),
-                prefixIcon: Icon(Icons.search, size: 20),
-                suffixIcon: Icon(Icons.arrow_drop_down),
-              ),
-              child: line.material == null
-                  ? const Text('Search item')
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          _itemName(line.material!),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        if (_itemExtra(line.material!) != null)
-                          Text(
-                            _itemExtra(line.material!)!,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade700,
-                            ),
-                          ),
-                      ],
-                    ),
-            ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final width = (constraints.maxWidth * 0.5).clamp(260.0, 420.0);
+              return Align(
+                alignment: Alignment.centerLeft,
+                child: SizedBox(
+                  width: width,
+                  child: _PurchaseItemTypeahead(
+                    materials: _materials,
+                    value: line.material,
+                    enabled: !_saving,
+                    onSelected: (material) => _applyMaterial(line, material),
+                  ),
+                ),
+              );
+            },
           ),
 
           // PACKETS (only for materials with a known packet size)
@@ -1486,132 +1438,218 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   }
 }
 
-class _PurchaseItemSearchDialog extends StatefulWidget {
-  final List<RawMaterial> materials;
-  final int? selectedId;
+String _purchaseItemName(RawMaterial material) => material.name.trim();
 
-  const _PurchaseItemSearchDialog({
+String? _purchaseItemExtra(RawMaterial material) {
+  final name = _purchaseItemName(material).toLowerCase();
+  final sub = material.trimmedSubItem;
+  final barcode = material.barcode?.trim();
+  final parts = <String>[];
+  if (sub != null && sub.toLowerCase() != name) {
+    parts.add(sub);
+  }
+  if (barcode != null && barcode.isNotEmpty) {
+    parts.add(barcode);
+  }
+  if (parts.isEmpty) return null;
+  return parts.join('  •  ');
+}
+
+class _PurchaseItemTypeahead extends StatefulWidget {
+  final List<RawMaterial> materials;
+  final RawMaterial? value;
+  final bool enabled;
+  final ValueChanged<RawMaterial> onSelected;
+
+  const _PurchaseItemTypeahead({
     required this.materials,
-    this.selectedId,
+    required this.value,
+    required this.enabled,
+    required this.onSelected,
   });
 
   @override
-  State<_PurchaseItemSearchDialog> createState() =>
-      _PurchaseItemSearchDialogState();
+  State<_PurchaseItemTypeahead> createState() => _PurchaseItemTypeaheadState();
 }
 
-class _PurchaseItemSearchDialogState extends State<_PurchaseItemSearchDialog> {
-  final _query = TextEditingController();
+class _PurchaseItemTypeaheadState extends State<_PurchaseItemTypeahead> {
+  final _controller = TextEditingController();
+  final _focus = FocusNode();
+  bool _open = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncTextFromValue();
+    _focus.addListener(_handleFocus);
+  }
+
+  @override
+  void didUpdateWidget(covariant _PurchaseItemTypeahead oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value?.id != oldWidget.value?.id && !_focus.hasFocus) {
+      _syncTextFromValue();
+      _open = false;
+    }
+  }
 
   @override
   void dispose() {
-    _query.dispose();
+    _focus.removeListener(_handleFocus);
+    _controller.dispose();
+    _focus.dispose();
     super.dispose();
   }
 
-  List<RawMaterial> get _matches {
-    final q = _query.text.trim().toLowerCase();
-    if (q.isEmpty) return widget.materials;
-    final words = q.split(RegExp(r'\s+'));
-    return widget.materials.where((material) {
-      final haystack = [
-        material.name,
-        material.trimmedSubItem ?? '',
-        material.barcode ?? '',
-      ].join(' ').toLowerCase();
-      return words.every((word) => haystack.contains(word));
-    }).toList();
+  void _syncTextFromValue() {
+    final next = widget.value == null ? '' : _purchaseItemName(widget.value!);
+    if (_controller.text != next) {
+      _controller.text = next;
+    }
   }
 
-  String _name(RawMaterial material) => material.name.trim();
+  void _handleFocus() {
+    setState(() {
+      _open = _focus.hasFocus && widget.enabled;
+    });
+  }
 
-  String? _extra(RawMaterial material) {
-    final name = _name(material).toLowerCase();
-    final sub = material.trimmedSubItem;
-    final barcode = material.barcode?.trim();
-    final parts = <String>[];
-    if (sub != null && sub.toLowerCase() != name) {
-      parts.add(sub);
+  List<RawMaterial> _matchesFor(String query) {
+    final q = query.trim().toLowerCase();
+    Iterable<RawMaterial> list = widget.materials;
+    if (q.isNotEmpty) {
+      final words = q.split(RegExp(r'\s+'));
+      list = list.where((material) {
+        final haystack = [
+          material.name,
+          material.trimmedSubItem ?? '',
+          material.barcode ?? '',
+        ].join(' ').toLowerCase();
+        return words.every((word) => haystack.contains(word));
+      });
     }
-    if (barcode != null && barcode.isNotEmpty) {
-      parts.add(barcode);
-    }
-    if (parts.isEmpty) return null;
-    return parts.join('  •  ');
+    return list.take(8).toList();
+  }
+
+  void _pick(RawMaterial material) {
+    _controller.text = _purchaseItemName(material);
+    _focus.unfocus();
+    setState(() => _open = false);
+    widget.onSelected(material);
   }
 
   @override
   Widget build(BuildContext context) {
-    final matches = _matches;
-    return Dialog(
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 560),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Search item',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _query,
-                autofocus: true,
-                onChanged: (_) => setState(() {}),
-                decoration: InputDecoration(
-                  hintText: 'Type name, sub item or barcode',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon: _query.text.isEmpty
-                      ? null
-                      : IconButton(
-                          icon: const Icon(Icons.clear),
-                          onPressed: () {
-                            _query.clear();
-                            setState(() {});
-                          },
-                        ),
-                  border: const OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                '${matches.length} item${matches.length == 1 ? '' : 's'}',
-                style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
-              ),
-              const SizedBox(height: 4),
-              Expanded(
-                child: matches.isEmpty
-                    ? const Center(child: Text('No matching items'))
-                    : ListView.separated(
-                        itemCount: matches.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (context, i) {
-                          final material = matches[i];
-                          final extra = _extra(material);
-                          return ListTile(
-                            selected: material.id != null &&
-                                material.id == widget.selectedId,
-                            title: Text(_name(material)),
-                            subtitle: extra == null ? null : Text(extra),
-                            onTap: () => Navigator.pop(context, material),
-                          );
-                        },
-                      ),
-              ),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
-                ),
-              ),
-            ],
+    final matches = _matchesFor(_controller.text);
+    final showList = _open && widget.enabled;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        TextField(
+          controller: _controller,
+          focusNode: _focus,
+          enabled: widget.enabled,
+          onChanged: (_) => setState(() {}),
+          decoration: InputDecoration(
+            isDense: true,
+            filled: true,
+            fillColor: Colors.white,
+            labelText: 'Item',
+            hintText: 'Type to search',
+            prefixIcon: const Icon(Icons.search, size: 20),
+            suffixIcon: _controller.text.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear',
+                    icon: const Icon(Icons.close, size: 18),
+                    onPressed: () {
+                      _controller.clear();
+                      _focus.requestFocus();
+                      setState(() {});
+                    },
+                  ),
+            border: const OutlineInputBorder(),
           ),
         ),
-      ),
+        if (showList) ...[
+          const SizedBox(height: 4),
+          Material(
+            color: Colors.white,
+            elevation: 2,
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              constraints: const BoxConstraints(maxHeight: 168),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFD5DDDB)),
+              ),
+              child: matches.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                      child: Text(
+                        'No matching items',
+                        style: TextStyle(color: Colors.black54, fontSize: 13),
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: EdgeInsets.zero,
+                      shrinkWrap: true,
+                      itemCount: matches.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (context, i) {
+                        final material = matches[i];
+                        final extra = _purchaseItemExtra(material);
+                        final selected = material.id != null &&
+                            material.id == widget.value?.id;
+                        return InkWell(
+                          onTap: () => _pick(material),
+                          child: ColoredBox(
+                            color: selected
+                                ? BrandColors.teal.withOpacity(0.08)
+                                : Colors.white,
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _purchaseItemName(material),
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: selected
+                                          ? FontWeight.w600
+                                          : FontWeight.w500,
+                                      color: selected
+                                          ? BrandColors.teal
+                                          : Colors.black87,
+                                    ),
+                                  ),
+                                  if (extra != null)
+                                    Text(
+                                      extra,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.black54,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
