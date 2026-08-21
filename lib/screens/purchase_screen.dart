@@ -28,9 +28,6 @@ class _PurchaseLine {
   final TextEditingController rateCtrl =
   TextEditingController();
 
-  /// Bumped when the line is cleared so the item search field resets.
-  Key searchKey = UniqueKey();
-
   void dispose() {
     packetsCtrl.dispose();
     qtyCtrl.dispose();
@@ -42,7 +39,6 @@ class _PurchaseLine {
     packetsCtrl.clear();
     qtyCtrl.clear();
     rateCtrl.clear();
-    searchKey = UniqueKey();
   }
 
   double get packets {
@@ -114,26 +110,35 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
   String? _error;
 
-  String _materialLabel(RawMaterial material) {
+  String _itemName(RawMaterial material) => material.name.trim();
+
+  String? _itemExtra(RawMaterial material) {
+    final name = _itemName(material).toLowerCase();
     final sub = material.trimmedSubItem;
-    if (sub == null) return material.name;
-    return '${material.name} ($sub)';
+    final barcode = material.barcode?.trim();
+    final parts = <String>[];
+    if (sub != null && sub.toLowerCase() != name) {
+      parts.add(sub);
+    }
+    if (barcode != null && barcode.isNotEmpty) {
+      parts.add(barcode);
+    }
+    if (parts.isEmpty) return null;
+    return parts.join('  •  ');
   }
 
-  Iterable<RawMaterial> _searchMaterials(String query) {
-    final q = query.trim().toLowerCase();
-    if (q.isEmpty) {
-      return _materials.take(40);
+  Future<void> _pickMaterial(_PurchaseLine line) async {
+    if (_saving) return;
+    final selected = await showDialog<RawMaterial>(
+      context: context,
+      builder: (context) => _PurchaseItemSearchDialog(
+        materials: _materials,
+        selectedId: line.material?.id,
+      ),
+    );
+    if (selected != null && mounted) {
+      _applyMaterial(line, selected);
     }
-    final words = q.split(RegExp(r'\s+'));
-    return _materials.where((material) {
-      final haystack = [
-        material.name,
-        material.trimmedSubItem ?? '',
-        material.barcode ?? '',
-      ].join(' ').toLowerCase();
-      return words.every((word) => haystack.contains(word));
-    }).take(40);
   }
 
   void _applyMaterial(_PurchaseLine line, RawMaterial? value) {
@@ -1169,75 +1174,40 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
           const SizedBox(height: 8),
 
-          Autocomplete<RawMaterial>(
-            key: line.searchKey,
-            displayStringForOption: _materialLabel,
-            initialValue: TextEditingValue(
-              text: line.material == null ? '' : _materialLabel(line.material!),
-            ),
-            optionsBuilder: (textEditingValue) {
-              return _searchMaterials(textEditingValue.text);
-            },
-            onSelected: _saving
-                ? (_) {}
-                : (value) => _applyMaterial(line, value),
-            fieldViewBuilder: (
-              context,
-              textController,
-              focusNode,
-              onFieldSubmitted,
-            ) {
-              return TextFormField(
-                controller: textController,
-                focusNode: focusNode,
-                enabled: !_saving,
-                decoration: const InputDecoration(
-                  isDense: true,
-                  labelText: 'Item',
-                  hintText: 'Type name, sub item or barcode',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.search, size: 20),
-                ),
-                onFieldSubmitted: (_) => onFieldSubmitted(),
-              );
-            },
-            optionsViewBuilder: (context, onSelected, options) {
-              return Align(
-                alignment: Alignment.topLeft,
-                child: Material(
-                  elevation: 4,
-                  borderRadius: BorderRadius.circular(8),
-                  clipBehavior: Clip.antiAlias,
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(
-                      maxHeight: 220,
-                      minWidth: 280,
-                      maxWidth: 480,
-                    ),
-                    child: ListView.builder(
-                      padding: EdgeInsets.zero,
-                      shrinkWrap: true,
-                      itemCount: options.length,
-                      itemBuilder: (context, i) {
-                        final material = options.elementAt(i);
-                        return ListTile(
-                          dense: true,
-                          title: Text(
-                            _materialLabel(material),
+          InkWell(
+            onTap: _saving ? null : () => _pickMaterial(line),
+            child: InputDecorator(
+              isEmpty: line.material == null,
+              decoration: const InputDecoration(
+                isDense: true,
+                labelText: 'Item',
+                hintText: 'Search item',
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.search, size: 20),
+                suffixIcon: Icon(Icons.arrow_drop_down),
+              ),
+              child: line.material == null
+                  ? const Text('Search item')
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _itemName(line.material!),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        if (_itemExtra(line.material!) != null)
+                          Text(
+                            _itemExtra(line.material!)!,
                             overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade700,
+                            ),
                           ),
-                          subtitle: material.barcode == null ||
-                                  material.barcode!.trim().isEmpty
-                              ? null
-                              : Text(material.barcode!),
-                          onTap: () => onSelected(material),
-                        );
-                      },
+                      ],
                     ),
-                  ),
-                ),
-              );
-            },
+            ),
           ),
 
           // PACKETS (only for materials with a known packet size)
@@ -1510,6 +1480,136 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 },
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PurchaseItemSearchDialog extends StatefulWidget {
+  final List<RawMaterial> materials;
+  final int? selectedId;
+
+  const _PurchaseItemSearchDialog({
+    required this.materials,
+    this.selectedId,
+  });
+
+  @override
+  State<_PurchaseItemSearchDialog> createState() =>
+      _PurchaseItemSearchDialogState();
+}
+
+class _PurchaseItemSearchDialogState extends State<_PurchaseItemSearchDialog> {
+  final _query = TextEditingController();
+
+  @override
+  void dispose() {
+    _query.dispose();
+    super.dispose();
+  }
+
+  List<RawMaterial> get _matches {
+    final q = _query.text.trim().toLowerCase();
+    if (q.isEmpty) return widget.materials;
+    final words = q.split(RegExp(r'\s+'));
+    return widget.materials.where((material) {
+      final haystack = [
+        material.name,
+        material.trimmedSubItem ?? '',
+        material.barcode ?? '',
+      ].join(' ').toLowerCase();
+      return words.every((word) => haystack.contains(word));
+    }).toList();
+  }
+
+  String _name(RawMaterial material) => material.name.trim();
+
+  String? _extra(RawMaterial material) {
+    final name = _name(material).toLowerCase();
+    final sub = material.trimmedSubItem;
+    final barcode = material.barcode?.trim();
+    final parts = <String>[];
+    if (sub != null && sub.toLowerCase() != name) {
+      parts.add(sub);
+    }
+    if (barcode != null && barcode.isNotEmpty) {
+      parts.add(barcode);
+    }
+    if (parts.isEmpty) return null;
+    return parts.join('  •  ');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final matches = _matches;
+    return Dialog(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 560),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Search item',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _query,
+                autofocus: true,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  hintText: 'Type name, sub item or barcode',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: _query.text.isEmpty
+                      ? null
+                      : IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            _query.clear();
+                            setState(() {});
+                          },
+                        ),
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${matches.length} item${matches.length == 1 ? '' : 's'}',
+                style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              Expanded(
+                child: matches.isEmpty
+                    ? const Center(child: Text('No matching items'))
+                    : ListView.separated(
+                        itemCount: matches.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, i) {
+                          final material = matches[i];
+                          final extra = _extra(material);
+                          return ListTile(
+                            selected: material.id != null &&
+                                material.id == widget.selectedId,
+                            title: Text(_name(material)),
+                            subtitle: extra == null ? null : Text(extra),
+                            onTap: () => Navigator.pop(context, material),
+                          );
+                        },
+                      ),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
