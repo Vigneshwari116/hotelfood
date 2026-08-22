@@ -25,6 +25,17 @@ void main() {
     expect(lines.length, greaterThan(1));
   });
 
+  test('skips extra item line when sub item matches the name', () {
+    expect(
+      ReceiptLayout.extraDetail('Chicken 65', 'Chicken 65'),
+      isFalse,
+    );
+    expect(
+      ReceiptLayout.extraDetail('Chicken 65', 'Boneless'),
+      isTrue,
+    );
+  });
+
   test('tax label uses percent from totals', () {
     expect(ReceiptLayout.taxLabel(61.40, 1228), 'Tax(5%)');
   });

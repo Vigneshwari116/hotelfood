@@ -294,7 +294,9 @@ class _BluetoothPrinterPanelState extends State<BluetoothPrinterPanel> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Printed at the top of the 58mm slip, like the FIVE STAR sample.',
+                  'Shop name, address, mobile and email print on every bill. '
+                  'Change them here, then tap Save header. '
+                  'If a field is empty, the FIVE STAR default is used.',
                   style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
                 ),
                 const SizedBox(height: 12),

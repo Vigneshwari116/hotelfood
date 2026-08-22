@@ -216,25 +216,27 @@ class _ReceiptScreenState
   bool get _narrow => _paperSize == '58mm';
 
   double get _titleSize {
-    if (_narrow) return 11;
-    if (_thermal) return 13;
+    if (_narrow) return 9;
+    if (_thermal) return 11;
     if (_paperSize == 'A5') return 16;
     return 20;
   }
 
   double get _subtitleSize {
+    if (_narrow) return 6;
     if (_thermal) return 7;
     return 10;
   }
 
   double get _bodySize {
-    if (_narrow) return 7;
+    if (_narrow) return 6.5;
     if (_thermal) return 8;
     return 10;
   }
 
   double get _totalSize {
-    if (_thermal) return 10;
+    if (_narrow) return 7;
+    if (_thermal) return 9;
     return 14;
   }
 
@@ -292,12 +294,8 @@ class _ReceiptScreenState
       ),
     );
 
-    pw.MemoryImage? headerLogo;
     pw.MemoryImage? footerLogo;
     try {
-      headerLogo = pw.MemoryImage(
-        (await rootBundle.load(BrandAssets.icon)).buffer.asUint8List(),
-      );
       footerLogo = pw.MemoryImage(
         (await rootBundle.load(BrandAssets.logo)).buffer.asUint8List(),
       );
@@ -311,14 +309,6 @@ class _ReceiptScreenState
             crossAxisAlignment:
             pw.CrossAxisAlignment.stretch,
             children: [
-              if (headerLogo != null)
-                pw.Center(
-                  child: pw.Image(
-                    headerLogo,
-                    height: _narrow ? 36 : 48,
-                  ),
-                ),
-
               pw.Center(
                 child: pw.Text(
                   _profile.shopName.toUpperCase(),
@@ -426,7 +416,7 @@ class _ReceiptScreenState
                 pw.Center(
                   child: pw.Image(
                     footerLogo,
-                    height: _narrow ? 42 : 56,
+                    height: _narrow ? 32 : 48,
                   ),
                 ),
                 pw.SizedBox(height: 4),
@@ -436,7 +426,7 @@ class _ReceiptScreenState
                 child: pw.Text(
                   'Thank You',
                   style: pw.TextStyle(
-                    fontSize: _thermal ? 10 : 12,
+                    fontSize: _subtitleSize,
                     fontWeight: pw.FontWeight.bold,
                   ),
                 ),
@@ -495,8 +485,7 @@ class _ReceiptScreenState
                   maxLines: 2,
                   style: pw.TextStyle(fontSize: _bodySize),
                 ),
-                if (line.subItem != null &&
-                    line.subItem!.trim().isNotEmpty)
+                if (ReceiptLayout.extraDetail(line.name, line.subItem))
                   pw.Text(
                     line.subItem!.trim(),
                     maxLines: 1,

@@ -27,15 +27,11 @@ class EscPosReceiptBuilder {
     var bytes = <int>[];
     bytes += generator.reset();
 
-    bytes += await _logo(generator, BrandAssets.icon, 168);
-
     bytes += generator.text(
       profile.shopName.toUpperCase(),
       styles: const PosStyles(
         align: PosAlign.center,
         bold: true,
-        height: PosTextSize.size2,
-        width: PosTextSize.size2,
       ),
     );
 
@@ -91,7 +87,7 @@ class EscPosReceiptBuilder {
       for (final row in printed) {
         bytes += generator.text(row);
       }
-      if (line.subItem != null && line.subItem!.trim().isNotEmpty) {
+      if (ReceiptLayout.extraDetail(line.name, line.subItem)) {
         bytes += generator.text('  ${line.subItem!.trim()}');
       }
     }
@@ -134,8 +130,6 @@ class EscPosReceiptBuilder {
       styles: const PosStyles(
         align: PosAlign.center,
         bold: true,
-        height: PosTextSize.size2,
-        width: PosTextSize.size1,
       ),
     );
     bytes += generator.feed(3);

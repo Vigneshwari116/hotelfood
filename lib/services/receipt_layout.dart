@@ -79,6 +79,12 @@ class ReceiptLayout {
     return lines;
   }
 
+  static bool extraDetail(String name, String? subItem) {
+    final extra = subItem?.trim() ?? '';
+    if (extra.isEmpty) return false;
+    return extra.toLowerCase() != name.trim().toLowerCase();
+  }
+
   static String qtyText(double qty) {
     if (qty % 1 == 0) return qty.toInt().toString();
     return qty.toStringAsFixed(2);
