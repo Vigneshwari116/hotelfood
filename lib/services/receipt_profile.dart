@@ -57,7 +57,6 @@ class ReceiptProfile {
   }
 
   static Future<ReceiptProfile> load() async {
-    final prefs = await SharedPreferences.getInstance();
-    return ReceiptProfile.fromPrefs(prefs);
+    return ReceiptProfile.defaults();
   }
 }

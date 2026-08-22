@@ -4,6 +4,10 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+base {
+    archivesName.set("ShilpaEnterprise")
+}
+
 android {
     namespace = "com.example.foodstock"
     compileSdk = 36
@@ -42,4 +46,15 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    doLast {
+        val dir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
+        val built = dir.listFiles()?.firstOrNull { it.extension == "apk" } ?: return@doLast
+        val named = dir.resolve("ShilpaEnterprise.apk")
+        if (built.absolutePath != named.absolutePath) {
+            built.copyTo(named, overwrite = true)
+        }
+    }
 }

@@ -216,27 +216,26 @@ class _ReceiptScreenState
   bool get _narrow => _paperSize == '58mm';
 
   double get _titleSize {
-    if (_narrow) return 9;
-    if (_thermal) return 11;
+    if (_narrow) return 13;
+    if (_thermal) return 13;
     if (_paperSize == 'A5') return 16;
     return 20;
   }
 
   double get _subtitleSize {
-    if (_narrow) return 6;
     if (_thermal) return 7;
     return 10;
   }
 
   double get _bodySize {
-    if (_narrow) return 6.5;
+    if (_narrow) return 7;
     if (_thermal) return 8;
     return 10;
   }
 
   double get _totalSize {
-    if (_narrow) return 7;
-    if (_thermal) return 9;
+    if (_narrow) return 10;
+    if (_thermal) return 11;
     return 14;
   }
 

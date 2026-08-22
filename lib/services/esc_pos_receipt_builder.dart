@@ -32,6 +32,8 @@ class EscPosReceiptBuilder {
       styles: const PosStyles(
         align: PosAlign.center,
         bold: true,
+        height: PosTextSize.size2,
+        width: PosTextSize.size1,
       ),
     );
 

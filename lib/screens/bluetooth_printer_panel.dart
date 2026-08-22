@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/bluetooth_thermal_printer.dart';
-import 'package:foodstock/services/receipt_profile.dart';
 import 'package:foodstock/services/thermal/thermal_bridge.dart';
 
 class BluetoothPrinterPanel extends StatefulWidget {
@@ -20,50 +19,19 @@ class _BluetoothPrinterPanelState extends State<BluetoothPrinterPanel> {
   bool _scanning = false;
   bool _printing = false;
 
-  final _shopController = TextEditingController();
-  final _addressController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _emailController = TextEditingController();
-
   @override
   void initState() {
     super.initState();
     _load();
   }
 
-  @override
-  void dispose() {
-    _shopController.dispose();
-    _addressController.dispose();
-    _phoneController.dispose();
-    _emailController.dispose();
-    super.dispose();
-  }
-
   Future<void> _load() async {
     final saved = await BluetoothThermalPrinter.loadSaved();
-    final profile = await ReceiptProfile.load();
     if (!mounted) return;
     setState(() {
       _saved = saved;
-      _shopController.text = profile.shopName;
-      _addressController.text = profile.address;
-      _phoneController.text = profile.phone;
-      _emailController.text = profile.email;
       _loading = false;
     });
-  }
-
-  Future<void> _saveProfile() async {
-    final profile = ReceiptProfile(
-      shopName: _shopController.text,
-      address: _addressController.text,
-      phone: _phoneController.text,
-      email: _emailController.text,
-    );
-    await profile.save();
-    if (!mounted) return;
-    _toast('Bill header saved.', ok: true);
   }
 
   Future<void> _scan() async {
@@ -274,73 +242,6 @@ class _BluetoothPrinterPanelState extends State<BluetoothPrinterPanel> {
                       onTap: () => _select(device),
                     ),
                 ],
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(height: 16),
-        Card(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Bill header',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  'Shop name, address, mobile and email print on every bill. '
-                  'Change them here, then tap Save header. '
-                  'If a field is empty, the FIVE STAR default is used.',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _shopController,
-                  decoration: const InputDecoration(
-                    labelText: 'Shop name',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _addressController,
-                  decoration: const InputDecoration(
-                    labelText: 'Address',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    labelText: 'Mobile',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                TextField(
-                  controller: _emailController,
-                  keyboardType: TextInputType.emailAddress,
-                  decoration: const InputDecoration(
-                    labelText: 'Email',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: FilledButton(
-                    onPressed: _saveProfile,
-                    child: const Text('Save header'),
-                  ),
-                ),
               ],
             ),
           ),
