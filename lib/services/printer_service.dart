@@ -422,31 +422,21 @@ class _ReceiptScreenState
 
               pw.SizedBox(height: _thermal ? 8 : 14),
 
-              if (footerLogo != null)
+              if (footerLogo != null) ...[
                 pw.Center(
                   child: pw.Image(
                     footerLogo,
-                    height: _narrow ? 28 : 40,
+                    height: _narrow ? 42 : 56,
                   ),
                 ),
-
-              pw.Center(
-                child: pw.Text(
-                  ReceiptProfile.footerBrand,
-                  style: pw.TextStyle(
-                    fontSize: _subtitleSize,
-                    fontWeight: pw.FontWeight.bold,
-                  ),
-                ),
-              ),
-
-              pw.SizedBox(height: 4),
+                pw.SizedBox(height: 4),
+              ],
 
               pw.Center(
                 child: pw.Text(
                   'Thank You',
                   style: pw.TextStyle(
-                    fontSize: _subtitleSize,
+                    fontSize: _thermal ? 10 : 12,
                     fontWeight: pw.FontWeight.bold,
                   ),
                 ),

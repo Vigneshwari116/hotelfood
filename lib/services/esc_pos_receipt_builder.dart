@@ -128,19 +128,14 @@ class EscPosReceiptBuilder {
     );
 
     bytes += generator.feed(1);
-    bytes += await _logo(generator, BrandAssets.logo, 200);
-    bytes += generator.text(
-      ReceiptProfile.footerBrand,
-      styles: const PosStyles(
-        align: PosAlign.center,
-        bold: true,
-      ),
-    );
+    bytes += await _logo(generator, BrandAssets.logo, 280);
     bytes += generator.text(
       'Thank You',
       styles: const PosStyles(
         align: PosAlign.center,
         bold: true,
+        height: PosTextSize.size2,
+        width: PosTextSize.size1,
       ),
     );
     bytes += generator.feed(3);
@@ -160,9 +155,9 @@ class EscPosReceiptBuilder {
       final resized = img.copyResize(
         decoded,
         width: width,
-        interpolation: img.Interpolation.linear,
+        interpolation: img.Interpolation.average,
       );
-      return generator.image(resized);
+      return generator.image(img.grayscale(resized));
     } catch (_) {
       return <int>[];
     }

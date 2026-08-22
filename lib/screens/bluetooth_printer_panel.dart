@@ -186,11 +186,23 @@ class _BluetoothPrinterPanelState extends State<BluetoothPrinterPanel> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'No vendor driver is required. This printer speaks ESC/POS over Bluetooth. '
-                  'Pair PSFKP206 in the phone Bluetooth list, then select it below.',
+                  'Do not type printer commands. Pair Bluetooth on the phone, then pick the printer here.',
                   style: TextStyle(
                     color: Colors.teal.shade900,
                     fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '1. Switch the POSiFLOW printer on.\n'
+                  '2. Phone Settings → Bluetooth → pair POSiFLOW / PSFKP206 '
+                  '(PIN is usually 0000 or 1234).\n'
+                  '3. Open this app → Printers → Scan paired.\n'
+                  '4. Tap the printer, then Test 58mm bill.',
+                  style: TextStyle(
+                    color: Colors.teal.shade900,
+                    fontSize: 13,
+                    height: 1.35,
                   ),
                 ),
                 const SizedBox(height: 12),
