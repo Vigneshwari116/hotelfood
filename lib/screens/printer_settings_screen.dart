@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:foodstock/screens/bluetooth_printer_panel.dart';
 import 'package:foodstock/services/printer_service.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -1082,6 +1083,12 @@ class _PrinterSettingsScreenState
               height: 16,
             ),
 
+            const BluetoothPrinterPanel(),
+
+            const SizedBox(
+              height: 16,
+            ),
+
             // ==================================================
             // PAPER SIZE
             // ==================================================
@@ -1346,8 +1353,8 @@ class _PrinterSettingsScreenState
 
                     Expanded(
                       child: Text(
-                        'Select a printer and a paper size (58mm, 80mm, A5 or A4). '
-                            'Use "Print Test Receipt" to verify before sales.',
+                        'For the phone POSiFLOW 58mm printer, pair it in Bluetooth, tap Scan paired, then Print Test. '
+                            'System printers below are for USB/Windows PDF printers. No extra driver is required for POSiFLOW.',
                         style:
                         TextStyle(
                           color: Colors

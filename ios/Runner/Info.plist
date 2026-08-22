@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Connect to the POSiFLOW 58mm receipt printer to print bills.</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>Connect to the POSiFLOW 58mm receipt printer to print bills.</string>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>

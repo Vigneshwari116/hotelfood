@@ -11,6 +11,10 @@ import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/bluetooth_thermal_printer.dart';
+import 'package:foodstock/services/receipt_layout.dart';
+import 'package:foodstock/services/receipt_profile.dart';
+import 'package:foodstock/widgets/brand_logo.dart';
 
 /// Paper sizes used by kitchen/front-desk printers and PDF export.
 class ReceiptPaper {
@@ -39,7 +43,7 @@ class ReceiptPaper {
         // Compact thermal slip — extra height wastes roll paper.
         return PdfPageFormat(
           58 * mm,
-          (72 + lines * 7) * mm,
+          (118 + lines * 8) * mm,
           marginAll: 2 * mm,
         );
       case 'A5':
@@ -103,8 +107,10 @@ class _ReceiptScreenState
       'selected_printer';
 
   Printer? _selectedPrinter;
+  SavedThermalPrinter? _thermalPrinter;
 
   String _paperSize = ReceiptPaper.defaultSize;
+  ReceiptProfile _profile = ReceiptProfile.defaults();
 
   bool _loadingPrinter = true;
   bool _printing = false;
@@ -136,6 +142,9 @@ class _ReceiptScreenState
           ? savedSize!
           : ReceiptPaper.defaultSize;
 
+      final profile = await ReceiptProfile.load();
+      final thermal = await BluetoothThermalPrinter.loadSaved();
+
       if (saved != null && saved.isNotEmpty) {
         final map =
         jsonDecode(saved) as Map<String, dynamic>;
@@ -165,7 +174,9 @@ class _ReceiptScreenState
         setState(() {
           _selectedPrinter =
               current ?? savedPrinter;
-          _paperSize = paperSize;
+          _thermalPrinter = thermal;
+          _profile = profile;
+          _paperSize = thermal != null ? '58mm' : paperSize;
           _loadingPrinter = false;
         });
 
@@ -175,7 +186,9 @@ class _ReceiptScreenState
       if (!mounted) return;
 
       setState(() {
-        _paperSize = paperSize;
+        _thermalPrinter = thermal;
+        _profile = profile;
+        _paperSize = thermal != null ? '58mm' : paperSize;
         _loadingPrinter = false;
       });
     } catch (_) {
@@ -279,6 +292,17 @@ class _ReceiptScreenState
       ),
     );
 
+    pw.MemoryImage? headerLogo;
+    pw.MemoryImage? footerLogo;
+    try {
+      headerLogo = pw.MemoryImage(
+        (await rootBundle.load(BrandAssets.icon)).buffer.asUint8List(),
+      );
+      footerLogo = pw.MemoryImage(
+        (await rootBundle.load(BrandAssets.logo)).buffer.asUint8List(),
+      );
+    } catch (_) {}
+
     pdf.addPage(
       pw.Page(
         pageFormat: format,
@@ -287,9 +311,17 @@ class _ReceiptScreenState
             crossAxisAlignment:
             pw.CrossAxisAlignment.stretch,
             children: [
+              if (headerLogo != null)
+                pw.Center(
+                  child: pw.Image(
+                    headerLogo,
+                    height: _narrow ? 36 : 48,
+                  ),
+                ),
+
               pw.Center(
                 child: pw.Text(
-                  'SHILPA ENTERPRISE',
+                  _profile.shopName.toUpperCase(),
                   style: pw.TextStyle(
                     fontSize: _titleSize,
                     fontWeight: pw.FontWeight.bold,
@@ -297,41 +329,66 @@ class _ReceiptScreenState
                 ),
               ),
 
-              pw.SizedBox(height: 1),
+              if (_profile.address.isNotEmpty)
+                pw.Center(
+                  child: pw.Text(
+                    _profile.address,
+                    textAlign: pw.TextAlign.center,
+                    style: pw.TextStyle(fontSize: _subtitleSize),
+                  ),
+                ),
 
-              pw.Center(
-                child: pw.Text(
-                  'HOTEL BILL',
-                  style: pw.TextStyle(fontSize: _subtitleSize),
+              if (_profile.phone.isNotEmpty)
+                pw.Center(
+                  child: pw.Text(
+                    'Mob No.-${_profile.phone}.',
+                    style: pw.TextStyle(fontSize: _subtitleSize),
+                  ),
+                ),
+
+              if (_profile.email.isNotEmpty)
+                pw.Center(
+                  child: pw.Text(
+                    'Email:${_profile.email}',
+                    style: pw.TextStyle(fontSize: _subtitleSize),
+                  ),
+                ),
+
+              pw.SizedBox(height: _thermal ? 4 : 8),
+
+              pw.Divider(height: 1, borderStyle: pw.BorderStyle.dashed),
+
+              pw.Padding(
+                padding: pw.EdgeInsets.only(top: _thermal ? 2 : 4),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: [
+                    pw.Text(
+                      'Bill #${widget.saleId}',
+                      style: pw.TextStyle(fontSize: _bodySize),
+                    ),
+                    pw.Text(
+                      ReceiptLayout.billWhen(DateTime.now()),
+                      style: pw.TextStyle(fontSize: _bodySize),
+                    ),
+                  ],
                 ),
               ),
 
-              pw.SizedBox(height: _thermal ? 4 : 8),
+              pw.SizedBox(height: _thermal ? 3 : 6),
 
-              pw.Divider(height: 1),
-
-              _billMetaRow('Bill No.', '#${widget.saleId}'),
-              _billMetaRow('Date', _formatDate(DateTime.now())),
-              _billMetaRow('Payment', widget.paymentType),
-
-              pw.SizedBox(height: _thermal ? 4 : 8),
-
-              pw.Divider(height: 1),
+              pw.Divider(height: 1, borderStyle: pw.BorderStyle.dashed),
 
               _itemHeaderRow(),
 
-              pw.SizedBox(height: 2),
-
-              pw.Divider(height: 1),
-
               ...widget.lines.map(_itemRow),
 
-              pw.Divider(height: 1),
+              pw.Divider(height: 1, borderStyle: pw.BorderStyle.dashed),
 
               pw.SizedBox(height: 3),
 
               _pdfAmountRow(
-                'Subtotal',
+                'SubTotal',
                 widget.subtotal,
                 fontSize: _bodySize,
               ),
@@ -339,7 +396,7 @@ class _ReceiptScreenState
               if (widget.tax > 0) ...[
                 pw.SizedBox(height: 2),
                 _pdfAmountRow(
-                  'Tax',
+                  ReceiptLayout.taxLabel(widget.tax, widget.subtotal),
                   widget.tax,
                   fontSize: _bodySize,
                 ),
@@ -356,12 +413,8 @@ class _ReceiptScreenState
 
               pw.SizedBox(height: 3),
 
-              pw.Divider(height: 1),
-
-              pw.SizedBox(height: 3),
-
               _pdfAmountRow(
-                'TOTAL',
+                'Grand Total',
                 widget.grandTotal,
                 bold: true,
                 fontSize: _totalSize,
@@ -369,9 +422,29 @@ class _ReceiptScreenState
 
               pw.SizedBox(height: _thermal ? 8 : 14),
 
+              if (footerLogo != null)
+                pw.Center(
+                  child: pw.Image(
+                    footerLogo,
+                    height: _narrow ? 28 : 40,
+                  ),
+                ),
+
               pw.Center(
                 child: pw.Text(
-                  'Thank you. Visit again',
+                  ReceiptProfile.footerBrand,
+                  style: pw.TextStyle(
+                    fontSize: _subtitleSize,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+
+              pw.SizedBox(height: 4),
+
+              pw.Center(
+                child: pw.Text(
+                  'Thank You',
                   style: pw.TextStyle(
                     fontSize: _subtitleSize,
                     fontWeight: pw.FontWeight.bold,
@@ -387,18 +460,22 @@ class _ReceiptScreenState
     return pdf.save();
   }
 
-  pw.Widget _billMetaRow(String label, String value) {
+  pw.Widget _itemHeaderRow() {
     return pw.Padding(
-      padding: pw.EdgeInsets.only(top: _thermal ? 1.5 : 3),
+      padding: const pw.EdgeInsets.only(top: 3, bottom: 1),
       child: pw.Row(
-        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
-          pw.Text(
-            label,
-            style: pw.TextStyle(fontSize: _bodySize),
+          pw.Expanded(
+            child: pw.Text(
+              'Item x Qty',
+              style: pw.TextStyle(
+                fontSize: _bodySize,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
           ),
           pw.Text(
-            value,
+            'Rate',
             style: pw.TextStyle(
               fontSize: _bodySize,
               fontWeight: pw.FontWeight.bold,
@@ -409,78 +486,22 @@ class _ReceiptScreenState
     );
   }
 
-  pw.Widget _itemHeaderRow() {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.only(top: 3, bottom: 1),
-      child: pw.Row(
-        children: [
-          pw.Expanded(
-            flex: _narrow ? 6 : 5,
-            child: pw.Text(
-              'ITEM',
-              style: pw.TextStyle(
-                fontSize: _bodySize,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          ),
-          pw.Expanded(
-            flex: 2,
-            child: pw.Text(
-              'QTY',
-              textAlign: pw.TextAlign.center,
-              style: pw.TextStyle(
-                fontSize: _bodySize,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          ),
-          if (!_narrow)
-            pw.Expanded(
-              flex: 3,
-              child: pw.Text(
-                'RATE',
-                textAlign: pw.TextAlign.right,
-                style: pw.TextStyle(
-                  fontSize: _bodySize,
-                  fontWeight: pw.FontWeight.bold,
-                ),
-              ),
-            ),
-          pw.Expanded(
-            flex: 3,
-            child: pw.Text(
-              'AMT',
-              textAlign: pw.TextAlign.right,
-              style: pw.TextStyle(
-                fontSize: _bodySize,
-                fontWeight: pw.FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   pw.Widget _itemRow(CartLine line) {
-    final qty = line.qty % 1 == 0
-        ? line.qty.toInt().toString()
-        : line.qty.toStringAsFixed(2);
+    final qty = ReceiptLayout.qtyText(line.qty);
 
     return pw.Padding(
       padding: pw.EdgeInsets.symmetric(
         vertical: _thermal ? 1.5 : 3,
       ),
       child: pw.Row(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.Expanded(
-            flex: _narrow ? 6 : 5,
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 pw.Text(
-                  line.name,
+                  '${line.name} x $qty',
                   maxLines: 2,
                   style: pw.TextStyle(fontSize: _bodySize),
                 ),
@@ -496,30 +517,10 @@ class _ReceiptScreenState
               ],
             ),
           ),
-          pw.Expanded(
-            flex: 2,
-            child: pw.Text(
-              qty,
-              textAlign: pw.TextAlign.center,
-              style: pw.TextStyle(fontSize: _bodySize),
-            ),
-          ),
-          if (!_narrow)
-            pw.Expanded(
-              flex: 3,
-              child: pw.Text(
-                '₹${line.price.toStringAsFixed(2)}',
-                textAlign: pw.TextAlign.right,
-                style: pw.TextStyle(fontSize: _bodySize),
-              ),
-            ),
-          pw.Expanded(
-            flex: 3,
-            child: pw.Text(
-              '₹${line.amount.toStringAsFixed(2)}',
-              textAlign: pw.TextAlign.right,
-              style: pw.TextStyle(fontSize: _bodySize),
-            ),
+          pw.SizedBox(width: 6),
+          pw.Text(
+            ReceiptLayout.money(line.amount),
+            style: pw.TextStyle(fontSize: _bodySize),
           ),
         ],
       ),
@@ -551,7 +552,7 @@ class _ReceiptScreenState
           ),
         ),
         pw.Text(
-          '₹${value.toStringAsFixed(2)}',
+          ReceiptLayout.money(value, forceDecimals: true),
           style: pw.TextStyle(
             fontSize: fontSize,
             fontWeight: bold
@@ -564,25 +565,17 @@ class _ReceiptScreenState
   }
 
   // ------------------------------------------------------------
-  // DATE
-  // ------------------------------------------------------------
-
-  String _formatDate(DateTime date) {
-    String two(int value) =>
-        value.toString().padLeft(2, '0');
-
-    return '${date.day}/${date.month}/${date.year} '
-        '${two(date.hour)}:${two(date.minute)}';
-  }
-
-  // ------------------------------------------------------------
   // DIRECT PRINT
   // ------------------------------------------------------------
 
+  bool get _canDirectPrint {
+    return _thermalPrinter != null || _selectedPrinter != null;
+  }
+
   Future<void> _printToSelectedPrinter() async {
-    if (_selectedPrinter == null) {
+    if (!_canDirectPrint) {
       _showError(
-        'No printer selected.\nPlease configure a printer first.',
+        'No printer selected.\nOpen Printers and choose the POSiFLOW Bluetooth printer.',
       );
       return;
     }
@@ -592,6 +585,23 @@ class _ReceiptScreenState
     });
 
     try {
+      if (_thermalPrinter != null) {
+        await BluetoothThermalPrinter.printSale(
+          saleId: widget.saleId,
+          lines: widget.lines,
+          subtotal: widget.subtotal,
+          tax: widget.tax,
+          discount: widget.discount,
+          grandTotal: widget.grandTotal,
+        );
+
+        if (!mounted) return;
+        _showSuccess(
+          'Receipt sent to ${_thermalPrinter!.name}',
+        );
+        return;
+      }
+
       final result =
       await Printing.directPrintPdf(
         printer: _selectedPrinter!,
@@ -803,6 +813,8 @@ class _ReceiptScreenState
                   child: Text(
                     _loadingPrinter
                         ? 'Loading printer...'
+                        : _thermalPrinter != null
+                        ? 'POSiFLOW: ${_thermalPrinter!.name}'
                         : _selectedPrinter == null
                         ? 'No printer selected'
                         : 'Printer: ${_selectedPrinter!.name}',
@@ -895,9 +907,7 @@ class _ReceiptScreenState
                     flex: 2,
                     child: FilledButton.icon(
                       onPressed:
-                      _printing ||
-                          _selectedPrinter ==
-                              null
+                      _printing || !_canDirectPrint
                           ? null
                           : _printToSelectedPrinter,
                       icon: _printing
