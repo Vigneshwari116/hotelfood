@@ -50,7 +50,7 @@ dependencies:
   archive: ^3.6.1
   print_bluetooth_thermal: 1.2.1
   esc_pos_utils_plus: 2.0.4
-  image: 4.5.1
+  image: 4.3.0
 
   shared_preferences: ^2.5.3
 dev_dependencies:
