@@ -27,7 +27,7 @@ class EscPosReceiptBuilder {
     var bytes = <int>[];
     bytes += generator.reset();
 
-    bytes += await _logo(generator, BrandAssets.chicken, 200);
+    bytes += await _logo(generator, BrandAssets.chicken, 132);
 
     bytes += generator.text(
       profile.shopName.toUpperCase(),
@@ -131,8 +131,8 @@ class EscPosReceiptBuilder {
     );
 
     bytes += generator.feed(1);
-    bytes += await _logo(generator, BrandAssets.logo, 240);
-    bytes += await _logo(generator, BrandAssets.thankYou, 360);
+    bytes += await _logo(generator, BrandAssets.logo, 168);
+    bytes += await _logo(generator, BrandAssets.thankYou, 200);
     bytes += generator.feed(3);
     bytes += generator.cut();
     return bytes;

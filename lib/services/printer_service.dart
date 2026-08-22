@@ -320,7 +320,7 @@ class _ReceiptScreenState
                 pw.Center(
                   child: pw.Image(
                     chickenLogo,
-                    height: _narrow ? 42 : 56,
+                    height: _narrow ? 28 : 44,
                   ),
                 ),
 
@@ -431,7 +431,7 @@ class _ReceiptScreenState
                 pw.Center(
                   child: pw.Image(
                     footerLogo,
-                    height: _narrow ? 32 : 48,
+                    height: _narrow ? 26 : 40,
                   ),
                 ),
                 pw.SizedBox(height: 4),
@@ -441,7 +441,7 @@ class _ReceiptScreenState
                 pw.Center(
                   child: pw.Image(
                     thankYouHands,
-                    height: _narrow ? 22 : 28,
+                    height: _narrow ? 14 : 20,
                   ),
                 )
               else
