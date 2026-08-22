@@ -43,7 +43,7 @@ class ReceiptPaper {
         // Compact thermal slip — extra height wastes roll paper.
         return PdfPageFormat(
           58 * mm,
-          (118 + lines * 8) * mm,
+          (145 + lines * 8) * mm,
           marginAll: 2 * mm,
         );
       case 'A5':
@@ -216,7 +216,7 @@ class _ReceiptScreenState
   bool get _narrow => _paperSize == '58mm';
 
   double get _titleSize {
-    if (_narrow) return 13;
+    if (_narrow) return 14;
     if (_thermal) return 13;
     if (_paperSize == 'A5') return 16;
     return 20;
@@ -293,10 +293,18 @@ class _ReceiptScreenState
       ),
     );
 
+    pw.MemoryImage? chickenLogo;
     pw.MemoryImage? footerLogo;
+    pw.MemoryImage? thankYouHands;
     try {
+      chickenLogo = pw.MemoryImage(
+        (await rootBundle.load(BrandAssets.chicken)).buffer.asUint8List(),
+      );
       footerLogo = pw.MemoryImage(
         (await rootBundle.load(BrandAssets.logo)).buffer.asUint8List(),
+      );
+      thankYouHands = pw.MemoryImage(
+        (await rootBundle.load(BrandAssets.thankYou)).buffer.asUint8List(),
       );
     } catch (_) {}
 
@@ -308,6 +316,14 @@ class _ReceiptScreenState
             crossAxisAlignment:
             pw.CrossAxisAlignment.stretch,
             children: [
+              if (chickenLogo != null)
+                pw.Center(
+                  child: pw.Image(
+                    chickenLogo,
+                    height: _narrow ? 42 : 56,
+                  ),
+                ),
+
               pw.Center(
                 child: pw.Text(
                   _profile.shopName.toUpperCase(),
@@ -421,15 +437,23 @@ class _ReceiptScreenState
                 pw.SizedBox(height: 4),
               ],
 
-              pw.Center(
-                child: pw.Text(
-                  'Thank You',
-                  style: pw.TextStyle(
-                    fontSize: _subtitleSize,
-                    fontWeight: pw.FontWeight.bold,
+              if (thankYouHands != null)
+                pw.Center(
+                  child: pw.Image(
+                    thankYouHands,
+                    height: _narrow ? 22 : 28,
+                  ),
+                )
+              else
+                pw.Center(
+                  child: pw.Text(
+                    'Thank You',
+                    style: pw.TextStyle(
+                      fontSize: _subtitleSize,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
                   ),
                 ),
-              ),
             ],
           );
         },

@@ -27,13 +27,15 @@ class EscPosReceiptBuilder {
     var bytes = <int>[];
     bytes += generator.reset();
 
+    bytes += await _logo(generator, BrandAssets.chicken, 200);
+
     bytes += generator.text(
       profile.shopName.toUpperCase(),
       styles: const PosStyles(
         align: PosAlign.center,
         bold: true,
         height: PosTextSize.size2,
-        width: PosTextSize.size1,
+        width: PosTextSize.size2,
       ),
     );
 
@@ -122,18 +124,15 @@ class EscPosReceiptBuilder {
         'Grand Total',
         ReceiptLayout.money(grandTotal, forceDecimals: true),
       ),
-      styles: const PosStyles(bold: true),
+      styles: const PosStyles(
+        bold: true,
+        height: PosTextSize.size2,
+      ),
     );
 
     bytes += generator.feed(1);
-    bytes += await _logo(generator, BrandAssets.logo, 280);
-    bytes += generator.text(
-      'Thank You',
-      styles: const PosStyles(
-        align: PosAlign.center,
-        bold: true,
-      ),
-    );
+    bytes += await _logo(generator, BrandAssets.logo, 240);
+    bytes += await _logo(generator, BrandAssets.thankYou, 360);
     bytes += generator.feed(3);
     bytes += generator.cut();
     return bytes;

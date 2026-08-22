@@ -94,6 +94,8 @@ flutter:
     - assets/fonts/NotoSans-Bold.ttf
     - assets/branding/shilpa_logo.png
     - assets/branding/shilpa_icon.png
+    - assets/branding/five_star_chicken.png
+    - assets/branding/thank_you_hands.png
     - assets/templates/menu_items_import.csv
     - assets/templates/menu_items_import.xlsx
 
