@@ -49,13 +49,6 @@ class _RawMaterialMasterScreenState
   }
 
   Future<void> _loadMenuFromExcelThenItems() async {
-    try {
-      await ItemImportService().importCsvText(
-        await rootBundle.loadString(
-          'assets/templates/menu_items_import.csv',
-        ),
-      );
-    } catch (_) {}
     await _loadAll();
   }
 

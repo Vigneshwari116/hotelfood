@@ -33,8 +33,13 @@ class ItemImportService {
   Future<ItemImportResult> importCsvText(
     String text, {
     bool updateExisting = false,
+    bool replaceCatalog = false,
   }) {
-    return _importRows(_parseCsv(text), updateExisting: updateExisting);
+    return _importRows(
+      _parseCsv(text),
+      updateExisting: updateExisting || replaceCatalog,
+      replaceCatalog: replaceCatalog,
+    );
   }
 
   Future<ItemImportResult> importXlsxBytes(Uint8List bytes) {
@@ -101,6 +106,7 @@ class ItemImportService {
   Future<ItemImportResult> _importRows(
     List<List<String>> rows, {
     required bool updateExisting,
+    bool replaceCatalog = false,
   }) async {
     final result = ItemImportResult();
     if (rows.isEmpty) {
@@ -120,7 +126,9 @@ class ItemImportService {
         .map((cell) => _normalizeKey(cell))
         .toList();
 
-    final existing = await Repository.instance.rawMaterials();
+    final existing = await Repository.instance.rawMaterials(
+      includeHidden: true,
+    );
     final existingByKey = <String, RawMaterial>{
       for (final item in existing)
         _itemKey(item.name, item.subItem): item,
@@ -128,6 +136,7 @@ class ItemImportService {
 
     var categories = await Repository.instance.categories(type: 'raw_material');
     var units = await Repository.instance.units();
+    final importedKeys = <String>{};
 
     for (var i = headerIndex + 1; i < rows.length; i++) {
       final row = rows[i];
@@ -157,6 +166,7 @@ class ItemImportService {
         'variant',
       ]);
       final key = _itemKey(name, subItem);
+      importedKeys.add(key);
       final existingItem = existingByKey[key];
       if (existingItem != null && !updateExisting) {
         result.skipped++;
@@ -172,7 +182,7 @@ class ItemImportService {
             type: 'raw_material',
           );
         } else {
-          categoryId = existingItem?.categoryId;
+          categoryId = null;
         }
 
         final packetsRaw = _first(map, const ['packets', 'packet']);
@@ -187,8 +197,6 @@ class ItemImportService {
         if (unitName.isNotEmpty) {
           unitId = await _ensureUnit(unitName, units);
           units = await Repository.instance.units();
-        } else if (existingItem?.unitId != null) {
-          unitId = existingItem!.unitId;
         }
 
         final qtyRaw = _first(map, const [
@@ -197,9 +205,7 @@ class ItemImportService {
           'qty',
           'qtysale',
         ]);
-        final qtyNeeded = _number(qtyRaw) ??
-            existingItem?.qtyNeeded ??
-            1;
+        final qtyNeeded = _number(qtyRaw) ?? 1;
         final unitsPerPacket = _number(_first(map, const [
           'unitsperpacket',
           'unitspacket',
@@ -217,9 +223,6 @@ class ItemImportService {
         }
         stock ??= 0;
 
-        final keepLiveStock =
-            existingItem != null && (stock == null || stock == 0);
-
         final saved = RawMaterial(
             id: existingItem?.id,
             barcode: _emptyToNull(_first(map, const ['barcode', 'code'])),
@@ -228,15 +231,11 @@ class ItemImportService {
             qtyNeeded: qtyNeeded,
             categoryId: categoryId,
             unitId: unitId,
-            openingStock: keepLiveStock
-                ? existingItem!.openingStock
-                : (stock ?? 0),
-            currentStock: keepLiveStock
-                ? existingItem!.currentStock
-                : (stock ?? 0),
+            openingStock: stock,
+            currentStock: stock,
             reorderLevel: existingItem?.reorderLevel ?? 0,
             shelfLifeDays: existingItem?.shelfLifeDays,
-            unitsPerPacket: unitsPerPacket ?? existingItem?.unitsPerPacket,
+            unitsPerPacket: unitsPerPacket,
             entryPasswordHash: existingItem?.entryPasswordHash,
             costPrice: _number(_first(map, const [
               'costprice',
@@ -250,6 +249,7 @@ class ItemImportService {
               'price',
             ])),
             imagePath: existingItem?.imagePath,
+            listed: true,
             createdAt: existingItem?.createdAt,
           );
         final id = await Repository.instance.saveRawMaterial(saved);
@@ -271,6 +271,7 @@ class ItemImportService {
           costPrice: saved.costPrice,
           sellingPrice: saved.sellingPrice,
           imagePath: saved.imagePath,
+          listed: true,
           createdAt: saved.createdAt,
         );
         if (existingItem == null) {
@@ -280,6 +281,22 @@ class ItemImportService {
         }
       } catch (e) {
         result.errors.add('Row ${i + 1} ($name): $e');
+      }
+    }
+
+    if (replaceCatalog) {
+      final leftovers = await Repository.instance.rawMaterials(
+        includeHidden: true,
+      );
+      for (final item in leftovers) {
+        if (item.id == null) continue;
+        final key = _itemKey(item.name, item.subItem);
+        if (importedKeys.contains(key)) continue;
+        try {
+          await Repository.instance.deleteRawMaterial(item.id!);
+        } catch (_) {
+          await Repository.instance.hideRawMaterial(item.id!);
+        }
       }
     }
 
@@ -302,17 +319,7 @@ class ItemImportService {
   }
 
   Future<int> _ensureUnit(String name, List<UnitM> units) async {
-    const aliases = {
-      'gms': 'g',
-      'gm': 'g',
-      'grams': 'g',
-      'gram': 'g',
-      'pcs': 'pc',
-      'piece': 'pc',
-      'pieces': 'pc',
-    };
-    final key = aliases[name.trim().toLowerCase()] ??
-        name.trim().toLowerCase();
+    final key = name.trim().toLowerCase();
     for (final unit in units) {
       if (unit.name.trim().toLowerCase() == key ||
           unit.shortCode.trim().toLowerCase() == key) {

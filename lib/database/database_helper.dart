@@ -70,7 +70,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 13,
+      version: 14,
 
       onConfigure: (db) async {
         await db.execute(
@@ -223,6 +223,8 @@ class DBHelper {
         cost_price REAL,
 
         selling_price REAL,
+
+        listed INTEGER NOT NULL DEFAULT 1,
 
         created_at TEXT NOT NULL,
 
@@ -1146,6 +1148,18 @@ class DBHelper {
       if (!saleNames.contains('sub_item')) {
         await db.execute(
           'ALTER TABLE sale_items ADD COLUMN sub_item TEXT',
+        );
+      }
+    }
+
+    if (oldVersion < 14) {
+      final columns = await db.rawQuery(
+        'PRAGMA table_info(raw_materials)',
+      );
+      final names = columns.map((c) => c['name'] as String).toSet();
+      if (!names.contains('listed')) {
+        await db.execute(
+          'ALTER TABLE raw_materials ADD COLUMN listed INTEGER NOT NULL DEFAULT 1',
         );
       }
     }

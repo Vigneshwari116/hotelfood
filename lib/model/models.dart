@@ -187,6 +187,8 @@ class RawMaterial {
 
   final String? imagePath;
 
+  final bool listed;
+
   final DateTime? createdAt;
 
   RawMaterial({
@@ -206,6 +208,7 @@ class RawMaterial {
     this.costPrice,
     this.sellingPrice,
     this.imagePath,
+    this.listed = true,
     this.createdAt,
   });
 
@@ -237,6 +240,7 @@ class RawMaterial {
       (map['selling_price'] as num?)?.toDouble(),
       imagePath:
       map['image_path']?.toString(),
+      listed: (map['listed'] as num?)?.toInt() != 0,
       createdAt:
       _parseDate(map['created_at']),
     );
@@ -260,6 +264,7 @@ class RawMaterial {
       'cost_price': costPrice,
       'selling_price': sellingPrice,
       'image_path': imagePath,
+      'listed': listed ? 1 : 0,
       'created_at':
       createdAt?.toIso8601String() ??
           DateTime.now().toIso8601String(),
