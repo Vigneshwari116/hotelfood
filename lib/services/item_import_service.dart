@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:flutter/services.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:path/path.dart' as p;
@@ -46,52 +47,39 @@ class ItemImportService {
     return _importRows(_parseXlsx(bytes), updateExisting: false);
   }
 
-  String exportCsv({
-    required List<RawMaterial> items,
-    required List<Category> categories,
-    required List<UnitM> units,
-  }) {
-    String categoryName(int? id) {
-      for (final category in categories) {
-        if (category.id == id) return category.name;
-      }
-      return '';
-    }
+  Future<String> exportCsv() async {
+    final text = await rootBundle.loadString(
+      'assets/templates/menu_items_import.csv',
+    );
+    final rows = _parseCsv(text);
+    if (rows.isEmpty) return '';
 
-    String unitCode(int? id) {
-      for (final unit in units) {
-        if (unit.id == id) return unit.shortCode;
-      }
-      return '';
-    }
+    final header = rows.first;
+    final data = rows.skip(1).where((row) {
+      return row.any((cell) => cell.trim().isNotEmpty);
+    }).toList();
+    data.sort((a, b) {
+      final left = a.length > 1 ? a[1] : '';
+      final right = b.length > 1 ? b[1] : '';
+      return left.compareTo(right);
+    });
 
-    String numOrEmpty(double? value) {
-      if (value == null) return '';
-      return value % 1 == 0 ? value.toStringAsFixed(0) : value.toStringAsFixed(2);
+    final width = header.length;
+    String line(List<String> cells) {
+      final padded = [
+        for (var i = 0; i < width; i++) i < cells.length ? cells[i] : '',
+      ];
+      return padded.map(_csvCell).join(',');
     }
 
     final buffer = StringBuffer();
-    buffer.writeln(
-      'category,item_name,sub_item,barcode,qty_per_sale,packets,units_per_packet,unit,opening stock,cost_price,selling_price',
-    );
-    for (final item in items) {
-      buffer.writeln(
-        [
-          categoryName(item.categoryId),
-          item.name,
-          item.subItem ?? item.name,
-          item.barcode ?? '',
-          numOrEmpty(item.qtyNeeded == 0 ? null : item.qtyNeeded),
-          '',
-          numOrEmpty(item.unitsPerPacket),
-          unitCode(item.unitId),
-          numOrEmpty(item.openingStock),
-          numOrEmpty(item.costPrice),
-          numOrEmpty(item.sellingPrice),
-        ].map(_csvCell).join(','),
-      );
+    buffer.write(line(header));
+    buffer.write('\r\n');
+    for (final row in data) {
+      buffer.write(line(row));
+      buffer.write('\r\n');
     }
-    return '\uFEFF${buffer.toString()}';
+    return buffer.toString();
   }
 
   String _csvCell(String value) {
