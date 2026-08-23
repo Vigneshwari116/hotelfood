@@ -27,7 +27,7 @@ class ItemImportService {
         ? _parseXlsx(bytes)
         : _parseCsv(utf8.decode(bytes, allowMalformed: true));
 
-    return _importRows(rows, updateExisting: true);
+    return _importRows(rows, updateExisting: true, replaceCatalog: true);
   }
 
   Future<ItemImportResult> importCsvText(
@@ -81,7 +81,7 @@ class ItemImportService {
           item.name,
           item.subItem ?? item.name,
           item.barcode ?? '',
-          numOrEmpty(item.qtyNeeded),
+          numOrEmpty(item.qtyNeeded == 0 ? null : item.qtyNeeded),
           '',
           numOrEmpty(item.unitsPerPacket),
           unitCode(item.unitId),
@@ -187,12 +187,7 @@ class ItemImportService {
 
         final packetsRaw = _first(map, const ['packets', 'packet']);
         final packets = _number(packetsRaw);
-        var unitName = _first(map, const ['unit', 'uom']);
-        if (unitName.isEmpty &&
-            packets == null &&
-            packetsRaw.isNotEmpty) {
-          unitName = packetsRaw;
-        }
+        final unitName = _first(map, const ['unit', 'uom']);
         int? unitId;
         if (unitName.isNotEmpty) {
           unitId = await _ensureUnit(unitName, units);
@@ -205,7 +200,7 @@ class ItemImportService {
           'qty',
           'qtysale',
         ]);
-        final qtyNeeded = _number(qtyRaw) ?? 1;
+        final qtyNeeded = _number(qtyRaw) ?? 0;
         final unitsPerPacket = _number(_first(map, const [
           'unitsperpacket',
           'unitspacket',
@@ -227,7 +222,7 @@ class ItemImportService {
             id: existingItem?.id,
             barcode: _emptyToNull(_first(map, const ['barcode', 'code'])),
             name: name,
-            subItem: subItem.isEmpty ? name : subItem,
+            subItem: subItem.isEmpty ? null : subItem,
             qtyNeeded: qtyNeeded,
             categoryId: categoryId,
             unitId: unitId,

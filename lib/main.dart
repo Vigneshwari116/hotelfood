@@ -77,7 +77,7 @@ class _StartupGateState extends State<_StartupGate> {
     try {
       final prefs = await SharedPreferences.getInstance();
       const seedKey = 'menu_csv_seed';
-      const seedVersion = 5;
+      const seedVersion = 6;
       final seeded = prefs.getInt(seedKey) ?? 0;
       await ItemImportService().importCsvText(
         await rootBundle.loadString(
