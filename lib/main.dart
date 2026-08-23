@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:foodstock/database/database_helper.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'services/item_import_service.dart';
 import 'services/repository.dart';
 
@@ -74,11 +75,19 @@ class _StartupGateState extends State<_StartupGate> {
     await Repository.instance.ensureStandardUnits();
     await Repository.instance.ensureDefaultCategories();
     try {
+      final prefs = await SharedPreferences.getInstance();
+      const seedKey = 'menu_csv_seed';
+      const seedVersion = 3;
+      final seeded = prefs.getInt(seedKey) ?? 0;
       await ItemImportService().importCsvText(
         await rootBundle.loadString(
           'assets/templates/menu_items_import.csv',
         ),
+        updateExisting: seeded < seedVersion,
       );
+      if (seeded < seedVersion) {
+        await prefs.setInt(seedKey, seedVersion);
+      }
     } catch (_) {}
     await Repository.instance.writeOffExpiredStock();
   }

@@ -30,8 +30,11 @@ class ItemImportService {
     return _importRows(rows, updateExisting: true);
   }
 
-  Future<ItemImportResult> importCsvText(String text) {
-    return _importRows(_parseCsv(text), updateExisting: false);
+  Future<ItemImportResult> importCsvText(
+    String text, {
+    bool updateExisting = false,
+  }) {
+    return _importRows(_parseCsv(text), updateExisting: updateExisting);
   }
 
   Future<ItemImportResult> importXlsxBytes(Uint8List bytes) {
@@ -214,6 +217,9 @@ class ItemImportService {
         }
         stock ??= 0;
 
+        final keepLiveStock =
+            existingItem != null && (stock == null || stock == 0);
+
         final saved = RawMaterial(
             id: existingItem?.id,
             barcode: _emptyToNull(_first(map, const ['barcode', 'code'])),
@@ -222,8 +228,12 @@ class ItemImportService {
             qtyNeeded: qtyNeeded,
             categoryId: categoryId,
             unitId: unitId,
-            openingStock: stock ?? 0,
-            currentStock: stock ?? 0,
+            openingStock: keepLiveStock
+                ? existingItem!.openingStock
+                : (stock ?? 0),
+            currentStock: keepLiveStock
+                ? existingItem!.currentStock
+                : (stock ?? 0),
             reorderLevel: existingItem?.reorderLevel ?? 0,
             shelfLifeDays: existingItem?.shelfLifeDays,
             unitsPerPacket: unitsPerPacket ?? existingItem?.unitsPerPacket,
@@ -292,7 +302,17 @@ class ItemImportService {
   }
 
   Future<int> _ensureUnit(String name, List<UnitM> units) async {
-    final key = name.trim().toLowerCase();
+    const aliases = {
+      'gms': 'g',
+      'gm': 'g',
+      'grams': 'g',
+      'gram': 'g',
+      'pcs': 'pc',
+      'piece': 'pc',
+      'pieces': 'pc',
+    };
+    final key = aliases[name.trim().toLowerCase()] ??
+        name.trim().toLowerCase();
     for (final unit in units) {
       if (unit.name.trim().toLowerCase() == key ||
           unit.shortCode.trim().toLowerCase() == key) {
