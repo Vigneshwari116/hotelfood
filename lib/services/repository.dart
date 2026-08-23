@@ -3,9 +3,9 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/model/models.dart';
-import 'package:sqflite/sqflite.dart';
 
 // ============================================================
 // PIN / PASSWORD
@@ -56,9 +56,8 @@ class Repository {
 
       static final Repository instance = Repository._();
 
-      Future<Database> get _db async {
-            DBHelper.init();
-            return DBHelper.instance.database;
+      Future<AppDb> get _db async {
+            return DBHelper.instance.appDb;
       }
 
       // ============================================================
@@ -77,7 +76,6 @@ class Repository {
             return db.insert(
                   'categories',
                   category.toMap()..remove('id'),
-                  conflictAlgorithm: ConflictAlgorithm.abort,
             );
       }
 
@@ -187,7 +185,6 @@ class Repository {
             return db.insert(
                   'units',
                   unit.toMap()..remove('id'),
-                  conflictAlgorithm: ConflictAlgorithm.abort,
             );
       }
 
@@ -1394,7 +1391,7 @@ class Repository {
       // ============================================================
 
       Future<double> _deductFEFO(
-          DatabaseExecutor txn,
+          AppDb txn,
           int rawMaterialId,
           double qtyNeeded, {
                 required String refType,
@@ -1515,7 +1512,7 @@ class Repository {
       // ============================================================
 
       Future<double> _getCurrentStock(
-          DatabaseExecutor txn,
+          AppDb txn,
           int rawMaterialId,
           ) async {
             final rows = await txn.query(
@@ -1539,7 +1536,7 @@ class Repository {
       }
 
       Future<double> _bumpStock(
-          DatabaseExecutor txn,
+          AppDb txn,
           int rawMaterialId,
           double delta,
           ) async {
@@ -1588,7 +1585,7 @@ class Repository {
       // ============================================================
 
       Future<void> _writeLedger({
-            DatabaseExecutor? txn,
+            AppDb? txn,
             required int rawMaterialId,
             required String refType,
             int? refId,
@@ -2135,7 +2132,7 @@ class Repository {
 
       Future<Map<int, double>>
       _expandCartToRawMaterialNeeds(
-          DatabaseExecutor txn,
+          AppDb txn,
           List<CartLine> lines,
           ) async {
             final totalNeeded = <int, double>{};
@@ -2245,7 +2242,7 @@ class Repository {
       }
 
       Future<double> _qtyNeeded(
-            DatabaseExecutor txn,
+            AppDb txn,
             int rawMaterialId,
             ) async {
             final rows = await txn.query(
@@ -2268,7 +2265,7 @@ class Repository {
       // ============================================================
 
       Future<double> _customerBalance(
-          DatabaseExecutor executor,
+          AppDb executor,
           int customerId,
           ) async {
             final rows = await executor.query(

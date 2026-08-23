@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:foodstock/database/database_helper.dart';
+import 'package:foodstock/database/remote_db_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/item_import_service.dart';
 import 'services/repository.dart';
@@ -18,6 +19,7 @@ import 'screens/pos_screen.dart';
 import 'screens/reports_screen.dart';
 import 'screens/printer_settings_screen.dart';
 import 'screens/backup_screen.dart';
+import 'screens/server_connection_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -70,15 +72,29 @@ class _StartupGateState extends State<_StartupGate> {
   }
 
   Future<void> _initializeApp() async {
-    await DBHelper.instance.database;
+    await DBHelper.instance.appDb;
     await Repository.instance.ensureDefaultUsers();
     await Repository.instance.ensureStandardUnits();
     await Repository.instance.ensureDefaultCategories();
     try {
-      final prefs = await SharedPreferences.getInstance();
       const seedKey = 'menu_csv_seed';
       const seedVersion = 7;
-      final seeded = prefs.getInt(seedKey) ?? 0;
+      final remote = await RemoteDbConfig.isEnabled();
+      int seeded;
+      if (remote) {
+        final db = await DBHelper.instance.appDb;
+        final rows = await db.query(
+          'app_meta',
+          where: 'key = ?',
+          whereArgs: [seedKey],
+        );
+        seeded = rows.isEmpty
+            ? 0
+            : int.tryParse(rows.first['value']?.toString() ?? '') ?? 0;
+      } else {
+        final prefs = await SharedPreferences.getInstance();
+        seeded = prefs.getInt(seedKey) ?? 0;
+      }
       await ItemImportService().importCsvText(
         await rootBundle.loadString(
           'assets/templates/menu_items_import.csv',
@@ -87,7 +103,17 @@ class _StartupGateState extends State<_StartupGate> {
         replaceCatalog: seeded < seedVersion,
       );
       if (seeded < seedVersion) {
-        await prefs.setInt(seedKey, seedVersion);
+        if (remote) {
+          final db = await DBHelper.instance.appDb;
+          await db.delete('app_meta', where: 'key = ?', whereArgs: [seedKey]);
+          await db.insert('app_meta', {
+            'key': seedKey,
+            'value': '$seedVersion',
+          });
+        } else {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt(seedKey, seedVersion);
+        }
       }
     } catch (_) {}
     await Repository.instance.writeOffExpiredStock();
@@ -147,6 +173,18 @@ class _StartupGateState extends State<_StartupGate> {
                       },
                       child: const Text('Retry'),
                     ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () async {
+                        await RemoteDbConfig.disable();
+                        await DBHelper.instance.reconnect();
+                        if (!mounted) return;
+                        setState(() {
+                          _ready = _initializeApp();
+                        });
+                      },
+                      child: const Text('Use local database instead'),
+                    ),
                   ],
                 ),
               ),
@@ -204,7 +242,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final db = await DBHelper.instance.database;
+      final db = await DBHelper.instance.appDb;
 
       final rows = await db.query(
         'users',
@@ -397,6 +435,11 @@ class MainShell extends StatelessWidget {
               icon: Icons.print_outlined,
               label: 'Printers',
               page: const PrinterSettingsScreen(),
+            ),
+            NavItem(
+              icon: Icons.cloud_outlined,
+              label: 'Server',
+              page: const ServerConnectionScreen(),
             ),
             NavItem(
               icon: Icons.backup_outlined,

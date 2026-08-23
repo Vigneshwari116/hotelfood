@@ -327,7 +327,9 @@ class Combo {
       name: map['name']?.toString() ?? '',
       barcode: map['barcode']?.toString(),
       categoryId: map['category_id'] as int?,
-      price: (map['price'] as num?)?.toDouble() ?? 0,
+      price: (map['price'] as num?)?.toDouble() ??
+          (map['selling_price'] as num?)?.toDouble() ??
+          0,
       imagePath: map['image_path']?.toString(),
       isActive: (map['is_active'] as num?)?.toInt() == 1,
       items: const [],

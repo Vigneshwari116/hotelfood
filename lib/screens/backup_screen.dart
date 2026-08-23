@@ -1,6 +1,8 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
+import '../database/database_helper.dart';
+import '../database/remote_db_config.dart';
 import '../services/backup_service.dart';
 import '../widgets/responsive_shell.dart';
 
@@ -16,6 +18,14 @@ class _BackupScreenState extends State<BackupScreen> {
   String? _lastMessage;
 
   Future<void> _backup() async {
+    if (await RemoteDbConfig.isEnabled()) {
+      setState(() {
+        _lastMessage =
+            'This device is using the VPS database. Shop data is already on the server. '
+            'Use DBeaver / pg_dump on shilpa_enterprise for a server backup.';
+      });
+      return;
+    }
     final folder = await FilePicker.platform.getDirectoryPath(
       dialogTitle: 'Choose folder to save backup',
     );
@@ -38,6 +48,14 @@ class _BackupScreenState extends State<BackupScreen> {
   }
 
   Future<void> _restore() async {
+    if (await RemoteDbConfig.isEnabled()) {
+      setState(() {
+        _lastMessage =
+            'Turn off VPS mode before restoring a local restopos.db file. '
+            'Server data is not replaced by a phone SQLite backup.';
+      });
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
