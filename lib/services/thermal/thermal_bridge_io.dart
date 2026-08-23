@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:permission_handler/permission_handler.dart';
 import 'package:print_bluetooth_thermal/print_bluetooth_thermal.dart';
 
 class ThermalDevice {
@@ -11,8 +14,53 @@ Future<bool> bluetoothOn() {
   return PrintBluetoothThermal.bluetoothEnabled;
 }
 
-Future<bool> permissionGranted() {
+Future<bool> permissionGranted() async {
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    return true;
+  }
+  if (Platform.isAndroid) {
+    final connect = await Permission.bluetoothConnect.status;
+    final scan = await Permission.bluetoothScan.status;
+    final legacy = await Permission.bluetooth.status;
+    if (connect.isGranted || scan.isGranted || legacy.isGranted) {
+      return true;
+    }
+  }
+  if (Platform.isIOS) {
+    final status = await Permission.bluetooth.status;
+    if (status.isGranted || status.isLimited) return true;
+  }
   return PrintBluetoothThermal.isPermissionBluetoothGranted;
+}
+
+Future<bool> requestPermission() async {
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    return true;
+  }
+  if (Platform.isAndroid) {
+    final statuses = await <Permission>[
+      Permission.bluetoothScan,
+      Permission.bluetoothConnect,
+      Permission.bluetooth,
+    ].request();
+    final connect = statuses[Permission.bluetoothConnect];
+    final scan = statuses[Permission.bluetoothScan];
+    final legacy = statuses[Permission.bluetooth];
+    if (connect?.isGranted == true ||
+        scan?.isGranted == true ||
+        legacy?.isGranted == true) {
+      return true;
+    }
+  }
+  if (Platform.isIOS) {
+    final status = await Permission.bluetooth.request();
+    if (status.isGranted || status.isLimited) return true;
+  }
+  return permissionGranted();
+}
+
+Future<void> openSystemAppSettings() async {
+  await openAppSettings();
 }
 
 Future<bool> connectionStatus() {

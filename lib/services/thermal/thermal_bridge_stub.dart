@@ -9,6 +9,10 @@ Future<bool> bluetoothOn() async => false;
 
 Future<bool> permissionGranted() async => false;
 
+Future<bool> requestPermission() async => false;
+
+Future<void> openSystemAppSettings() async {}
+
 Future<bool> connectionStatus() async => false;
 
 Future<List<ThermalDevice>> pairedDevices() async => const [];

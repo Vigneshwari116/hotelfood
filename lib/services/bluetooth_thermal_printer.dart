@@ -41,12 +41,23 @@ class BluetoothThermalPrinter {
     await prefs.remove(nameKey);
   }
 
+  static const permissionDeniedMessage =
+      'Bluetooth permission was denied. Tap Allow when the phone asks for Nearby devices. '
+      'If you already tapped Don\'t allow, open Settings → Apps → Shilpa Enterprise → '
+      'Permissions → Nearby devices.';
+
+  static Future<void> ensurePermission() async {
+    final requested = await ThermalBridge.requestPermission();
+    if (requested) return;
+    if (await ThermalBridge.permissionGranted()) return;
+    throw StateError(permissionDeniedMessage);
+  }
+
   static Future<List<ThermalDevice>> scan() async {
+    await ensurePermission();
     final permitted = await ThermalBridge.permissionGranted();
     if (!permitted) {
-      throw StateError(
-        'Bluetooth permission was denied. Allow nearby devices / Bluetooth for this app.',
-      );
+      throw StateError(permissionDeniedMessage);
     }
     final on = await ThermalBridge.bluetoothOn();
     if (!on) {
@@ -70,6 +81,7 @@ class BluetoothThermalPrinter {
     if (saved == null) {
       throw StateError('No Bluetooth printer selected.');
     }
+    await ensurePermission();
     await ensureConnected(saved.mac);
     final ok = await ThermalBridge.writeBytes(bytes);
     if (!ok) {

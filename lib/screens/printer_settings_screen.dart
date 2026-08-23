@@ -1375,7 +1375,7 @@ class _PrinterSettingsScreenState
                             ? 'For the phone POSiFLOW 58mm printer, pair it in Bluetooth, tap Scan paired, then Test 58mm bill. '
                                 'Choose From System Printers is only on Windows.'
                             : 'Pair POSiFLOW in phone Bluetooth, tap Scan paired, then Test 58mm bill. '
-                                'Allow Nearby devices if Android asks.',
+                                'When Android asks for Nearby devices, tap Allow.',
                         style:
                         TextStyle(
                           color: Colors

@@ -18,6 +18,7 @@ class _BluetoothPrinterPanelState extends State<BluetoothPrinterPanel> {
   bool _loading = true;
   bool _scanning = false;
   bool _printing = false;
+  bool _permissionDenied = false;
 
   @override
   void initState() {
@@ -32,6 +33,26 @@ class _BluetoothPrinterPanelState extends State<BluetoothPrinterPanel> {
       _saved = saved;
       _loading = false;
     });
+    await _askPermission();
+  }
+
+  Future<void> _askPermission() async {
+    try {
+      await BluetoothThermalPrinter.ensurePermission();
+      if (!mounted) return;
+      setState(() {
+        _permissionDenied = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _permissionDenied = true;
+      });
+    }
+  }
+
+  Future<void> _openAppSettings() async {
+    await ThermalBridge.openAppSettings();
   }
 
   Future<void> _scan() async {
@@ -44,6 +65,7 @@ class _BluetoothPrinterPanelState extends State<BluetoothPrinterPanel> {
       setState(() {
         _devices = devices;
         _scanning = false;
+        _permissionDenied = false;
       });
       if (devices.isEmpty) {
         _toast(
@@ -54,6 +76,7 @@ class _BluetoothPrinterPanelState extends State<BluetoothPrinterPanel> {
       if (!mounted) return;
       setState(() {
         _scanning = false;
+        _permissionDenied = e.toString().contains('Nearby devices');
       });
       _toast(e.toString().replaceFirst('Bad state: ', ''));
     }
@@ -165,8 +188,8 @@ class _BluetoothPrinterPanelState extends State<BluetoothPrinterPanel> {
                   '1. Switch the POSiFLOW printer on.\n'
                   '2. Phone Settings → Bluetooth → pair POSiFLOW / PSFKP206 '
                   '(PIN is usually 0000 or 1234).\n'
-                  '3. Open this app → Printers → Scan paired.\n'
-                  '4. Tap the printer, then Test 58mm bill.',
+                  '3. Open this screen. When Android asks for Nearby devices, tap Allow.\n'
+                  '4. Tap Scan paired, select the printer, then Test 58mm bill.',
                   style: TextStyle(
                     color: Colors.teal.shade900,
                     fontSize: 13,
@@ -174,6 +197,46 @@ class _BluetoothPrinterPanelState extends State<BluetoothPrinterPanel> {
                   ),
                 ),
                 const SizedBox(height: 12),
+                if (_permissionDenied) ...[
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.red.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          BluetoothThermalPrinter.permissionDeniedMessage,
+                          style: TextStyle(
+                            color: Colors.red.shade900,
+                            fontSize: 13,
+                            height: 1.35,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton(
+                              onPressed: _askPermission,
+                              child: const Text('Ask again'),
+                            ),
+                            FilledButton(
+                              onPressed: _openAppSettings,
+                              child: const Text('Open app settings'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 if (_saved == null)
                   const Text('No Bluetooth printer selected')
                 else

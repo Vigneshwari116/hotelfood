@@ -13,6 +13,11 @@ class ThermalBridge {
 
   static Future<bool> permissionGranted() => impl.permissionGranted();
 
+  /// Shows the Android/iOS Nearby devices (Bluetooth) prompt when needed.
+  static Future<bool> requestPermission() => impl.requestPermission();
+
+  static Future<void> openAppSettings() => impl.openSystemAppSettings();
+
   static Future<bool> connectionStatus() => impl.connectionStatus();
 
   static Future<List<ThermalDevice>> pairedDevices() async {

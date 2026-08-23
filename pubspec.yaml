@@ -51,6 +51,7 @@ dependencies:
   print_bluetooth_thermal: 1.2.1
   esc_pos_utils_plus: 2.0.4
   image: 4.3.0
+  permission_handler: 11.4.0
 
   shared_preferences: ^2.5.3
 dev_dependencies:
