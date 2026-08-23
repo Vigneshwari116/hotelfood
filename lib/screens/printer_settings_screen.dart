@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:foodstock/screens/bluetooth_printer_panel.dart';
@@ -40,6 +42,12 @@ class _PrinterSettingsScreenState
   bool _printing = false;
 
   String _paperSize = '80mm';
+
+  bool get _showSystemPrinters =>
+      !kIsWeb &&
+      (Platform.isWindows ||
+          Platform.isLinux ||
+          Platform.isMacOS);
 
   // ============================================================
   // INIT
@@ -237,6 +245,12 @@ class _PrinterSettingsScreenState
   // ============================================================
 
   Future<void> _pickPrinterFromSystem() async {
+    if (!_showSystemPrinters) {
+      _showError(
+        'On the phone, use Scan paired for the POSiFLOW printer.',
+      );
+      return;
+    }
     try {
       final printer =
       await Printing.pickPrinter(
@@ -1099,6 +1113,7 @@ class _PrinterSettingsScreenState
               height: 16,
             ),
 
+            if (_showSystemPrinters) ...[
             // ==================================================
             // SYSTEM PRINTER PICKER
             // ==================================================
@@ -1132,7 +1147,9 @@ class _PrinterSettingsScreenState
             const SizedBox(
               height: 20,
             ),
+            ],
 
+            if (_showSystemPrinters) ...[
             // ==================================================
             // AVAILABLE PRINTERS HEADER
             // ==================================================
@@ -1322,6 +1339,7 @@ class _PrinterSettingsScreenState
             const SizedBox(
               height: 12,
             ),
+            ],
 
             // ==================================================
             // INFORMATION
@@ -1353,8 +1371,11 @@ class _PrinterSettingsScreenState
 
                     Expanded(
                       child: Text(
-                        'For the phone POSiFLOW 58mm printer, pair it in Bluetooth, tap Scan paired, then Print Test. '
-                            'System printers below are for USB/Windows PDF printers. No extra driver is required for POSiFLOW.',
+                        _showSystemPrinters
+                            ? 'For the phone POSiFLOW 58mm printer, pair it in Bluetooth, tap Scan paired, then Test 58mm bill. '
+                                'Choose From System Printers is only on Windows.'
+                            : 'Pair POSiFLOW in phone Bluetooth, tap Scan paired, then Test 58mm bill. '
+                                'Allow Nearby devices if Android asks.',
                         style:
                         TextStyle(
                           color: Colors
