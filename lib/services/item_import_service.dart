@@ -70,12 +70,6 @@ class ItemImportService {
       'category,item_name,sub_item,barcode,qty_per_sale,packets,units_per_packet,unit,opening stock,cost_price,selling_price',
     );
     for (final item in items) {
-      String packets = '';
-      if (item.unitsPerPacket != null &&
-          item.unitsPerPacket! > 0 &&
-          item.currentStock > 0) {
-        packets = numOrEmpty(item.currentStock / item.unitsPerPacket!);
-      }
       buffer.writeln(
         [
           categoryName(item.categoryId),
@@ -83,10 +77,10 @@ class ItemImportService {
           item.subItem ?? item.name,
           item.barcode ?? '',
           numOrEmpty(item.qtyNeeded),
-          packets,
+          '',
           numOrEmpty(item.unitsPerPacket),
           unitCode(item.unitId),
-          numOrEmpty(item.currentStock),
+          numOrEmpty(item.openingStock),
           numOrEmpty(item.costPrice),
           numOrEmpty(item.sellingPrice),
         ].map(_csvCell).join(','),
@@ -181,25 +175,31 @@ class ItemImportService {
           categoryId = existingItem?.categoryId;
         }
 
-        final unitName = _first(map, const ['unit', 'uom']);
+        final packetsRaw = _first(map, const ['packets', 'packet']);
+        final packets = _number(packetsRaw);
+        var unitName = _first(map, const ['unit', 'uom']);
+        if (unitName.isEmpty &&
+            packets == null &&
+            packetsRaw.isNotEmpty) {
+          unitName = packetsRaw;
+        }
         int? unitId;
         if (unitName.isNotEmpty) {
           unitId = await _ensureUnit(unitName, units);
           units = await Repository.instance.units();
         } else if (existingItem?.unitId != null) {
           unitId = existingItem!.unitId;
-        } else if (units.isNotEmpty) {
-          unitId = units.first.id;
         }
 
-        final qtyNeeded = _number(_first(map, const [
-              'qtypersale',
-              'qtyneeded',
-              'qty',
-              'qtysale',
-            ])) ??
+        final qtyRaw = _first(map, const [
+          'qtypersale',
+          'qtyneeded',
+          'qty',
+          'qtysale',
+        ]);
+        final qtyNeeded = _number(qtyRaw) ??
+            existingItem?.qtyNeeded ??
             1;
-        final packets = _number(_first(map, const ['packets', 'packet']));
         final unitsPerPacket = _number(_first(map, const [
           'unitsperpacket',
           'unitspacket',
