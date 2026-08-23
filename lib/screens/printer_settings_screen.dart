@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:foodstock/screens/bluetooth_printer_panel.dart';
 import 'package:foodstock/services/printer_service.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -39,6 +42,12 @@ class _PrinterSettingsScreenState
   bool _printing = false;
 
   String _paperSize = '80mm';
+
+  bool get _showSystemPrinters =>
+      !kIsWeb &&
+      (Platform.isWindows ||
+          Platform.isLinux ||
+          Platform.isMacOS);
 
   // ============================================================
   // INIT
@@ -236,6 +245,12 @@ class _PrinterSettingsScreenState
   // ============================================================
 
   Future<void> _pickPrinterFromSystem() async {
+    if (!_showSystemPrinters) {
+      _showError(
+        'On the phone, use Scan paired for the POSiFLOW printer.',
+      );
+      return;
+    }
     try {
       final printer =
       await Printing.pickPrinter(
@@ -1082,6 +1097,12 @@ class _PrinterSettingsScreenState
               height: 16,
             ),
 
+            const BluetoothPrinterPanel(),
+
+            const SizedBox(
+              height: 16,
+            ),
+
             // ==================================================
             // PAPER SIZE
             // ==================================================
@@ -1092,6 +1113,7 @@ class _PrinterSettingsScreenState
               height: 16,
             ),
 
+            if (_showSystemPrinters) ...[
             // ==================================================
             // SYSTEM PRINTER PICKER
             // ==================================================
@@ -1125,7 +1147,9 @@ class _PrinterSettingsScreenState
             const SizedBox(
               height: 20,
             ),
+            ],
 
+            if (_showSystemPrinters) ...[
             // ==================================================
             // AVAILABLE PRINTERS HEADER
             // ==================================================
@@ -1315,6 +1339,7 @@ class _PrinterSettingsScreenState
             const SizedBox(
               height: 12,
             ),
+            ],
 
             // ==================================================
             // INFORMATION
@@ -1346,8 +1371,11 @@ class _PrinterSettingsScreenState
 
                     Expanded(
                       child: Text(
-                        'Select a printer and a paper size (58mm, 80mm, A5 or A4). '
-                            'Use "Print Test Receipt" to verify before sales.',
+                        _showSystemPrinters
+                            ? 'For the phone POSiFLOW 58mm printer, pair it in Bluetooth, tap Scan paired, then Test 58mm bill. '
+                                'Choose From System Printers is only on Windows.'
+                            : 'Pair POSiFLOW in phone Bluetooth, tap Scan paired, then Test 58mm bill. '
+                                'When Android asks for Nearby devices, tap Allow.',
                         style:
                         TextStyle(
                           color: Colors

@@ -508,6 +508,19 @@ class Repository {
             return rm.id!;
       }
 
+      Future<void> hideRawMaterial(int rawMaterialId) async {
+            final db = await _db;
+            await db.update(
+                  'raw_materials',
+                  {
+                    'listed': 0,
+                    'barcode': null,
+                  },
+                  where: 'id = ?',
+                  whereArgs: [rawMaterialId],
+            );
+      }
+
       Future<bool> verifyRawMaterialPin(
           int rawMaterialId,
           String pin,
@@ -537,24 +550,32 @@ class Repository {
 
       Future<List<RawMaterial>> rawMaterials({
             String? search,
+            bool includeHidden = false,
       }) async {
             final db = await _db;
 
             final cleanSearch = search?.trim();
+            final filters = <String>[];
+            final args = <Object>[];
+            if (!includeHidden) {
+                  filters.add('(listed IS NULL OR listed = 1)');
+            }
+            if (cleanSearch != null && cleanSearch.isNotEmpty) {
+                  filters.add(
+                    '(name LIKE ? OR sub_item LIKE ? OR barcode LIKE ? OR barcode = ?)',
+                  );
+                  args.addAll([
+                    '%$cleanSearch%',
+                    '%$cleanSearch%',
+                    '%$cleanSearch%',
+                    cleanSearch,
+                  ]);
+            }
 
             final rows = await db.query(
                   'raw_materials',
-                  where: cleanSearch == null || cleanSearch.isEmpty
-                      ? null
-                      : '(name LIKE ? OR sub_item LIKE ? OR barcode LIKE ? OR barcode = ?)',
-                  whereArgs: cleanSearch == null || cleanSearch.isEmpty
-                      ? null
-                      : [
-                        '%$cleanSearch%',
-                        '%$cleanSearch%',
-                        '%$cleanSearch%',
-                        cleanSearch,
-                  ],
+                  where: filters.isEmpty ? null : filters.join(' AND '),
+                  whereArgs: args.isEmpty ? null : args,
                   orderBy: 'name ASC',
             );
 

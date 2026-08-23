@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:flutter/services.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:path/path.dart' as p;
@@ -27,69 +28,58 @@ class ItemImportService {
         ? _parseXlsx(bytes)
         : _parseCsv(utf8.decode(bytes, allowMalformed: true));
 
-    return _importRows(rows, updateExisting: true);
+    return _importRows(rows, updateExisting: true, replaceCatalog: true);
   }
 
-  Future<ItemImportResult> importCsvText(String text) {
-    return _importRows(_parseCsv(text), updateExisting: false);
+  Future<ItemImportResult> importCsvText(
+    String text, {
+    bool updateExisting = false,
+    bool replaceCatalog = false,
+  }) {
+    return _importRows(
+      _parseCsv(text),
+      updateExisting: updateExisting || replaceCatalog,
+      replaceCatalog: replaceCatalog,
+    );
   }
 
   Future<ItemImportResult> importXlsxBytes(Uint8List bytes) {
     return _importRows(_parseXlsx(bytes), updateExisting: false);
   }
 
-  String exportCsv({
-    required List<RawMaterial> items,
-    required List<Category> categories,
-    required List<UnitM> units,
-  }) {
-    String categoryName(int? id) {
-      for (final category in categories) {
-        if (category.id == id) return category.name;
-      }
-      return '';
-    }
+  Future<String> exportCsv() async {
+    final text = await rootBundle.loadString(
+      'assets/templates/menu_items_import.csv',
+    );
+    final rows = _parseCsv(text);
+    if (rows.isEmpty) return '';
 
-    String unitCode(int? id) {
-      for (final unit in units) {
-        if (unit.id == id) return unit.shortCode;
-      }
-      return '';
-    }
+    final header = rows.first;
+    final data = rows.skip(1).where((row) {
+      return row.any((cell) => cell.trim().isNotEmpty);
+    }).toList();
+    data.sort((a, b) {
+      final left = a.length > 1 ? a[1] : '';
+      final right = b.length > 1 ? b[1] : '';
+      return left.compareTo(right);
+    });
 
-    String numOrEmpty(double? value) {
-      if (value == null) return '';
-      return value % 1 == 0 ? value.toStringAsFixed(0) : value.toStringAsFixed(2);
+    final width = header.length;
+    String line(List<String> cells) {
+      final padded = [
+        for (var i = 0; i < width; i++) i < cells.length ? cells[i] : '',
+      ];
+      return padded.map(_csvCell).join(',');
     }
 
     final buffer = StringBuffer();
-    buffer.writeln(
-      'category,item_name,sub_item,barcode,qty_per_sale,packets,units_per_packet,unit,opening stock,cost_price,selling_price',
-    );
-    for (final item in items) {
-      String packets = '';
-      if (item.unitsPerPacket != null &&
-          item.unitsPerPacket! > 0 &&
-          item.currentStock > 0) {
-        packets = numOrEmpty(item.currentStock / item.unitsPerPacket!);
-      }
-      buffer.writeln(
-        [
-          categoryName(item.categoryId),
-          item.name,
-          item.subItem ?? item.name,
-          item.barcode ?? '',
-          numOrEmpty(item.qtyNeeded),
-          packets,
-          numOrEmpty(item.unitsPerPacket),
-          unitCode(item.unitId),
-          numOrEmpty(item.currentStock),
-          numOrEmpty(item.costPrice),
-          numOrEmpty(item.sellingPrice),
-        ].map(_csvCell).join(','),
-      );
+    buffer.write(line(header));
+    buffer.write('\r\n');
+    for (final row in data) {
+      buffer.write(line(row));
+      buffer.write('\r\n');
     }
-    return '\uFEFF${buffer.toString()}';
+    return buffer.toString();
   }
 
   String _csvCell(String value) {
@@ -104,6 +94,7 @@ class ItemImportService {
   Future<ItemImportResult> _importRows(
     List<List<String>> rows, {
     required bool updateExisting,
+    bool replaceCatalog = false,
   }) async {
     final result = ItemImportResult();
     if (rows.isEmpty) {
@@ -123,7 +114,9 @@ class ItemImportService {
         .map((cell) => _normalizeKey(cell))
         .toList();
 
-    final existing = await Repository.instance.rawMaterials();
+    final existing = await Repository.instance.rawMaterials(
+      includeHidden: true,
+    );
     final existingByKey = <String, RawMaterial>{
       for (final item in existing)
         _itemKey(item.name, item.subItem): item,
@@ -131,6 +124,7 @@ class ItemImportService {
 
     var categories = await Repository.instance.categories(type: 'raw_material');
     var units = await Repository.instance.units();
+    final importedKeys = <String>{};
 
     for (var i = headerIndex + 1; i < rows.length; i++) {
       final row = rows[i];
@@ -160,6 +154,7 @@ class ItemImportService {
         'variant',
       ]);
       final key = _itemKey(name, subItem);
+      importedKeys.add(key);
       final existingItem = existingByKey[key];
       if (existingItem != null && !updateExisting) {
         result.skipped++;
@@ -175,28 +170,25 @@ class ItemImportService {
             type: 'raw_material',
           );
         } else {
-          categoryId = existingItem?.categoryId;
+          categoryId = null;
         }
 
+        final packetsRaw = _first(map, const ['packets', 'packet']);
+        final packets = _number(packetsRaw);
         final unitName = _first(map, const ['unit', 'uom']);
         int? unitId;
         if (unitName.isNotEmpty) {
           unitId = await _ensureUnit(unitName, units);
           units = await Repository.instance.units();
-        } else if (existingItem?.unitId != null) {
-          unitId = existingItem!.unitId;
-        } else if (units.isNotEmpty) {
-          unitId = units.first.id;
         }
 
-        final qtyNeeded = _number(_first(map, const [
-              'qtypersale',
-              'qtyneeded',
-              'qty',
-              'qtysale',
-            ])) ??
-            1;
-        final packets = _number(_first(map, const ['packets', 'packet']));
+        final qtyRaw = _first(map, const [
+          'qtypersale',
+          'qtyneeded',
+          'qty',
+          'qtysale',
+        ]);
+        final qtyNeeded = _number(qtyRaw) ?? 0;
         final unitsPerPacket = _number(_first(map, const [
           'unitsperpacket',
           'unitspacket',
@@ -218,15 +210,15 @@ class ItemImportService {
             id: existingItem?.id,
             barcode: _emptyToNull(_first(map, const ['barcode', 'code'])),
             name: name,
-            subItem: subItem.isEmpty ? name : subItem,
+            subItem: subItem.isEmpty ? null : subItem,
             qtyNeeded: qtyNeeded,
             categoryId: categoryId,
             unitId: unitId,
-            openingStock: stock ?? 0,
-            currentStock: stock ?? 0,
+            openingStock: stock,
+            currentStock: stock,
             reorderLevel: existingItem?.reorderLevel ?? 0,
             shelfLifeDays: existingItem?.shelfLifeDays,
-            unitsPerPacket: unitsPerPacket ?? existingItem?.unitsPerPacket,
+            unitsPerPacket: unitsPerPacket,
             entryPasswordHash: existingItem?.entryPasswordHash,
             costPrice: _number(_first(map, const [
               'costprice',
@@ -240,6 +232,7 @@ class ItemImportService {
               'price',
             ])),
             imagePath: existingItem?.imagePath,
+            listed: true,
             createdAt: existingItem?.createdAt,
           );
         final id = await Repository.instance.saveRawMaterial(saved);
@@ -261,6 +254,7 @@ class ItemImportService {
           costPrice: saved.costPrice,
           sellingPrice: saved.sellingPrice,
           imagePath: saved.imagePath,
+          listed: true,
           createdAt: saved.createdAt,
         );
         if (existingItem == null) {
@@ -270,6 +264,22 @@ class ItemImportService {
         }
       } catch (e) {
         result.errors.add('Row ${i + 1} ($name): $e');
+      }
+    }
+
+    if (replaceCatalog) {
+      final leftovers = await Repository.instance.rawMaterials(
+        includeHidden: true,
+      );
+      for (final item in leftovers) {
+        if (item.id == null) continue;
+        final key = _itemKey(item.name, item.subItem);
+        if (importedKeys.contains(key)) continue;
+        try {
+          await Repository.instance.deleteRawMaterial(item.id!);
+        } catch (_) {
+          await Repository.instance.hideRawMaterial(item.id!);
+        }
       }
     }
 

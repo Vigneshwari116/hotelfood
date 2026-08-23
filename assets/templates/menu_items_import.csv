@@ -1,31 +1,42 @@
-category,item_name,sub_item,barcode,qty_per_sale,packets,units_per_packet,unit,opening stock,cost_price,selling_price
-Fried Items,Thai Crispy,Thai Crispy,,1,,10,pc,0,,
-Fried Items,Crunchy Masala,Crunchy Masala,,1,,10,pc,0,,
-Fried Items,Chilli Burst,Chilli Burst,,1,,10,pc,0,,
-Fried Items,Krusty Bites,Krusty Bites,,8,,50,pc,0,,
-Fried Items,Chicken 65,Chicken 65,,10,,50,pc,0,,
-Fried Items,Peri Peri Chwings,Peri Peri Chwings,,4,,28,pc,0,,
-Fried Items,Chicken Popcorn,Chicken Popcorn,,69,,552,g,0,,
-Fried Items,Whole Muscle Patty,Whole Muscle Patty,,1,,13,pc,0,,
-Fried Items,Chicken Momos,Chicken Momos,,4,,40,pc,0,,
-Fried Items,Crispy Chicken Patty,Crispy Chicken Patty,,1,,20,pc,0,,
-Fried Items,Chicken Fingers,Chicken Fingers,,3,,39,pc,0,,
-Fried Items,Chicken Nuggets,Chicken Nuggets,,4,,60,pc,0,,
-Fried Items,Chicken Strips,Chicken Strips,,3,,27,pc,0,,
-Fried Items,Chicken Cheese Shotz,Chicken Cheese Shotz,,6,,50,pc,0,,
-Fried Items,Veg Finger,Veg Finger,,3,,33,pc,0,,
-Fried Items,Pizza Pocket,Pizza Pocket,,4,,28,pc,0,,
-Fried Items,Paneer Patty,Paneer Patty,,1,,14,pc,0,,
-Fried Items,French Fries,French Fries,,100,,2500,g,0,,
-Fried Items,Veg Patty,Veg Patty,,1,,13,pc,0,,
-Fried Items,Tandoori Patty,Tandoori Patty,,1,,13,pc,0,,
-Fried Items,Hot Crispy Patty,Hot Crispy Patty,,1,,5,pc,0,,
-Buns,Burger Bun With Sesame,Burger Bun With Sesame,,1,,6,pc,0,,
-Buns,Plain Burger Bun,Plain Burger Bun,,1,,6,pc,0,,
-Fillings,Tandoori Filling,Tandoori Filling,,1,,,pc,0,,
-Breads,Paratha,Paratha,,1,,,pc,0,,
-Sauces,Paratha Sauce,Paratha Sauce,,1,,,pc,0,,
-Sauces,Eggless Mayonnaise,Eggless Mayonnaise,,1,,,pc,0,,
-Sauces,Tandoori Mayonnaise,Tandoori Mayonnaise,,1,,,pc,0,,
+﻿category,item_name,sub_item,barcode,qty_per_sale,packets,units_per_packet,unit,opening stock,cost_price,selling_price
 Sauces,BBQ Seasoning,BBQ Seasoning,,1,,,pc,0,,
+Buns,Burger Bun With Sesame,Burger Bun With Sesame,,1,,6,pc,0,,
 Sauces,CP Marinade,CP Marinade,,1,,,pc,0,,
+snacks,Chicken 65,Chicken 65,10,1,,,pc,0,,85
+snacks,Chicken Cheese Shotz,Chicken Cheese Shotz,6,1,,50,pc,0,,90
+snacks,Chicken Fingers,Chicken Fingers,3,1,,,pc,0,,60
+snacks,Chicken Momos,Chicken Momos,,4,,40,pc,0,,
+snacks,Chicken Nuggets,Chicken Nuggets,,4,,60,pc,0,,55
+Fried Items,Chicken Popcorn,Chicken Popcorn,69,1,,,g,0,,70
+Fried Items,Chicken Strips,Chicken Strips,,3,,27,pc,0,,99
+Fried Items,Chilli Burst,Chilli Burst,,1,,10,pc,0,,80
+burger,star burger,Crispy Chicken Patty,,1,,20,pc,0,,60
+Fried Items,Crunchy Masala,Crunchy Masala,,1,,10,pc,50,,
+Sauces,Eggless Mayonnaise,Eggless Mayonnaise,,1,,,pc,0,,
+snacks,French Fries,French Fries,100,1,,,g,0,,50
+burger,Hot Crispy burger,Hot Crispy Patty,,1,,5,pc,0,,110
+Fried Items,Krusty Bites,Krusty Bites,8,1,,,pc,0,,90
+burger,Paneer Delight burger,Paneer Patty,,1,,14,pc,0,,90
+,Paratha,Paratha,,1,,,pc,0,,
+Sauces,Paratha Sauce,Paratha Sauce,,1,,,pc,0,,
+Fried Items,Peri Peri Chwings,Peri Peri Chwings,4,1,,,pc,0,,99
+snacks,Pizza Pocket,Pizza Pocket,,4,,28,pc,0,,59
+Burgers,Tandoori Burger Bun,Tandoori Patty,,1,,13,pc,0,,95
+Rolls,chicken 65,Tandoori roll,,1,,4,pc,0,,85
+Sauces,Tandoori Mayonnaise,Tandoori Mayonnaise,,1,,,pc,0,,
+Fried Items,Hungery bird burger,Whole Muscle Patty,,1,,13,pc,0,,100
+Fried Items,Thai Crispy,Thai Crispy,1,1,,10,pc,0,,80
+snacks,Veg Finger,Veg Finger,,3,,33,pc,0,,55
+burger,Veg Burger,Veg Patty,,1,,13,pc,0,,65
+rolls,Panner roll,panner patty,,1,,14,pc,0,,90
+snacks,mirchi bites,mirchi bites,,8,,,,,,109
+Fried Items,saucy bites,boneless bites,,2,,10,pc,,,99
+Fried Items,chicken lollipops,chicken lollipops,,,,4,pc,,,119
+Burgers,smokey burger,smokey burger,,1,,10,pc,,,129
+Fried Items,Mini Bucket,Thai Crispy,,5,,10,pc,,,385
+Fried Items,Big Buckets,Thai Crispy,,10,,10,pc,,,765
+snacks,chicken popcorn large,Chicken Popcorn,,140,gms,,,,,120
+snacks,masala fries Large,French Fries,,120,gms,,,,,99
+,water 1/2 liter,water,,1,,24,pc,,,10
+,cool drinks glass,cool drinks,,1,,24,pc,,,15
+,pepsi 300 ml,pepsi,,1,,24,pc,,,20

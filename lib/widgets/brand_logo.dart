@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 class BrandAssets {
   static const logo = 'assets/branding/shilpa_logo.png';
   static const icon = 'assets/branding/shilpa_icon.png';
+  static const chicken = 'assets/branding/five_star_chicken.png';
+  static const thankYou = 'assets/branding/thank_you_hands.png';
 }
 
 class BrandLogo extends StatelessWidget {

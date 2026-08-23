@@ -49,13 +49,6 @@ class _RawMaterialMasterScreenState
   }
 
   Future<void> _loadMenuFromExcelThenItems() async {
-    try {
-      await ItemImportService().importCsvText(
-        await rootBundle.loadString(
-          'assets/templates/menu_items_import.csv',
-        ),
-      );
-    } catch (_) {}
     await _loadAll();
   }
 
@@ -147,15 +140,7 @@ class _RawMaterialMasterScreenState
   }
 
   Future<void> _saveImportTemplate() async {
-    final items = await Repository.instance.rawMaterials();
-    final categories =
-        await Repository.instance.categories(type: 'raw_material');
-    final units = await Repository.instance.units();
-    final csv = ItemImportService().exportCsv(
-      items: items,
-      categories: categories,
-      units: units,
-    );
+    final csv = await ItemImportService().exportCsv();
     String? path;
     if (!kIsWeb &&
         (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
