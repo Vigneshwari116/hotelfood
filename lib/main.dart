@@ -1,7 +1,10 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/database/api_config.dart';
+import 'package:foodstock/services/auth_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/item_import_service.dart';
 import 'services/repository.dart';
@@ -62,6 +65,7 @@ class _StartupGate extends StatefulWidget {
 
 class _StartupGateState extends State<_StartupGate> {
   late Future<void> _ready;
+  AuthSession? _session;
 
   @override
   void initState() {
@@ -116,6 +120,7 @@ class _StartupGateState extends State<_StartupGate> {
       }
     } catch (_) {}
     await Repository.instance.writeOffExpiredStock();
+    _session = await AuthSession.load();
   }
 
   @override
@@ -176,6 +181,14 @@ class _StartupGateState extends State<_StartupGate> {
                 ),
               ),
             ),
+          );
+        }
+
+        final session = _session;
+        if (session != null) {
+          return MainShell(
+            username: session.username,
+            role: session.role,
           );
         }
 
@@ -247,9 +260,11 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      if (!mounted) return;
-
       final role = (rows.first['role'] ?? 'staff').toString();
+
+      await AuthSession.save(username: username, role: role);
+
+      if (!mounted) return;
 
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
@@ -435,7 +450,13 @@ class MainShell extends StatelessWidget {
       title: 'Shilpa Enterprise',
       userLabel: username,
       items: items,
-      onLogout: () {
+      onLogout: () async {
+        await AuthSession.clear();
+        if (Platform.isAndroid || Platform.isIOS) {
+          await SystemNavigator.pop();
+          return;
+        }
+        if (!context.mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
             builder: (_) => const LoginScreen(),

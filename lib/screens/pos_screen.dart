@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/pos_stock.dart';
 import 'package:foodstock/services/printer_service.dart';
 import 'package:foodstock/services/repository.dart';
 
@@ -243,66 +244,38 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    final available =
-    _stockForMaterial(material);
+    final available = _stockForMaterial(material);
+    final index = _cartIndexForRaw(material.id!);
+    final cartQty = index == -1 ? 0.0 : _cart[index].qty;
 
-    if (available <= 0) {
-      _showError(
-        '${material.name} is out of stock.',
-      );
-      return;
-    }
-
-    final index =
-    _cartIndexForRaw(material.id!);
-
-    // ----------------------------------------------------------
-    // NEW CART LINE
-    // ----------------------------------------------------------
-
-    if (index == -1) {
-      setState(() {
-        _cart.add(
-          CartLine(
-            rawMaterialId:
-            material.id,
-            name: material.name,
-            subItem: material.trimmedSubItem,
-            qty: 1,
-            price:
-            material.sellingPrice ?? 0,
-          ),
-        );
-      });
-
-      return;
-    }
-
-    // ----------------------------------------------------------
-    // EXISTING CART LINE
-    // ----------------------------------------------------------
-
-    final currentQty =
-        _cart[index].qty;
-
-    if (currentQty + 1 >
-        available + 0.000001) {
+    if (!posAllowsAdd(stock: available, cartQty: cartQty)) {
       _showError(
         'Only ${_formatQty(available)} '
             '${_unitForMaterial(material)} '
             'of ${material.name} is available.',
       );
+      return;
+    }
 
+    if (index == -1) {
+      setState(() {
+        _cart.add(
+          CartLine(
+            rawMaterialId: material.id,
+            name: material.name,
+            subItem: material.trimmedSubItem,
+            qty: 1,
+            price: material.sellingPrice ?? 0,
+          ),
+        );
+      });
       return;
     }
 
     setState(() {
-      final old =
-      _cart[index];
-
+      final old = _cart[index];
       _cart[index] = CartLine(
-        rawMaterialId:
-        old.rawMaterialId,
+        rawMaterialId: old.rawMaterialId,
         comboId: old.comboId,
         name: old.name,
         subItem: old.subItem,
@@ -349,21 +322,16 @@ class _PosScreenState extends State<PosScreen> {
           line.rawMaterialId,
     );
 
-    final maxQty =
-    materialIndex == -1
-        ? 0.0
-        : _stockForMaterial(
-      _materials[
-      materialIndex],
+    final maxQty = posMaxQty(
+      materialIndex == -1
+          ? 0.0
+          : _stockForMaterial(_materials[materialIndex]),
     );
 
-    if (newQty >
-        maxQty + 0.000001) {
+    if (maxQty != null && newQty > maxQty + 0.000001) {
       _showError(
-        'Maximum available quantity is '
-            '${_formatQty(maxQty)}.',
+        'Maximum available quantity is ${_formatQty(maxQty)}.',
       );
-
       return;
     }
 
@@ -677,12 +645,10 @@ class _PosScreenState extends State<PosScreen> {
       material.id!,
     );
 
-    final availableToAdd =
-        stock - cartQty;
-
-    final canAdd =
-        availableToAdd >
-            0.000001;
+    final canAdd = posAllowsAdd(
+      stock: stock,
+      cartQty: cartQty,
+    );
 
     final unit =
     _unitForMaterial(
@@ -694,12 +660,15 @@ class _PosScreenState extends State<PosScreen> {
       Clip.antiAlias,
       margin: EdgeInsets.zero,
       child: InkWell(
-        onTap: canAdd
-            ? () =>
-            _addRawMaterial(
-              material,
-            )
-            : null,
+        onTap: () {
+          if (!canAdd) {
+            _showError(
+              '${material.name} has no more stock to add.',
+            );
+            return;
+          }
+          _addRawMaterial(material);
+        },
         child: Column(
           crossAxisAlignment:
           CrossAxisAlignment
@@ -763,6 +732,15 @@ class _PosScreenState extends State<PosScreen> {
                         FontWeight
                             .w600,
                         fontSize: 14,
+                      ),
+                    ),
+                    Text(
+                      stock <= 0.000001
+                          ? 'Stock not set'
+                          : 'Stock ${_formatQty(stock)}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade700,
                       ),
                     ),
 
@@ -1496,88 +1474,48 @@ class _PosScreenState extends State<PosScreen> {
 
   Widget _topBar() {
     return Padding(
-      padding:
-      const EdgeInsets.fromLTRB(
-        10,
-        8,
-        10,
-        8,
-      ),
-      child:
-      Row(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      child: Column(
         children: [
-          Expanded(
-            child:
-            TextField(
-              controller:
-              _searchController,
-              decoration:
-              InputDecoration(
-                hintText:
-                'Search raw materials...',
-                prefixIcon:
-                const Icon(
-                  Icons.search,
-                ),
-                suffixIcon:
-                _search.isEmpty
-                    ? null
-                    : IconButton(
-                  onPressed:
-                      () {
-                    _searchController
-                        .clear();
-                  },
-                  icon:
-                  const Icon(
-                    Icons.clear,
+          TextField(
+            controller: _searchController,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: 'Search items',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _search.isEmpty
+                  ? null
+                  : IconButton(
+                      onPressed: _searchController.clear,
+                      icon: const Icon(Icons.clear),
+                    ),
+              border: const OutlineInputBorder(),
+              isDense: true,
+              filled: true,
+              fillColor: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _barcodeController,
+                  onSubmitted: _handleBarcode,
+                  decoration: const InputDecoration(
+                    hintText: 'Barcode',
+                    prefixIcon: Icon(Icons.qr_code_scanner),
+                    border: OutlineInputBorder(),
+                    isDense: true,
                   ),
                 ),
-                border:
-                const OutlineInputBorder(),
-                isDense:
-                true,
               ),
-            ),
-          ),
-
-          const SizedBox(
-            width: 8,
-          ),
-
-          SizedBox(
-            width: 210,
-            child:
-            TextField(
-              controller:
-              _barcodeController,
-              onSubmitted:
-              _handleBarcode,
-              decoration:
-              const InputDecoration(
-                hintText:
-                'Scan barcode',
-                prefixIcon:
-                Icon(
-                  Icons
-                      .qr_code_scanner,
-                ),
-                border:
-                OutlineInputBorder(),
-                isDense:
-                true,
+              IconButton(
+                tooltip: 'Refresh prices and stock',
+                onPressed: _loading ? null : _loadData,
+                icon: const Icon(Icons.refresh),
               ),
-            ),
-          ),
-
-          const SizedBox(
-            width: 4,
-          ),
-
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _loading ? null : _loadData,
-            icon: const Icon(Icons.refresh),
+            ],
           ),
         ],
       ),
@@ -1783,7 +1721,7 @@ class _PosScreenState extends State<PosScreen> {
         // This gives more vertical room
         // in the POS window.
         mainAxisExtent:
-        205,
+        220,
 
         crossAxisSpacing:
         10,

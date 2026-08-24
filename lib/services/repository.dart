@@ -1809,7 +1809,7 @@ class Repository {
             final result = <int, double>{};
 
             for (final row in rows) {
-                  final id = row['id'] as int;
+                  final id = (row['id'] as num).toInt();
 
                   final double stock =
                       (row['current_stock'] as num?)?.toDouble() ?? 0.0;

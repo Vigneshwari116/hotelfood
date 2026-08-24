@@ -214,7 +214,7 @@ class RawMaterial {
 
   factory RawMaterial.fromMap(Map<String, dynamic> map) {
     return RawMaterial(
-      id: map['id'] as int?,
+      id: (map['id'] as num?)?.toInt(),
       barcode: map['barcode']?.toString(),
       name: map['name']?.toString() ?? '',
       subItem: map['sub_item']?.toString(),
