@@ -32,6 +32,8 @@ class _PosScreenState extends State<PosScreen> {
   ScrollController();
 
   List<RawMaterial> _materials = [];
+  List<Category> _categories = [];
+  int? _categoryId;
 
   Map<int, double> _rawStock = {};
 
@@ -94,6 +96,7 @@ class _PosScreenState extends State<PosScreen> {
 
     try {
       final materials = await _repo.rawMaterials();
+      final categories = await _repo.categories(type: 'raw_material');
       final stock =
       await _repo.maxQuantitiesForRawMaterials();
 
@@ -101,8 +104,13 @@ class _PosScreenState extends State<PosScreen> {
 
       setState(() {
         _materials = materials;
+        _categories = categories;
         _rawStock = stock;
         _loading = false;
+        if (_categoryId != null &&
+            !_stockedCategoryIds.contains(_categoryId)) {
+          _categoryId = null;
+        }
       });
     } catch (e) {
       if (!mounted) return;
@@ -143,21 +151,40 @@ class _PosScreenState extends State<PosScreen> {
   String get _search =>
       _searchController.text.trim().toLowerCase();
 
+  bool _materialIsStocked(RawMaterial material) {
+    return posIsStocked(_stockForMaterial(material));
+  }
+
+  List<RawMaterial> get _stockedMaterials {
+    return _materials.where(_materialIsStocked).toList();
+  }
+
+  Set<int?> get _stockedCategoryIds {
+    return {for (final material in _stockedMaterials) material.categoryId};
+  }
+
+  List<Category> get _stockedCategories {
+    final ids = _stockedCategoryIds;
+    return _categories.where((category) => ids.contains(category.id)).toList();
+  }
+
   List<RawMaterial> get _filteredMaterials {
+    var list = _stockedMaterials;
+    if (_categoryId == -1) {
+      list = list.where((material) => material.categoryId == null).toList();
+    } else if (_categoryId != null) {
+      list = list
+          .where((material) => material.categoryId == _categoryId)
+          .toList();
+    }
     if (_search.isEmpty) {
-      return _materials;
+      return list;
     }
 
-    return _materials.where((material) {
-      final name =
-      material.name.toLowerCase();
-
-      final subItem =
-          material.trimmedSubItem?.toLowerCase() ?? '';
-
-      final barcode =
-          material.barcode?.toLowerCase() ?? '';
-
+    return list.where((material) {
+      final name = material.name.toLowerCase();
+      final subItem = material.trimmedSubItem?.toLowerCase() ?? '';
+      final barcode = material.barcode?.toLowerCase() ?? '';
       return name.contains(_search) ||
           subItem.contains(_search) ||
           barcode.contains(_search);
@@ -188,6 +215,13 @@ class _PosScreenState extends State<PosScreen> {
       if (material == null) {
         _showError(
           'No raw material found for barcode "$barcode".',
+        );
+        return;
+      }
+
+      if (!_materialIsStocked(material)) {
+        _showError(
+          '${material.name} has no stock.',
         );
         return;
       }
@@ -331,7 +365,7 @@ class _PosScreenState extends State<PosScreen> {
           : _stockForMaterial(_materials[materialIndex]),
     );
 
-    if (maxQty != null && newQty > maxQty + 0.000001) {
+    if (newQty > maxQty + 0.000001) {
       _showError(
         'Maximum available quantity is ${_formatQty(maxQty)}.',
       );
@@ -1603,7 +1637,7 @@ class _PosScreenState extends State<PosScreen> {
               ),
 
               Text(
-                'Items',
+                'Items in stock',
                 style: Theme.of(
                   context,
                 )
@@ -1619,9 +1653,7 @@ class _PosScreenState extends State<PosScreen> {
           ),
         ),
 
-        // --------------------------------------------------------
-        // PRODUCT GRID
-        // --------------------------------------------------------
+        _categoryChips(),
 
         Expanded(
           child:
@@ -1635,6 +1667,55 @@ class _PosScreenState extends State<PosScreen> {
   // MATERIAL GRID
   // ============================================================
 
+  Widget _categoryChips() {
+    final hasOther = _stockedCategoryIds.contains(null);
+    if (_stockedCategories.isEmpty && !hasOther) {
+      return const SizedBox.shrink();
+    }
+
+    Widget chip({
+      required String label,
+      required bool selected,
+      required VoidCallback onTap,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: ChoiceChip(
+          label: Text(label),
+          selected: selected,
+          onSelected: (_) => onTap(),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        children: [
+          chip(
+            label: 'All',
+            selected: _categoryId == null,
+            onTap: () => setState(() => _categoryId = null),
+          ),
+          for (final category in _stockedCategories)
+            chip(
+              label: category.name,
+              selected: _categoryId == category.id,
+              onTap: () => setState(() => _categoryId = category.id),
+            ),
+          if (hasOther)
+            chip(
+              label: 'Other',
+              selected: _categoryId == -1,
+              onTap: () => setState(() => _categoryId = -1),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _materialsGrid() {
     final materials =
         _filteredMaterials;
@@ -1645,7 +1726,11 @@ class _PosScreenState extends State<PosScreen> {
         Icons
             .inventory_2_outlined,
         title:
-        'No raw materials found',
+        _search.isNotEmpty
+            ? 'No stocked items match this search'
+            : _categoryId == null
+                ? 'No items in stock'
+                : 'No stocked items in this category',
       );
     }
 
