@@ -2721,6 +2721,18 @@ class Repository {
       Future<List<Map<String, dynamic>>> itemSalesReport() async {
             final db = await _db;
 
+            final countRows = await db.rawQuery(
+                  'SELECT COUNT(*) AS cnt FROM sales WHERE is_voided = 0',
+            );
+            final saleCount =
+                (countRows.isEmpty
+                    ? 0
+                    : (countRows.first['cnt'] as num?)?.toInt()) ??
+                0;
+            if (saleCount == 0) {
+                  return const [];
+            }
+
             return db.rawQuery(
                   '''
       SELECT

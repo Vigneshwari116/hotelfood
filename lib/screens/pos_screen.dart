@@ -1129,11 +1129,8 @@ class _PosScreenState extends State<PosScreen> {
                 return;
               }
 
-              setState(() {
-                _paymentType =
-                    value;
-              });
-              _sheetSetState?.call(() {});
+              _paymentType = value;
+              _refreshUi();
             },
           ),
 

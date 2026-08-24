@@ -286,7 +286,15 @@ class _ItemSalesTabState extends State<_ItemSalesTab> {
       );
     }
     if (_rows.isEmpty) {
-      return const Center(child: Text('No item sales yet'));
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'No sales yet.\nComplete a bill in Sales / POS, then open this tab again.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
     }
 
     final totalQty = _rows.fold<double>(
