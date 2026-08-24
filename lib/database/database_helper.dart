@@ -3,9 +3,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/database/app_db.dart';
-import 'package:foodstock/database/postgres_app_db.dart';
-import 'package:foodstock/database/remote_db_config.dart';
+import 'package:foodstock/database/http_app_db.dart';
 import 'package:foodstock/database/sqlite_app_db.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -17,7 +17,6 @@ class DBHelper {
 
   static Database? _db;
   static AppDb? _appDb;
-  static PostgresAppDb? _postgres;
 
   // ============================================================
   // DESKTOP CHECK
@@ -51,18 +50,9 @@ class DBHelper {
 
   Future<AppDb> get appDb async {
     if (_appDb != null) return _appDb!;
-    final config = await RemoteDbConfig.load();
-    if (config.enabled) {
-      if (config.host.isEmpty || config.database.isEmpty) {
-        throw StateError('VPS host or database name is missing.');
-      }
-      if (config.password.isEmpty) {
-        throw StateError(
-          'Open Server, enter the Postgres password for shilpa_enterprise, and Save.',
-        );
-      }
-      _postgres = await PostgresAppDb.connect(config);
-      _appDb = _postgres;
+    if (ApiConfig.enabled) {
+      _appDb = HttpAppDb();
+      await _appDb!.rawQuery('SELECT 1 AS ok');
       return _appDb!;
     }
     _appDb = SqliteAppDb(await database);
@@ -1246,8 +1236,6 @@ class DBHelper {
   // ============================================================
 
   Future<void> close() async {
-    await _postgres?.close();
-    _postgres = null;
     _appDb = null;
 
     final db = _db;

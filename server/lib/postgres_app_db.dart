@@ -1,50 +1,15 @@
 import 'package:postgres/postgres.dart';
 
-import 'package:foodstock/database/app_db.dart';
-import 'package:foodstock/database/postgres_schema.dart';
-import 'package:foodstock/database/remote_db_config.dart';
-import 'package:foodstock/database/sql_placeholders.dart';
+import 'app_db.dart';
+import 'postgres_schema.dart';
+import 'sql_placeholders.dart';
 
 class PostgresAppDb implements AppDb {
-  PostgresAppDb._(this._session, {Connection? connection})
+  PostgresAppDb(this._session, {Connection? connection})
       : _connection = connection;
 
   final Session _session;
   final Connection? _connection;
-
-  static Future<PostgresAppDb> connect(RemoteDbConfig config) async {
-    Endpoint endpoint() => Endpoint(
-          host: config.host,
-          port: config.port,
-          database: config.database,
-          username: config.username,
-          password: config.password,
-        );
-
-    Connection connection;
-    try {
-      connection = await Connection.open(
-        endpoint(),
-        settings: const ConnectionSettings(
-          sslMode: SslMode.disable,
-          connectTimeout: Duration(seconds: 20),
-        ),
-      );
-    } catch (_) {
-      connection = await Connection.open(
-        endpoint(),
-        settings: const ConnectionSettings(sslMode: SslMode.require),
-      );
-    }
-
-    final db = PostgresAppDb._(connection, connection: connection);
-    await db.ensureSchema();
-    return db;
-  }
-
-  Future<void> close() async {
-    await _connection?.close();
-  }
 
   Future<void> ensureSchema() async {
     for (final statement in postgresSchemaStatements) {
@@ -174,9 +139,7 @@ class PostgresAppDb implements AppDb {
   Future<T> transaction<T>(Future<T> Function(AppDb txn) action) {
     final conn = _connection;
     if (conn != null) {
-      return conn.runTx((session) {
-        return action(PostgresAppDb._(session));
-      });
+      return conn.runTx((session) => action(PostgresAppDb(session)));
     }
     return action(this);
   }

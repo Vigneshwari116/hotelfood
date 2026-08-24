@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:foodstock/database/database_helper.dart';
-import 'package:foodstock/database/remote_db_config.dart';
+import 'package:foodstock/database/api_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/item_import_service.dart';
 import 'services/repository.dart';
@@ -19,7 +19,6 @@ import 'screens/pos_screen.dart';
 import 'screens/reports_screen.dart';
 import 'screens/printer_settings_screen.dart';
 import 'screens/backup_screen.dart';
-import 'screens/server_connection_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -79,7 +78,7 @@ class _StartupGateState extends State<_StartupGate> {
     try {
       const seedKey = 'menu_csv_seed';
       const seedVersion = 7;
-      final remote = await RemoteDbConfig.isEnabled();
+      final remote = ApiConfig.enabled;
       int seeded;
       if (remote) {
         final db = await DBHelper.instance.appDb;
@@ -172,18 +171,6 @@ class _StartupGateState extends State<_StartupGate> {
                         });
                       },
                       child: const Text('Retry'),
-                    ),
-                    const SizedBox(height: 8),
-                    TextButton(
-                      onPressed: () async {
-                        await RemoteDbConfig.disable();
-                        await DBHelper.instance.reconnect();
-                        if (!mounted) return;
-                        setState(() {
-                          _ready = _initializeApp();
-                        });
-                      },
-                      child: const Text('Use local database instead'),
                     ),
                   ],
                 ),
@@ -435,11 +422,6 @@ class MainShell extends StatelessWidget {
               icon: Icons.print_outlined,
               label: 'Printers',
               page: const PrinterSettingsScreen(),
-            ),
-            NavItem(
-              icon: Icons.cloud_outlined,
-              label: 'Server',
-              page: const ServerConnectionScreen(),
             ),
             NavItem(
               icon: Icons.backup_outlined,

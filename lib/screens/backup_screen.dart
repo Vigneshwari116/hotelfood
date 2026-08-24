@@ -1,8 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
-import '../database/database_helper.dart';
-import '../database/remote_db_config.dart';
+import '../database/api_config.dart';
 import '../services/backup_service.dart';
 import '../widgets/responsive_shell.dart';
 
@@ -18,11 +17,11 @@ class _BackupScreenState extends State<BackupScreen> {
   String? _lastMessage;
 
   Future<void> _backup() async {
-    if (await RemoteDbConfig.isEnabled()) {
+    if (ApiConfig.enabled) {
       setState(() {
         _lastMessage =
-            'This device is using the VPS database. Shop data is already on the server. '
-            'Use DBeaver / pg_dump on shilpa_enterprise for a server backup.';
+            'Shop data is on the VPS. Ask the owner to back up shilpa_enterprise '
+            'with DBeaver or pg_dump. This screen only backs up a local copy.';
       });
       return;
     }
@@ -48,11 +47,10 @@ class _BackupScreenState extends State<BackupScreen> {
   }
 
   Future<void> _restore() async {
-    if (await RemoteDbConfig.isEnabled()) {
+    if (ApiConfig.enabled) {
       setState(() {
         _lastMessage =
-            'Turn off VPS mode before restoring a local restopos.db file. '
-            'Server data is not replaced by a phone SQLite backup.';
+            'This app uses the shop server. A local restopos.db file cannot replace VPS data.';
       });
       return;
     }
