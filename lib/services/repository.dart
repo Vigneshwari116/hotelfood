@@ -2737,8 +2737,9 @@ class Repository {
       WHERE s.is_voided = 0
       GROUP BY
         si.item_name,
-        IFNULL(si.sub_item, ''),
-        si.raw_material_id
+        COALESCE(si.sub_item, ''),
+        si.raw_material_id,
+        rm.current_stock
       ORDER BY si.item_name ASC, si.sub_item ASC
       ''',
             );

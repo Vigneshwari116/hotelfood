@@ -213,12 +213,20 @@ class _ItemSalesTabState extends State<_ItemSalesTab> {
   }
 
   Future<void> _load() async {
-    final r = await Repository.instance.itemSalesReport();
-    if (!mounted) return;
-    setState(() {
-      _rows = r;
-      _loading = false;
-    });
+    try {
+      final r = await Repository.instance.itemSalesReport();
+      if (!mounted) return;
+      setState(() {
+        _rows = r;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _rows = [];
+        _loading = false;
+      });
+    }
   }
 
   @override

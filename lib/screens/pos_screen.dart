@@ -41,6 +41,13 @@ class _PosScreenState extends State<PosScreen> {
 
   bool _loading = true;
   bool _saving = false;
+  bool _cartSheetOpen = false;
+  void Function(VoidCallback)? _sheetSetState;
+
+  void _refreshUi() {
+    if (mounted) setState(() {});
+    _sheetSetState?.call(() {});
+  }
 
   // ============================================================
   // INIT
@@ -258,31 +265,29 @@ class _PosScreenState extends State<PosScreen> {
     }
 
     if (index == -1) {
-      setState(() {
-        _cart.add(
-          CartLine(
-            rawMaterialId: material.id,
-            name: material.name,
-            subItem: material.trimmedSubItem,
-            qty: 1,
-            price: material.sellingPrice ?? 0,
-          ),
-        );
-      });
+      _cart.add(
+        CartLine(
+          rawMaterialId: material.id,
+          name: material.name,
+          subItem: material.trimmedSubItem,
+          qty: 1,
+          price: material.sellingPrice ?? 0,
+        ),
+      );
+      _refreshUi();
       return;
     }
 
-    setState(() {
-      final old = _cart[index];
-      _cart[index] = CartLine(
-        rawMaterialId: old.rawMaterialId,
-        comboId: old.comboId,
-        name: old.name,
-        subItem: old.subItem,
-        qty: old.qty + 1,
-        price: old.price,
-      );
-    });
+    final old = _cart[index];
+    _cart[index] = CartLine(
+      rawMaterialId: old.rawMaterialId,
+      comboId: old.comboId,
+      name: old.name,
+      subItem: old.subItem,
+      qty: old.qty + 1,
+      price: old.price,
+    );
+    _refreshUi();
   }
 
   // ============================================================
@@ -300,10 +305,8 @@ class _PosScreenState extends State<PosScreen> {
 
     // Remove line.
     if (newQty <= 0) {
-      setState(() {
-        _cart.removeAt(index);
-      });
-
+      _cart.removeAt(index);
+      _refreshUi();
       return;
     }
 
@@ -335,18 +338,15 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    setState(() {
-      _cart[index] =
-          CartLine(
-            rawMaterialId:
-            line.rawMaterialId,
-            comboId: line.comboId,
-            name: line.name,
-            subItem: line.subItem,
-            qty: newQty,
-            price: line.price,
-          );
-    });
+    _cart[index] = CartLine(
+      rawMaterialId: line.rawMaterialId,
+      comboId: line.comboId,
+      name: line.name,
+      subItem: line.subItem,
+      qty: newQty,
+      price: line.price,
+    );
+    _refreshUi();
   }
 
   // ============================================================
@@ -361,9 +361,8 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    setState(() {
-      _cart.removeAt(index);
-    });
+    _cart.removeAt(index);
+    _refreshUi();
   }
 
   // ============================================================
@@ -375,9 +374,8 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    setState(() {
-      _cart.clear();
-    });
+    _cart.clear();
+    _refreshUi();
   }
 
   // ============================================================
@@ -493,6 +491,10 @@ class _PosScreenState extends State<PosScreen> {
       await _refreshStock();
 
       if (!mounted) return;
+
+      if (_cartSheetOpen && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
 
       await Navigator.of(context).push(
         MaterialPageRoute(
@@ -914,24 +916,9 @@ class _PosScreenState extends State<PosScreen> {
             height: 1,
           ),
 
-          // ------------------------------------------------------
-          // CHECKOUT
-          //
-          // Constrained instead of fixed height.
-          // This prevents the 1px overflow seen in the screenshot.
-          // ------------------------------------------------------
-
-          Flexible(
-            flex: 0,
-            child:
-            ConstrainedBox(
-              constraints:
-              const BoxConstraints(
-                maxHeight: 360,
-              ),
-              child:
-              _checkoutPanel(),
-            ),
+          SafeArea(
+            top: false,
+            child: _checkoutPanel(),
           ),
         ],
       ),
@@ -1083,18 +1070,14 @@ class _PosScreenState extends State<PosScreen> {
                   .add_circle_outline,
               size: 20,
             ),
-            onPressed:
-            line.qty + 1 <=
-                maxQty +
-                    0.000001
-                ? () {
-              _changeQuantity(
-                index,
-                line.qty +
-                    1,
-              );
-            }
-                : null,
+            onPressed: () {
+              final cap = posMaxQty(maxQty);
+              if (cap != null &&
+                  line.qty + 1 > cap + 0.000001) {
+                return;
+              }
+              _changeQuantity(index, line.qty + 1);
+            },
           ),
 
           SizedBox(
@@ -1219,6 +1202,7 @@ class _PosScreenState extends State<PosScreen> {
                 _paymentType =
                     value;
               });
+              _sheetSetState?.call(() {});
             },
           ),
 
@@ -1449,6 +1433,8 @@ class _PosScreenState extends State<PosScreen> {
   Widget build(
       BuildContext context,
       ) {
+    final phone = MediaQuery.sizeOf(context).width < 900;
+
     return Scaffold(
       body: _loading
           ? const Center(
@@ -1465,7 +1451,58 @@ class _PosScreenState extends State<PosScreen> {
           ),
         ],
       ),
+      floatingActionButton: _loading || !phone
+          ? null
+          : _mobileCartButton(),
     );
+  }
+
+  Widget _mobileCartButton() {
+    final count = _cart.fold<double>(0, (sum, line) => sum + line.qty);
+    final label = count == count.roundToDouble()
+        ? '${count.round()}'
+        : count.toStringAsFixed(1);
+    return FloatingActionButton.extended(
+      onPressed: _openMobileCart,
+      icon: Badge(
+        isLabelVisible: _cart.isNotEmpty,
+        label: Text(label),
+        child: const Icon(Icons.shopping_cart),
+      ),
+      label: Text(
+        _cart.isEmpty ? 'Cart' : '₹${_total.toStringAsFixed(2)}',
+      ),
+    );
+  }
+
+  Future<void> _openMobileCart() async {
+    _cartSheetOpen = true;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModal) {
+            _sheetSetState = setModal;
+            return SizedBox(
+              height: MediaQuery.sizeOf(ctx).height * 0.86,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                child: _cartView(),
+              ),
+            );
+          },
+        );
+      },
+    );
+    _sheetSetState = null;
+    if (mounted) {
+      setState(() {
+        _cartSheetOpen = false;
+      });
+    }
   }
 
   // ============================================================
@@ -1573,35 +1610,7 @@ class _PosScreenState extends State<PosScreen> {
   // ============================================================
 
   Widget _mobileBody() {
-    return Column(
-      children: [
-        Expanded(
-          child:
-          _productArea(),
-        ),
-
-        const SizedBox(
-          height: 6,
-        ),
-
-        SizedBox(
-          height: 420,
-          child:
-          Padding(
-            padding:
-            const EdgeInsets
-                .fromLTRB(
-              8,
-              0,
-              8,
-              8,
-            ),
-            child:
-            _cartView(),
-          ),
-        ),
-      ],
-    );
+    return _productArea();
   }
 
   // ============================================================
@@ -1709,8 +1718,11 @@ class _PosScreenState extends State<PosScreen> {
 
     return GridView.builder(
       padding:
-      const EdgeInsets.all(
+      const EdgeInsets.fromLTRB(
         10,
+        10,
+        10,
+        88,
       ),
       gridDelegate:
       const SliverGridDelegateWithMaxCrossAxisExtent(
