@@ -1,6 +1,10 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:foodstock/database/database_helper.dart';
+import 'package:foodstock/database/api_config.dart';
+import 'package:foodstock/services/auth_session.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'services/item_import_service.dart';
 import 'services/repository.dart';
@@ -61,6 +65,7 @@ class _StartupGate extends StatefulWidget {
 
 class _StartupGateState extends State<_StartupGate> {
   late Future<void> _ready;
+  AuthSession? _session;
 
   @override
   void initState() {
@@ -70,15 +75,29 @@ class _StartupGateState extends State<_StartupGate> {
   }
 
   Future<void> _initializeApp() async {
-    await DBHelper.instance.database;
+    await DBHelper.instance.appDb;
     await Repository.instance.ensureDefaultUsers();
     await Repository.instance.ensureStandardUnits();
     await Repository.instance.ensureDefaultCategories();
     try {
-      final prefs = await SharedPreferences.getInstance();
       const seedKey = 'menu_csv_seed';
       const seedVersion = 7;
-      final seeded = prefs.getInt(seedKey) ?? 0;
+      final remote = ApiConfig.enabled;
+      int seeded;
+      if (remote) {
+        final db = await DBHelper.instance.appDb;
+        final rows = await db.query(
+          'app_meta',
+          where: 'key = ?',
+          whereArgs: [seedKey],
+        );
+        seeded = rows.isEmpty
+            ? 0
+            : int.tryParse(rows.first['value']?.toString() ?? '') ?? 0;
+      } else {
+        final prefs = await SharedPreferences.getInstance();
+        seeded = prefs.getInt(seedKey) ?? 0;
+      }
       await ItemImportService().importCsvText(
         await rootBundle.loadString(
           'assets/templates/menu_items_import.csv',
@@ -87,10 +106,21 @@ class _StartupGateState extends State<_StartupGate> {
         replaceCatalog: seeded < seedVersion,
       );
       if (seeded < seedVersion) {
-        await prefs.setInt(seedKey, seedVersion);
+        if (remote) {
+          final db = await DBHelper.instance.appDb;
+          await db.delete('app_meta', where: 'key = ?', whereArgs: [seedKey]);
+          await db.insert('app_meta', {
+            'key': seedKey,
+            'value': '$seedVersion',
+          });
+        } else {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt(seedKey, seedVersion);
+        }
       }
     } catch (_) {}
     await Repository.instance.writeOffExpiredStock();
+    _session = await AuthSession.load();
   }
 
   @override
@@ -154,6 +184,14 @@ class _StartupGateState extends State<_StartupGate> {
           );
         }
 
+        final session = _session;
+        if (session != null) {
+          return MainShell(
+            username: session.username,
+            role: session.role,
+          );
+        }
+
         return const LoginScreen();
       },
     );
@@ -204,7 +242,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final db = await DBHelper.instance.database;
+      final db = await DBHelper.instance.appDb;
 
       final rows = await db.query(
         'users',
@@ -222,9 +260,11 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
-      if (!mounted) return;
-
       final role = (rows.first['role'] ?? 'staff').toString();
+
+      await AuthSession.save(username: username, role: role);
+
+      if (!mounted) return;
 
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
@@ -410,7 +450,13 @@ class MainShell extends StatelessWidget {
       title: 'Shilpa Enterprise',
       userLabel: username,
       items: items,
-      onLogout: () {
+      onLogout: () async {
+        await AuthSession.clear();
+        if (Platform.isAndroid || Platform.isIOS) {
+          await SystemNavigator.pop();
+          return;
+        }
+        if (!context.mounted) return;
         Navigator.of(context).pushReplacement(
           MaterialPageRoute(
             builder: (_) => const LoginScreen(),

@@ -3,6 +3,10 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:foodstock/database/api_config.dart';
+import 'package:foodstock/database/app_db.dart';
+import 'package:foodstock/database/http_app_db.dart';
+import 'package:foodstock/database/sqlite_app_db.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -12,6 +16,7 @@ class DBHelper {
   static final DBHelper instance = DBHelper._();
 
   static Database? _db;
+  static AppDb? _appDb;
 
   // ============================================================
   // DESKTOP CHECK
@@ -43,6 +48,21 @@ class DBHelper {
     return _db!;
   }
 
+  Future<AppDb> get appDb async {
+    if (_appDb != null) return _appDb!;
+    if (ApiConfig.enabled) {
+      _appDb = HttpAppDb();
+      await _appDb!.rawQuery('SELECT 1 AS ok');
+      return _appDb!;
+    }
+    _appDb = SqliteAppDb(await database);
+    return _appDb!;
+  }
+
+  Future<void> reconnect() async {
+    await close();
+  }
+
   // ============================================================
   // DATABASE INITIALIZATION
   // ============================================================
@@ -70,7 +90,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 14,
+      version: 15,
 
       onConfigure: (db) async {
         await db.execute(
@@ -502,6 +522,26 @@ class DBHelper {
 
     batch.execute('''
       CREATE TABLE combo_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        combo_id INTEGER NOT NULL,
+
+        raw_material_id INTEGER NOT NULL,
+
+        qty REAL NOT NULL DEFAULT 1,
+
+        FOREIGN KEY (combo_id)
+          REFERENCES combos (id)
+          ON DELETE CASCADE,
+
+        FOREIGN KEY (raw_material_id)
+          REFERENCES raw_materials (id)
+          ON DELETE CASCADE
+      )
+    ''');
+
+    batch.execute('''
+      CREATE TABLE combo_raw_materials (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
 
         combo_id INTEGER NOT NULL,
@@ -1163,6 +1203,32 @@ class DBHelper {
         );
       }
     }
+
+    if (oldVersion < 15) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS combo_raw_materials (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          combo_id INTEGER NOT NULL,
+          raw_material_id INTEGER NOT NULL,
+          qty REAL NOT NULL DEFAULT 1,
+          FOREIGN KEY (combo_id) REFERENCES combos (id) ON DELETE CASCADE,
+          FOREIGN KEY (raw_material_id) REFERENCES raw_materials (id) ON DELETE CASCADE
+        )
+      ''');
+      final comboCols = await db.rawQuery('PRAGMA table_info(combos)');
+      final comboNames = comboCols.map((c) => c['name'] as String).toSet();
+      if (!comboNames.contains('barcode')) {
+        await db.execute('ALTER TABLE combos ADD COLUMN barcode TEXT');
+      }
+      if (!comboNames.contains('category_id')) {
+        await db.execute('ALTER TABLE combos ADD COLUMN category_id INTEGER');
+      }
+      if (!comboNames.contains('price')) {
+        await db.execute(
+          'ALTER TABLE combos ADD COLUMN price REAL NOT NULL DEFAULT 0',
+        );
+      }
+    }
   }
 
   // ============================================================
@@ -1170,6 +1236,8 @@ class DBHelper {
   // ============================================================
 
   Future<void> close() async {
+    _appDb = null;
+
     final db = _db;
 
     if (db != null) {

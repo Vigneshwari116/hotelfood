@@ -1,0 +1,13 @@
+# Run on the VPS next to the existing Postgres container.
+# Create server/.env (not committed) with PGPASSWORD and API_KEY.
+# Then: docker compose -f server/docker-compose.yml up -d --build
+# Open firewall port 8080. Do not publish Postgres to new devices.
+
+services:
+  shilpa-api:
+    build: .
+    container_name: shilpa_api
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env

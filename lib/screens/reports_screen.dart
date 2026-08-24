@@ -70,11 +70,20 @@ class _StockReportTabState extends State<_StockReportTab> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final r = await Repository.instance.currentStockReport();
-    setState(() {
-      _rows = r;
-      _loading = false;
-    });
+    try {
+      final r = await Repository.instance.currentStockReport();
+      if (!mounted) return;
+      setState(() {
+        _rows = r;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _rows = [];
+        _loading = false;
+      });
+    }
   }
 
   double _rowValue(Map<String, dynamic> r) {
@@ -212,22 +221,80 @@ class _ItemSalesTabState extends State<_ItemSalesTab> {
     _load();
   }
 
+  String? _error;
+
   Future<void> _load() async {
-    final r = await Repository.instance.itemSalesReport();
-    if (!mounted) return;
-    setState(() {
-      _rows = r;
-      _loading = false;
-    });
+    try {
+      final r = await Repository.instance
+          .itemSalesReport()
+          .timeout(const Duration(seconds: 25));
+      if (!mounted) return;
+      setState(() {
+        _rows = r;
+        _error = null;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _rows = [];
+        _error = '$e';
+        _loading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 12),
+              Text('Loading item sales…'),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_error!, textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: () {
+                  setState(() {
+                    _loading = true;
+                    _error = null;
+                  });
+                  _load();
+                },
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
     }
     if (_rows.isEmpty) {
-      return const Center(child: Text('No item sales yet'));
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'No sales yet.\nComplete a bill in Sales / POS, then open this tab again.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
     }
 
     final totalQty = _rows.fold<double>(

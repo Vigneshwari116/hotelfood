@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/pos_stock.dart';
 import 'package:foodstock/services/printer_service.dart';
 import 'package:foodstock/services/repository.dart';
 
@@ -31,6 +32,8 @@ class _PosScreenState extends State<PosScreen> {
   ScrollController();
 
   List<RawMaterial> _materials = [];
+  List<Category> _categories = [];
+  int? _categoryId;
 
   Map<int, double> _rawStock = {};
 
@@ -40,6 +43,13 @@ class _PosScreenState extends State<PosScreen> {
 
   bool _loading = true;
   bool _saving = false;
+  bool _cartSheetOpen = false;
+  void Function(VoidCallback)? _sheetSetState;
+
+  void _refreshUi() {
+    if (mounted) setState(() {});
+    _sheetSetState?.call(() {});
+  }
 
   // ============================================================
   // INIT
@@ -86,6 +96,7 @@ class _PosScreenState extends State<PosScreen> {
 
     try {
       final materials = await _repo.rawMaterials();
+      final categories = await _repo.categories(type: 'raw_material');
       final stock =
       await _repo.maxQuantitiesForRawMaterials();
 
@@ -93,8 +104,13 @@ class _PosScreenState extends State<PosScreen> {
 
       setState(() {
         _materials = materials;
+        _categories = categories;
         _rawStock = stock;
         _loading = false;
+        if (_categoryId != null &&
+            !_stockedCategoryIds.contains(_categoryId)) {
+          _categoryId = null;
+        }
       });
     } catch (e) {
       if (!mounted) return;
@@ -135,21 +151,40 @@ class _PosScreenState extends State<PosScreen> {
   String get _search =>
       _searchController.text.trim().toLowerCase();
 
+  bool _materialIsStocked(RawMaterial material) {
+    return posIsStocked(_stockForMaterial(material));
+  }
+
+  List<RawMaterial> get _stockedMaterials {
+    return _materials.where(_materialIsStocked).toList();
+  }
+
+  Set<int?> get _stockedCategoryIds {
+    return {for (final material in _stockedMaterials) material.categoryId};
+  }
+
+  List<Category> get _stockedCategories {
+    final ids = _stockedCategoryIds;
+    return _categories.where((category) => ids.contains(category.id)).toList();
+  }
+
   List<RawMaterial> get _filteredMaterials {
+    var list = _stockedMaterials;
+    if (_categoryId == -1) {
+      list = list.where((material) => material.categoryId == null).toList();
+    } else if (_categoryId != null) {
+      list = list
+          .where((material) => material.categoryId == _categoryId)
+          .toList();
+    }
     if (_search.isEmpty) {
-      return _materials;
+      return list;
     }
 
-    return _materials.where((material) {
-      final name =
-      material.name.toLowerCase();
-
-      final subItem =
-          material.trimmedSubItem?.toLowerCase() ?? '';
-
-      final barcode =
-          material.barcode?.toLowerCase() ?? '';
-
+    return list.where((material) {
+      final name = material.name.toLowerCase();
+      final subItem = material.trimmedSubItem?.toLowerCase() ?? '';
+      final barcode = material.barcode?.toLowerCase() ?? '';
       return name.contains(_search) ||
           subItem.contains(_search) ||
           barcode.contains(_search);
@@ -180,6 +215,13 @@ class _PosScreenState extends State<PosScreen> {
       if (material == null) {
         _showError(
           'No raw material found for barcode "$barcode".',
+        );
+        return;
+      }
+
+      if (!_materialIsStocked(material)) {
+        _showError(
+          '${material.name} has no stock.',
         );
         return;
       }
@@ -243,73 +285,43 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    final available =
-    _stockForMaterial(material);
+    final available = _stockForMaterial(material);
+    final index = _cartIndexForRaw(material.id!);
+    final cartQty = index == -1 ? 0.0 : _cart[index].qty;
 
-    if (available <= 0) {
-      _showError(
-        '${material.name} is out of stock.',
-      );
-      return;
-    }
-
-    final index =
-    _cartIndexForRaw(material.id!);
-
-    // ----------------------------------------------------------
-    // NEW CART LINE
-    // ----------------------------------------------------------
-
-    if (index == -1) {
-      setState(() {
-        _cart.add(
-          CartLine(
-            rawMaterialId:
-            material.id,
-            name: material.name,
-            subItem: material.trimmedSubItem,
-            qty: 1,
-            price:
-            material.sellingPrice ?? 0,
-          ),
-        );
-      });
-
-      return;
-    }
-
-    // ----------------------------------------------------------
-    // EXISTING CART LINE
-    // ----------------------------------------------------------
-
-    final currentQty =
-        _cart[index].qty;
-
-    if (currentQty + 1 >
-        available + 0.000001) {
+    if (!posAllowsAdd(stock: available, cartQty: cartQty)) {
       _showError(
         'Only ${_formatQty(available)} '
             '${_unitForMaterial(material)} '
             'of ${material.name} is available.',
       );
-
       return;
     }
 
-    setState(() {
-      final old =
-      _cart[index];
-
-      _cart[index] = CartLine(
-        rawMaterialId:
-        old.rawMaterialId,
-        comboId: old.comboId,
-        name: old.name,
-        subItem: old.subItem,
-        qty: old.qty + 1,
-        price: old.price,
+    if (index == -1) {
+      _cart.add(
+        CartLine(
+          rawMaterialId: material.id,
+          name: material.name,
+          subItem: material.trimmedSubItem,
+          qty: 1,
+          price: material.sellingPrice ?? 0,
+        ),
       );
-    });
+      _refreshUi();
+      return;
+    }
+
+    final old = _cart[index];
+    _cart[index] = CartLine(
+      rawMaterialId: old.rawMaterialId,
+      comboId: old.comboId,
+      name: old.name,
+      subItem: old.subItem,
+      qty: old.qty + 1,
+      price: old.price,
+    );
+    _refreshUi();
   }
 
   // ============================================================
@@ -327,10 +339,8 @@ class _PosScreenState extends State<PosScreen> {
 
     // Remove line.
     if (newQty <= 0) {
-      setState(() {
-        _cart.removeAt(index);
-      });
-
+      _cart.removeAt(index);
+      _refreshUi();
       return;
     }
 
@@ -349,36 +359,28 @@ class _PosScreenState extends State<PosScreen> {
           line.rawMaterialId,
     );
 
-    final maxQty =
-    materialIndex == -1
-        ? 0.0
-        : _stockForMaterial(
-      _materials[
-      materialIndex],
+    final maxQty = posMaxQty(
+      materialIndex == -1
+          ? 0.0
+          : _stockForMaterial(_materials[materialIndex]),
     );
 
-    if (newQty >
-        maxQty + 0.000001) {
+    if (newQty > maxQty + 0.000001) {
       _showError(
-        'Maximum available quantity is '
-            '${_formatQty(maxQty)}.',
+        'Maximum available quantity is ${_formatQty(maxQty)}.',
       );
-
       return;
     }
 
-    setState(() {
-      _cart[index] =
-          CartLine(
-            rawMaterialId:
-            line.rawMaterialId,
-            comboId: line.comboId,
-            name: line.name,
-            subItem: line.subItem,
-            qty: newQty,
-            price: line.price,
-          );
-    });
+    _cart[index] = CartLine(
+      rawMaterialId: line.rawMaterialId,
+      comboId: line.comboId,
+      name: line.name,
+      subItem: line.subItem,
+      qty: newQty,
+      price: line.price,
+    );
+    _refreshUi();
   }
 
   // ============================================================
@@ -393,9 +395,8 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    setState(() {
-      _cart.removeAt(index);
-    });
+    _cart.removeAt(index);
+    _refreshUi();
   }
 
   // ============================================================
@@ -407,9 +408,8 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    setState(() {
-      _cart.clear();
-    });
+    _cart.clear();
+    _refreshUi();
   }
 
   // ============================================================
@@ -525,6 +525,10 @@ class _PosScreenState extends State<PosScreen> {
       await _refreshStock();
 
       if (!mounted) return;
+
+      if (_cartSheetOpen && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
 
       await Navigator.of(context).push(
         MaterialPageRoute(
@@ -677,12 +681,10 @@ class _PosScreenState extends State<PosScreen> {
       material.id!,
     );
 
-    final availableToAdd =
-        stock - cartQty;
-
-    final canAdd =
-        availableToAdd >
-            0.000001;
+    final canAdd = posAllowsAdd(
+      stock: stock,
+      cartQty: cartQty,
+    );
 
     final unit =
     _unitForMaterial(
@@ -694,12 +696,15 @@ class _PosScreenState extends State<PosScreen> {
       Clip.antiAlias,
       margin: EdgeInsets.zero,
       child: InkWell(
-        onTap: canAdd
-            ? () =>
-            _addRawMaterial(
-              material,
-            )
-            : null,
+        onTap: () {
+          if (!canAdd) {
+            _showError(
+              '${material.name} has no more stock to add.',
+            );
+            return;
+          }
+          _addRawMaterial(material);
+        },
         child: Column(
           crossAxisAlignment:
           CrossAxisAlignment
@@ -765,6 +770,15 @@ class _PosScreenState extends State<PosScreen> {
                         fontSize: 14,
                       ),
                     ),
+                    Text(
+                      stock <= 0.000001
+                          ? 'Stock not set'
+                          : 'Stock ${_formatQty(stock)}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
 
                     const Spacer(),
 
@@ -808,154 +822,70 @@ class _PosScreenState extends State<PosScreen> {
   Widget _cartView() {
     return Card(
       margin: EdgeInsets.zero,
-      clipBehavior:
-      Clip.antiAlias,
-      child: Column(
-        children: [
-          // ------------------------------------------------------
-          // CART HEADER
-          // ------------------------------------------------------
-
-          Padding(
-            padding:
-            const EdgeInsets.fromLTRB(
-              12,
-              8,
-              8,
-              6,
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons
-                      .shopping_cart_outlined,
-                  size: 21,
-                ),
-
-                const SizedBox(
-                  width: 8,
-                ),
-
-                Expanded(
-                  child: Text(
-                    'Current Sale',
-                    style: Theme.of(
-                      context,
-                    )
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(
-                      fontWeight:
-                      FontWeight
-                          .bold,
+      clipBehavior: Clip.antiAlias,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final checkoutMax = (constraints.maxHeight * 0.52).clamp(220.0, 420.0);
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 8, 6),
+                child: Row(
+                  children: [
+                    const Icon(Icons.shopping_cart_outlined, size: 21),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Current Sale',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
                     ),
-                  ),
+                    if (_cart.isNotEmpty)
+                      TextButton(
+                        onPressed: _clearCart,
+                        child: const Text('Clear'),
+                      ),
+                  ],
                 ),
-
-                if (_cart
-                    .isNotEmpty)
-                  TextButton(
-                    onPressed:
-                    _clearCart,
-                    child:
-                    const Text(
-                      'Clear',
-                    ),
-                  ),
-              ],
-            ),
-          ),
-
-          const Divider(
-            height: 1,
-          ),
-
-          // ------------------------------------------------------
-          // CART ITEMS
-          // ------------------------------------------------------
-
-          Expanded(
-            child: _cart.isEmpty
-                ? const Center(
-              child: Column(
-                mainAxisSize:
-                MainAxisSize
-                    .min,
-                children: [
-                  Icon(
-                    Icons
-                        .remove_shopping_cart_outlined,
-                    size: 42,
-                  ),
-                  SizedBox(
-                    height: 8,
-                  ),
-                  Text(
-                    'Cart is empty',
-                    style:
-                    TextStyle(
-                      fontWeight:
-                      FontWeight
-                          .w600,
-                    ),
-                  ),
-                  SizedBox(
-                    height: 3,
-                  ),
-                  Text(
-                    'Tap an item to add it',
-                  ),
-                ],
               ),
-            )
-                : ListView
-                .builder(
-              controller:
-              _cartScrollController,
-              padding:
-              const EdgeInsets
-                  .symmetric(
-                vertical: 4,
+              const Divider(height: 1),
+              Expanded(
+                child: _cart.isEmpty
+                    ? const SingleChildScrollView(
+                        padding: EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.remove_shopping_cart_outlined, size: 42),
+                            SizedBox(height: 8),
+                            Text(
+                              'Cart is empty',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            SizedBox(height: 3),
+                            Text('Tap an item to add it'),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: _cartScrollController,
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        itemCount: _cart.length,
+                        itemBuilder: (context, index) {
+                          return _cartLine(index, _cart[index]);
+                        },
+                      ),
               ),
-              itemCount:
-              _cart.length,
-              itemBuilder:
-                  (
-                  context,
-                  index,
-                  ) {
-                return _cartLine(
-                  index,
-                  _cart[index],
-                );
-              },
-            ),
-          ),
-
-          const Divider(
-            height: 1,
-          ),
-
-          // ------------------------------------------------------
-          // CHECKOUT
-          //
-          // Constrained instead of fixed height.
-          // This prevents the 1px overflow seen in the screenshot.
-          // ------------------------------------------------------
-
-          Flexible(
-            flex: 0,
-            child:
-            ConstrainedBox(
-              constraints:
-              const BoxConstraints(
-                maxHeight: 360,
+              const Divider(height: 1),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: checkoutMax),
+                child: _checkoutPanel(),
               ),
-              child:
-              _checkoutPanel(),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -1105,18 +1035,14 @@ class _PosScreenState extends State<PosScreen> {
                   .add_circle_outline,
               size: 20,
             ),
-            onPressed:
-            line.qty + 1 <=
-                maxQty +
-                    0.000001
-                ? () {
-              _changeQuantity(
-                index,
-                line.qty +
-                    1,
-              );
-            }
-                : null,
+            onPressed: () {
+              final cap = posMaxQty(maxQty);
+              if (cap != null &&
+                  line.qty + 1 > cap + 0.000001) {
+                return;
+              }
+              _changeQuantity(index, line.qty + 1);
+            },
           ),
 
           SizedBox(
@@ -1237,10 +1163,8 @@ class _PosScreenState extends State<PosScreen> {
                 return;
               }
 
-              setState(() {
-                _paymentType =
-                    value;
-              });
+              _paymentType = value;
+              _refreshUi();
             },
           ),
 
@@ -1471,6 +1395,8 @@ class _PosScreenState extends State<PosScreen> {
   Widget build(
       BuildContext context,
       ) {
+    final phone = MediaQuery.sizeOf(context).width < 900;
+
     return Scaffold(
       body: _loading
           ? const Center(
@@ -1487,7 +1413,63 @@ class _PosScreenState extends State<PosScreen> {
           ),
         ],
       ),
+      floatingActionButton: _loading || !phone
+          ? null
+          : _mobileCartButton(),
     );
+  }
+
+  Widget _mobileCartButton() {
+    final count = _cart.fold<double>(0, (sum, line) => sum + line.qty);
+    final label = count == count.roundToDouble()
+        ? '${count.round()}'
+        : count.toStringAsFixed(1);
+    return FloatingActionButton.extended(
+      onPressed: _openMobileCart,
+      icon: Badge(
+        isLabelVisible: _cart.isNotEmpty,
+        label: Text(label),
+        child: const Icon(Icons.shopping_cart),
+      ),
+      label: Text(
+        _cart.isEmpty ? 'View bill' : '₹${_total.toStringAsFixed(2)}',
+      ),
+    );
+  }
+
+  Future<void> _openMobileCart() async {
+    _cartSheetOpen = true;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModal) {
+            _sheetSetState = setModal;
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.viewInsetsOf(ctx).bottom,
+              ),
+              child: SizedBox(
+                height: MediaQuery.sizeOf(ctx).height * 0.78,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                  child: _cartView(),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    _sheetSetState = null;
+    if (mounted) {
+      setState(() {
+        _cartSheetOpen = false;
+      });
+    }
   }
 
   // ============================================================
@@ -1496,88 +1478,48 @@ class _PosScreenState extends State<PosScreen> {
 
   Widget _topBar() {
     return Padding(
-      padding:
-      const EdgeInsets.fromLTRB(
-        10,
-        8,
-        10,
-        8,
-      ),
-      child:
-      Row(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      child: Column(
         children: [
-          Expanded(
-            child:
-            TextField(
-              controller:
-              _searchController,
-              decoration:
-              InputDecoration(
-                hintText:
-                'Search raw materials...',
-                prefixIcon:
-                const Icon(
-                  Icons.search,
-                ),
-                suffixIcon:
-                _search.isEmpty
-                    ? null
-                    : IconButton(
-                  onPressed:
-                      () {
-                    _searchController
-                        .clear();
-                  },
-                  icon:
-                  const Icon(
-                    Icons.clear,
+          TextField(
+            controller: _searchController,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: 'Search items',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _search.isEmpty
+                  ? null
+                  : IconButton(
+                      onPressed: _searchController.clear,
+                      icon: const Icon(Icons.clear),
+                    ),
+              border: const OutlineInputBorder(),
+              isDense: true,
+              filled: true,
+              fillColor: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _barcodeController,
+                  onSubmitted: _handleBarcode,
+                  decoration: const InputDecoration(
+                    hintText: 'Barcode',
+                    prefixIcon: Icon(Icons.qr_code_scanner),
+                    border: OutlineInputBorder(),
+                    isDense: true,
                   ),
                 ),
-                border:
-                const OutlineInputBorder(),
-                isDense:
-                true,
               ),
-            ),
-          ),
-
-          const SizedBox(
-            width: 8,
-          ),
-
-          SizedBox(
-            width: 210,
-            child:
-            TextField(
-              controller:
-              _barcodeController,
-              onSubmitted:
-              _handleBarcode,
-              decoration:
-              const InputDecoration(
-                hintText:
-                'Scan barcode',
-                prefixIcon:
-                Icon(
-                  Icons
-                      .qr_code_scanner,
-                ),
-                border:
-                OutlineInputBorder(),
-                isDense:
-                true,
+              IconButton(
+                tooltip: 'Refresh prices and stock',
+                onPressed: _loading ? null : _loadData,
+                icon: const Icon(Icons.refresh),
               ),
-            ),
-          ),
-
-          const SizedBox(
-            width: 4,
-          ),
-
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: _loading ? null : _loadData,
-            icon: const Icon(Icons.refresh),
+            ],
           ),
         ],
       ),
@@ -1635,35 +1577,7 @@ class _PosScreenState extends State<PosScreen> {
   // ============================================================
 
   Widget _mobileBody() {
-    return Column(
-      children: [
-        Expanded(
-          child:
-          _productArea(),
-        ),
-
-        const SizedBox(
-          height: 6,
-        ),
-
-        SizedBox(
-          height: 420,
-          child:
-          Padding(
-            padding:
-            const EdgeInsets
-                .fromLTRB(
-              8,
-              0,
-              8,
-              8,
-            ),
-            child:
-            _cartView(),
-          ),
-        ),
-      ],
-    );
+    return _productArea();
   }
 
   // ============================================================
@@ -1723,7 +1637,7 @@ class _PosScreenState extends State<PosScreen> {
               ),
 
               Text(
-                'Items',
+                'Items in stock',
                 style: Theme.of(
                   context,
                 )
@@ -1739,9 +1653,7 @@ class _PosScreenState extends State<PosScreen> {
           ),
         ),
 
-        // --------------------------------------------------------
-        // PRODUCT GRID
-        // --------------------------------------------------------
+        _categoryChips(),
 
         Expanded(
           child:
@@ -1755,6 +1667,55 @@ class _PosScreenState extends State<PosScreen> {
   // MATERIAL GRID
   // ============================================================
 
+  Widget _categoryChips() {
+    final hasOther = _stockedCategoryIds.contains(null);
+    if (_stockedCategories.isEmpty && !hasOther) {
+      return const SizedBox.shrink();
+    }
+
+    Widget chip({
+      required String label,
+      required bool selected,
+      required VoidCallback onTap,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: ChoiceChip(
+          label: Text(label),
+          selected: selected,
+          onSelected: (_) => onTap(),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        children: [
+          chip(
+            label: 'All',
+            selected: _categoryId == null,
+            onTap: () => setState(() => _categoryId = null),
+          ),
+          for (final category in _stockedCategories)
+            chip(
+              label: category.name,
+              selected: _categoryId == category.id,
+              onTap: () => setState(() => _categoryId = category.id),
+            ),
+          if (hasOther)
+            chip(
+              label: 'Other',
+              selected: _categoryId == -1,
+              onTap: () => setState(() => _categoryId = -1),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _materialsGrid() {
     final materials =
         _filteredMaterials;
@@ -1765,14 +1726,21 @@ class _PosScreenState extends State<PosScreen> {
         Icons
             .inventory_2_outlined,
         title:
-        'No raw materials found',
+        _search.isNotEmpty
+            ? 'No stocked items match this search'
+            : _categoryId == null
+                ? 'No items in stock'
+                : 'No stocked items in this category',
       );
     }
 
     return GridView.builder(
       padding:
-      const EdgeInsets.all(
+      const EdgeInsets.fromLTRB(
         10,
+        10,
+        10,
+        88,
       ),
       gridDelegate:
       const SliverGridDelegateWithMaxCrossAxisExtent(
@@ -1783,7 +1751,7 @@ class _PosScreenState extends State<PosScreen> {
         // This gives more vertical room
         // in the POS window.
         mainAxisExtent:
-        205,
+        220,
 
         crossAxisSpacing:
         10,
