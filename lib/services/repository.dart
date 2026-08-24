@@ -2728,7 +2728,7 @@ class Repository {
         si.sub_item,
         SUM(si.qty) AS sold_qty,
         SUM(si.amount) AS total_amount,
-        rm.current_stock
+        MAX(rm.current_stock) AS current_stock
       FROM sale_items si
       JOIN sales s
         ON s.id = si.sale_id
@@ -2737,9 +2737,8 @@ class Repository {
       WHERE s.is_voided = 0
       GROUP BY
         si.item_name,
-        si.sub_item,
-        si.raw_material_id,
-        rm.current_stock
+        COALESCE(si.sub_item, ''),
+        si.raw_material_id
       ORDER BY si.item_name ASC, si.sub_item ASC
       ''',
             );

@@ -788,136 +788,70 @@ class _PosScreenState extends State<PosScreen> {
   Widget _cartView() {
     return Card(
       margin: EdgeInsets.zero,
-      clipBehavior:
-      Clip.antiAlias,
-      child: Column(
-        children: [
-          // ------------------------------------------------------
-          // CART HEADER
-          // ------------------------------------------------------
-
-          Padding(
-            padding:
-            const EdgeInsets.fromLTRB(
-              12,
-              8,
-              8,
-              6,
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons
-                      .shopping_cart_outlined,
-                  size: 21,
-                ),
-
-                const SizedBox(
-                  width: 8,
-                ),
-
-                Expanded(
-                  child: Text(
-                    'Current Sale',
-                    style: Theme.of(
-                      context,
-                    )
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(
-                      fontWeight:
-                      FontWeight
-                          .bold,
+      clipBehavior: Clip.antiAlias,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final checkoutMax = (constraints.maxHeight * 0.52).clamp(220.0, 420.0);
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 8, 6),
+                child: Row(
+                  children: [
+                    const Icon(Icons.shopping_cart_outlined, size: 21),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Current Sale',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
                     ),
-                  ),
+                    if (_cart.isNotEmpty)
+                      TextButton(
+                        onPressed: _clearCart,
+                        child: const Text('Clear'),
+                      ),
+                  ],
                 ),
-
-                if (_cart
-                    .isNotEmpty)
-                  TextButton(
-                    onPressed:
-                    _clearCart,
-                    child:
-                    const Text(
-                      'Clear',
-                    ),
-                  ),
-              ],
-            ),
-          ),
-
-          const Divider(
-            height: 1,
-          ),
-
-          // ------------------------------------------------------
-          // CART ITEMS
-          // ------------------------------------------------------
-
-          Expanded(
-            child: _cart.isEmpty
-                ? const Center(
-              child: Column(
-                mainAxisSize:
-                MainAxisSize
-                    .min,
-                children: [
-                  Icon(
-                    Icons
-                        .remove_shopping_cart_outlined,
-                    size: 42,
-                  ),
-                  SizedBox(
-                    height: 8,
-                  ),
-                  Text(
-                    'Cart is empty',
-                    style:
-                    TextStyle(
-                      fontWeight:
-                      FontWeight
-                          .w600,
-                    ),
-                  ),
-                  SizedBox(
-                    height: 3,
-                  ),
-                  Text(
-                    'Tap an item to add it',
-                  ),
-                ],
               ),
-            )
-                : ListView
-                .builder(
-              controller:
-              _cartScrollController,
-              padding:
-              const EdgeInsets
-                  .symmetric(
-                vertical: 4,
+              const Divider(height: 1),
+              Expanded(
+                child: _cart.isEmpty
+                    ? const SingleChildScrollView(
+                        padding: EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.remove_shopping_cart_outlined, size: 42),
+                            SizedBox(height: 8),
+                            Text(
+                              'Cart is empty',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            SizedBox(height: 3),
+                            Text('Tap an item to add it'),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: _cartScrollController,
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        itemCount: _cart.length,
+                        itemBuilder: (context, index) {
+                          return _cartLine(index, _cart[index]);
+                        },
+                      ),
               ),
-              itemCount:
-              _cart.length,
-              itemBuilder:
-                  (
-                  context,
-                  index,
-                  ) {
-                return _cartLine(
-                  index,
-                  _cart[index],
-                );
-              },
-            ),
-          ),
-
-          const Divider(
-            height: 1,
-          ),
-
-          _checkoutPanel(),
-        ],
+              const Divider(height: 1),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: checkoutMax),
+                child: _checkoutPanel(),
+              ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -1467,7 +1401,7 @@ class _PosScreenState extends State<PosScreen> {
         child: const Icon(Icons.shopping_cart),
       ),
       label: Text(
-        _cart.isEmpty ? 'Cart' : '₹${_total.toStringAsFixed(2)}',
+        _cart.isEmpty ? 'View bill' : '₹${_total.toStringAsFixed(2)}',
       ),
     );
   }
