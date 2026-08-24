@@ -212,18 +212,22 @@ class _ItemSalesTabState extends State<_ItemSalesTab> {
     _load();
   }
 
+  String? _error;
+
   Future<void> _load() async {
     try {
       final r = await Repository.instance.itemSalesReport();
       if (!mounted) return;
       setState(() {
         _rows = r;
+        _error = null;
         _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _rows = [];
+        _error = '$e';
         _loading = false;
       });
     }
@@ -233,6 +237,30 @@ class _ItemSalesTabState extends State<_ItemSalesTab> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_error!, textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: () {
+                  setState(() {
+                    _loading = true;
+                    _error = null;
+                  });
+                  _load();
+                },
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
     }
     if (_rows.isEmpty) {
       return const Center(child: Text('No item sales yet'));

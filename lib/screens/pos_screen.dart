@@ -916,10 +916,7 @@ class _PosScreenState extends State<PosScreen> {
             height: 1,
           ),
 
-          SafeArea(
-            top: false,
-            child: _checkoutPanel(),
-          ),
+          _checkoutPanel(),
         ],
       ),
     );
@@ -1486,11 +1483,16 @@ class _PosScreenState extends State<PosScreen> {
         return StatefulBuilder(
           builder: (ctx, setModal) {
             _sheetSetState = setModal;
-            return SizedBox(
-              height: MediaQuery.sizeOf(ctx).height * 0.86,
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                child: _cartView(),
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.viewInsetsOf(ctx).bottom,
+              ),
+              child: SizedBox(
+                height: MediaQuery.sizeOf(ctx).height * 0.78,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                  child: _cartView(),
+                ),
               ),
             );
           },

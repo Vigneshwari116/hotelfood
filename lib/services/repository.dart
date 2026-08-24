@@ -2710,7 +2710,7 @@ class Repository {
       JOIN sales s
         ON s.id = si.sale_id
       WHERE s.is_voided = 0
-      GROUP BY si.item_name, IFNULL(si.sub_item, '')
+      GROUP BY si.item_name, si.sub_item
       ORDER BY total_qty DESC
       LIMIT ?
       ''',
@@ -2737,7 +2737,7 @@ class Repository {
       WHERE s.is_voided = 0
       GROUP BY
         si.item_name,
-        COALESCE(si.sub_item, ''),
+        si.sub_item,
         si.raw_material_id,
         rm.current_stock
       ORDER BY si.item_name ASC, si.sub_item ASC
