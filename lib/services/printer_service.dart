@@ -647,6 +647,11 @@ class _ReceiptScreenState
   // ------------------------------------------------------------
 
   Future<void> _systemPrint() async {
+    if (_thermalPrinter != null) {
+      await _printToSelectedPrinter();
+      return;
+    }
+
     try {
       await Printing.layoutPdf(
         name:

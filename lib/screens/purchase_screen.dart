@@ -122,6 +122,12 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
         line.rateCtrl.text =
             cp % 1 == 0 ? cp.toStringAsFixed(0) : cp.toStringAsFixed(2);
       }
+      if (value != null && value.currentStock < -0.000001) {
+        final suggested = value.currentStock.abs();
+        line.qtyCtrl.text = suggested % 1 == 0
+            ? suggested.toStringAsFixed(0)
+            : suggested.toStringAsFixed(2);
+      }
     });
   }
 

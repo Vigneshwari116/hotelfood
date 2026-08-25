@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:foodstock/model/models.dart';
-import 'package:foodstock/services/pos_stock.dart';
 import 'package:foodstock/services/printer_service.dart';
 import 'package:foodstock/services/repository.dart';
 
@@ -34,8 +33,6 @@ class _PosScreenState extends State<PosScreen> {
   List<RawMaterial> _materials = [];
   List<Category> _categories = [];
   int? _categoryId;
-
-  Map<int, double> _rawStock = {};
 
   final List<CartLine> _cart = [];
 
@@ -97,18 +94,15 @@ class _PosScreenState extends State<PosScreen> {
     try {
       final materials = await _repo.rawMaterials();
       final categories = await _repo.categories(type: 'raw_material');
-      final stock =
-      await _repo.maxQuantitiesForRawMaterials();
 
       if (!mounted) return;
 
       setState(() {
         _materials = materials;
         _categories = categories;
-        _rawStock = stock;
         _loading = false;
         if (_categoryId != null &&
-            !_stockedCategoryIds.contains(_categoryId)) {
+            !_categoryIdsWithItems.contains(_categoryId)) {
           _categoryId = null;
         }
       });
@@ -127,13 +121,12 @@ class _PosScreenState extends State<PosScreen> {
 
   Future<void> _refreshStock() async {
     try {
-      final stock =
-      await _repo.maxQuantitiesForRawMaterials();
+      final materials = await _repo.rawMaterials();
 
       if (!mounted) return;
 
       setState(() {
-        _rawStock = stock;
+        _materials = materials;
       });
     } catch (e) {
       if (!mounted) return;
@@ -151,25 +144,19 @@ class _PosScreenState extends State<PosScreen> {
   String get _search =>
       _searchController.text.trim().toLowerCase();
 
-  bool _materialIsStocked(RawMaterial material) {
-    return posIsStocked(_stockForMaterial(material));
+  List<RawMaterial> get _allMaterials => _materials;
+
+  Set<int?> get _categoryIdsWithItems {
+    return {for (final material in _allMaterials) material.categoryId};
   }
 
-  List<RawMaterial> get _stockedMaterials {
-    return _materials.where(_materialIsStocked).toList();
-  }
-
-  Set<int?> get _stockedCategoryIds {
-    return {for (final material in _stockedMaterials) material.categoryId};
-  }
-
-  List<Category> get _stockedCategories {
-    final ids = _stockedCategoryIds;
+  List<Category> get _categoriesWithItems {
+    final ids = _categoryIdsWithItems;
     return _categories.where((category) => ids.contains(category.id)).toList();
   }
 
   List<RawMaterial> get _filteredMaterials {
-    var list = _stockedMaterials;
+    var list = _allMaterials;
     if (_categoryId == -1) {
       list = list.where((material) => material.categoryId == null).toList();
     } else if (_categoryId != null) {
@@ -189,6 +176,50 @@ class _PosScreenState extends State<PosScreen> {
           subItem.contains(_search) ||
           barcode.contains(_search);
     }).toList();
+  }
+
+  List<({String title, List<RawMaterial> materials})> get _materialSections {
+    final items = _filteredMaterials;
+    if (items.isEmpty) {
+      return const [];
+    }
+
+    if (_categoryId != null) {
+      final title = _categoryId == -1
+          ? 'Other'
+          : _categories
+                  .where((category) => category.id == _categoryId)
+                  .map((category) => category.name)
+                  .firstOrNull ??
+              'Category';
+      return [(title: title, materials: items)];
+    }
+
+    final grouped = <int?, List<RawMaterial>>{};
+    for (final material in items) {
+      grouped.putIfAbsent(material.categoryId, () => []).add(material);
+    }
+
+    final sections = <({String title, List<RawMaterial> materials})>[];
+    for (final category in _categories) {
+      final list = grouped.remove(category.id);
+      if (list != null && list.isNotEmpty) {
+        sections.add((title: category.name, materials: list));
+      }
+    }
+
+    final uncategorized = grouped.remove(null);
+    if (uncategorized != null && uncategorized.isNotEmpty) {
+      sections.add((title: 'Other', materials: uncategorized));
+    }
+
+    for (final entry in grouped.entries) {
+      final list = entry.value;
+      if (list.isEmpty) continue;
+      sections.add((title: 'Other', materials: list));
+    }
+
+    return sections;
   }
 
   // ============================================================
@@ -219,13 +250,6 @@ class _PosScreenState extends State<PosScreen> {
         return;
       }
 
-      if (!_materialIsStocked(material)) {
-        _showError(
-          '${material.name} has no stock.',
-        );
-        return;
-      }
-
       _addRawMaterial(material);
     } catch (e) {
       _showError(
@@ -241,12 +265,7 @@ class _PosScreenState extends State<PosScreen> {
   double _stockForMaterial(
       RawMaterial material,
       ) {
-    if (material.id == null) {
-      return material.currentStock;
-    }
-
-    return _rawStock[material.id!] ??
-        material.currentStock;
+    return material.currentStock;
   }
 
   // ============================================================
@@ -285,18 +304,7 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    final available = _stockForMaterial(material);
     final index = _cartIndexForRaw(material.id!);
-    final cartQty = index == -1 ? 0.0 : _cart[index].qty;
-
-    if (!posAllowsAdd(stock: available, cartQty: cartQty)) {
-      _showError(
-        'Only ${_formatQty(available)} '
-            '${_unitForMaterial(material)} '
-            'of ${material.name} is available.',
-      );
-      return;
-    }
 
     if (index == -1) {
       _cart.add(
@@ -348,27 +356,6 @@ class _PosScreenState extends State<PosScreen> {
     _cart[index];
 
     if (line.rawMaterialId == null) {
-      return;
-    }
-
-    // Find original material.
-    final materialIndex =
-    _materials.indexWhere(
-          (material) =>
-      material.id ==
-          line.rawMaterialId,
-    );
-
-    final maxQty = posMaxQty(
-      materialIndex == -1
-          ? 0.0
-          : _stockForMaterial(_materials[materialIndex]),
-    );
-
-    if (newQty > maxQty + 0.000001) {
-      _showError(
-        'Maximum available quantity is ${_formatQty(maxQty)}.',
-      );
       return;
     }
 
@@ -681,11 +668,6 @@ class _PosScreenState extends State<PosScreen> {
       material.id!,
     );
 
-    final canAdd = posAllowsAdd(
-      stock: stock,
-      cartQty: cartQty,
-    );
-
     final unit =
     _unitForMaterial(
       material,
@@ -696,15 +678,7 @@ class _PosScreenState extends State<PosScreen> {
       Clip.antiAlias,
       margin: EdgeInsets.zero,
       child: InkWell(
-        onTap: () {
-          if (!canAdd) {
-            _showError(
-              '${material.name} has no more stock to add.',
-            );
-            return;
-          }
-          _addRawMaterial(material);
-        },
+        onTap: () => _addRawMaterial(material),
         child: Column(
           crossAxisAlignment:
           CrossAxisAlignment
@@ -771,12 +745,12 @@ class _PosScreenState extends State<PosScreen> {
                       ),
                     ),
                     Text(
-                      stock <= 0.000001
-                          ? 'Stock not set'
-                          : 'Stock ${_formatQty(stock)}',
+                      _formatStockLabel(stock),
                       style: TextStyle(
                         fontSize: 11,
-                        color: Colors.grey.shade700,
+                        color: stock < 0
+                            ? Colors.red.shade700
+                            : Colors.grey.shade700,
                       ),
                     ),
 
@@ -898,21 +872,6 @@ class _PosScreenState extends State<PosScreen> {
       int index,
       CartLine line,
       ) {
-    final materialIndex =
-    _materials.indexWhere(
-          (material) =>
-      material.id ==
-          line.rawMaterialId,
-    );
-
-    final maxQty =
-    materialIndex == -1
-        ? 0.0
-        : _stockForMaterial(
-      _materials[
-      materialIndex],
-    );
-
     return Padding(
       padding:
       const EdgeInsets
@@ -1036,11 +995,6 @@ class _PosScreenState extends State<PosScreen> {
               size: 20,
             ),
             onPressed: () {
-              final cap = posMaxQty(maxQty);
-              if (cap != null &&
-                  line.qty + 1 > cap + 0.000001) {
-                return;
-              }
               _changeQuantity(index, line.qty + 1);
             },
           ),
@@ -1637,7 +1591,7 @@ class _PosScreenState extends State<PosScreen> {
               ),
 
               Text(
-                'Items in stock',
+                'Menu items',
                 style: Theme.of(
                   context,
                 )
@@ -1668,8 +1622,8 @@ class _PosScreenState extends State<PosScreen> {
   // ============================================================
 
   Widget _categoryChips() {
-    final hasOther = _stockedCategoryIds.contains(null);
-    if (_stockedCategories.isEmpty && !hasOther) {
+    final hasOther = _categoryIdsWithItems.contains(null);
+    if (_categoriesWithItems.isEmpty && !hasOther) {
       return const SizedBox.shrink();
     }
 
@@ -1699,7 +1653,7 @@ class _PosScreenState extends State<PosScreen> {
             selected: _categoryId == null,
             onTap: () => setState(() => _categoryId = null),
           ),
-          for (final category in _stockedCategories)
+          for (final category in _categoriesWithItems)
             chip(
               label: category.name,
               selected: _categoryId == category.id,
@@ -1717,58 +1671,58 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   Widget _materialsGrid() {
-    final materials =
-        _filteredMaterials;
+    final sections = _materialSections;
 
-    if (materials.isEmpty) {
+    if (sections.isEmpty) {
       return _emptyProducts(
         icon:
         Icons
             .inventory_2_outlined,
         title:
         _search.isNotEmpty
-            ? 'No stocked items match this search'
+            ? 'No items match this search'
             : _categoryId == null
-                ? 'No items in stock'
-                : 'No stocked items in this category',
+                ? 'No menu items found'
+                : 'No items in this category',
       );
     }
 
-    return GridView.builder(
-      padding:
-      const EdgeInsets.fromLTRB(
-        10,
-        10,
-        10,
-        88,
-      ),
-      gridDelegate:
-      const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent:
-        230,
-
-        // Reduced from 220 to 205.
-        // This gives more vertical room
-        // in the POS window.
-        mainAxisExtent:
-        220,
-
-        crossAxisSpacing:
-        10,
-        mainAxisSpacing:
-        10,
-      ),
-      itemCount:
-      materials.length,
-      itemBuilder:
-          (
-          _,
-          index,
-          ) {
-        return _materialCard(
-          materials[index],
-        );
-      },
+    return CustomScrollView(
+      slivers: [
+        for (final section in sections) ...[
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
+              child: Text(
+                section.title,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 4),
+            sliver: SliverGrid(
+              gridDelegate:
+                  const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 230,
+                mainAxisExtent: 220,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) =>
+                    _materialCard(section.materials[index]),
+                childCount: section.materials.length,
+              ),
+            ),
+          ),
+        ],
+        const SliverToBoxAdapter(
+          child: SizedBox(height: 88),
+        ),
+      ],
     );
   }
 
@@ -1841,6 +1795,13 @@ class _PosScreenState extends State<PosScreen> {
   // ============================================================
   // FORMAT QUANTITY
   // ============================================================
+
+  String _formatStockLabel(double value) {
+    if (value.abs() < 0.000001) {
+      return 'Stock not set';
+    }
+    return 'Stock ${_formatQty(value)}';
+  }
 
   String _formatQty(
       double value,

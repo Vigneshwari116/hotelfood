@@ -1,12 +1,8 @@
-/// POS only sells items that have stock recorded above zero.
-bool posIsStocked(double stock) => stock > 0.000001;
+/// POS sells all menu items regardless of recorded stock.
+/// Stock may go negative when oversold.
+bool posIsStocked(double stock) => true;
 
-bool posAllowsAdd({required double stock, required double cartQty}) {
-  if (!posIsStocked(stock)) return false;
-  return cartQty + 1 <= stock + 0.000001;
-}
+bool posAllowsAdd({required double stock, required double cartQty}) => true;
 
-double posMaxQty(double stock) {
-  if (!posIsStocked(stock)) return 0;
-  return stock;
-}
+/// Returns null when quantity is not capped at the POS.
+double? posMaxQty(double stock) => null;

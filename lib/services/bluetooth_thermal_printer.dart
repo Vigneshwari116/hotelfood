@@ -67,7 +67,7 @@ class BluetoothThermalPrinter {
   }
 
   static Future<void> ensureConnected(String mac) async {
-    if (await ThermalBridge.connectionStatus()) return;
+    await ThermalBridge.disconnect();
     final ok = await ThermalBridge.connect(mac);
     if (!ok) {
       throw StateError(
@@ -85,7 +85,9 @@ class BluetoothThermalPrinter {
     await ensureConnected(saved.mac);
     final ok = await ThermalBridge.writeBytes(bytes);
     if (!ok) {
-      throw StateError('Printer did not accept the bill data.');
+      throw StateError(
+        'Printer did not accept the bill data. Check that it is on and paired, then try again.',
+      );
     }
   }
 

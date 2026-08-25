@@ -87,5 +87,6 @@ Future<bool> disconnect() {
 }
 
 Future<bool> writeBytes(List<int> bytes) {
+  if (bytes.isEmpty) return Future.value(false);
   return PrintBluetoothThermal.writeBytes(bytes);
 }

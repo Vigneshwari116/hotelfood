@@ -1396,6 +1396,7 @@ class Repository {
           double qtyNeeded, {
                 required String refType,
                 int? refId,
+                bool allowNegative = false,
           }) async {
             if (qtyNeeded <= 0.0) {
                   return _getCurrentStock(
@@ -1421,7 +1422,8 @@ class Repository {
             final double currentStock =
             (materialRows.first['current_stock'] as num).toDouble();
 
-            if (currentStock + 1e-9 < qtyNeeded) {
+            if (!allowNegative &&
+                currentStock + 1e-9 < qtyNeeded) {
                   throw InsufficientStockException(
                         materialName: materialRows.first['name'] as String,
                         needed: qtyNeeded,
@@ -1479,7 +1481,7 @@ class Repository {
                   remaining -= take;
             }
 
-            if (remaining > 0.000001) {
+            if (!allowNegative && remaining > 0.000001) {
                   throw InvalidInventoryException(
                         'Stock batch data is inconsistent for '
                             '${materialRows.first['name']}.',
@@ -1558,12 +1560,6 @@ class Repository {
             (rows.first['current_stock'] as num).toDouble();
 
             final double next = current + delta;
-
-            if (next < -0.000001) {
-                  throw InvalidInventoryException(
-                        'Stock cannot become negative.',
-                  );
-            }
 
             final double safeNext =
             next.abs() < 0.000001 ? 0.0 : next;
@@ -1818,7 +1814,7 @@ class Repository {
                   final perSale = needed <= 0 ? 1.0 : needed;
 
                   final sellable = stock / perSale;
-                  result[id] = sellable < 0.0 ? 0.0 : sellable;
+                  result[id] = sellable;
             }
 
             return result;
@@ -1866,8 +1862,7 @@ class Repository {
                   final double maxQty =
                       (row['max_qty'] as num?)?.toDouble() ?? 0.0;
 
-                  result[comboId] =
-                  maxQty < 0.0 ? 0.0 : maxQty;
+                  result[comboId] = maxQty;
             }
 
             return result;
@@ -2003,43 +1998,6 @@ class Repository {
                   );
 
                   // ----------------------------------------------------------
-                  // CHECK STOCK BEFORE WRITING ANYTHING
-                  // ----------------------------------------------------------
-
-                  for (final entry in totalNeeded.entries) {
-                        final rows = await txn.query(
-                              'raw_materials',
-                              columns: [
-                                    'name',
-                                    'current_stock',
-                              ],
-                              where: 'id = ?',
-                              whereArgs: [entry.key],
-                              limit: 1,
-                        );
-
-                        if (rows.isEmpty) {
-                              throw InvalidInventoryException(
-                                    'Sale references a raw material '
-                                        'that no longer exists.',
-                              );
-                        }
-
-                        final double available =
-                        (rows.first['current_stock'] as num)
-                            .toDouble();
-
-                        if (available + 1e-9 < entry.value) {
-                              throw InsufficientStockException(
-                                    materialName:
-                                    rows.first['name'] as String,
-                                    needed: entry.value,
-                                    available: available,
-                              );
-                        }
-                  }
-
-                  // ----------------------------------------------------------
                   // CREATE SALE
                   // ----------------------------------------------------------
 
@@ -2090,6 +2048,7 @@ class Repository {
                               entry.value,
                               refType: 'sale_deduction',
                               refId: saleId,
+                              allowNegative: true,
                         );
                   }
 
