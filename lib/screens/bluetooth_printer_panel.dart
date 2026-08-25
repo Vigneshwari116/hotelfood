@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/bluetooth_thermal_printer.dart';
+import 'package:foodstock/services/receipt_document.dart';
 import 'package:foodstock/services/thermal/thermal_bridge.dart';
 
 class BluetoothPrinterPanel extends StatefulWidget {
@@ -110,15 +111,20 @@ class _BluetoothPrinterPanelState extends State<BluetoothPrinterPanel> {
     });
     try {
       await BluetoothThermalPrinter.printSale(
-        saleId: 11,
-        lines: [
-          CartLine(name: 'Veg Burger', qty: 1, price: 478),
-          CartLine(name: 'Chicken Burger', qty: 1, price: 50),
-        ],
-        subtotal: 528,
-        tax: 26.4,
-        discount: 0,
-        grandTotal: 554.4,
+        document: ReceiptDocument(
+          saleId: 11,
+          lines: [
+            CartLine(name: 'Veg Burger', qty: 1, price: 478),
+            CartLine(name: 'Chicken Burger', qty: 1, price: 50),
+          ],
+          paymentType: 'Cash',
+          subtotal: 528,
+          tax: 26.4,
+          discount: 0,
+          grandTotal: 554.4,
+          customerName: 'Test Customer',
+          customerPhone: '9876543210',
+        ),
         testBanner: true,
       );
       if (!mounted) return;

@@ -2,21 +2,18 @@ import 'package:esc_pos_utils_plus/esc_pos_utils_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 
-import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/receipt_document.dart';
 import 'package:foodstock/services/receipt_layout.dart';
 import 'package:foodstock/services/receipt_profile.dart';
 import 'package:foodstock/widgets/brand_logo.dart';
 
 class EscPosReceiptBuilder {
+  static const topLogoWidth = 104;
+  static const footerLogoWidth = 118;
+
   static Future<List<int>> build({
     required ReceiptProfile profile,
-    required int saleId,
-    required List<CartLine> lines,
-    required double subtotal,
-    required double tax,
-    required double discount,
-    required double grandTotal,
-    DateTime? billedAt,
+    required ReceiptDocument document,
     bool testBanner = false,
   }) async {
     final generator = Generator(
@@ -27,7 +24,7 @@ class EscPosReceiptBuilder {
     var bytes = <int>[];
     bytes += generator.reset();
 
-    bytes += await _logo(generator, BrandAssets.chicken, 132);
+    bytes += await _logo(generator, BrandAssets.chicken, topLogoWidth);
 
     bytes += generator.text(
       profile.shopName.toUpperCase(),
@@ -59,7 +56,6 @@ class EscPosReceiptBuilder {
     }
 
     if (testBanner) {
-      bytes += generator.feed(1);
       bytes += generator.text(
         'PRINTER TEST RECEIPT',
         styles: const PosStyles(
@@ -72,17 +68,30 @@ class EscPosReceiptBuilder {
     bytes += generator.text(ReceiptLayout.dash());
     bytes += generator.text(
       ReceiptLayout.pair(
-        'Bill #$saleId',
-        ReceiptLayout.billWhen(billedAt ?? DateTime.now()),
+        'Bill #${document.saleId}',
+        ReceiptLayout.billWhen(document.billedAt),
       ),
     );
     bytes += generator.text(ReceiptLayout.dash());
+
+    final customerName = document.trimmedCustomerName;
+    if (customerName != null) {
+      bytes += generator.text('Customer: $customerName');
+    }
+    final customerPhone = document.trimmedCustomerPhone;
+    if (customerPhone != null) {
+      bytes += generator.text('Mobile: $customerPhone');
+    }
+    if (customerName != null || customerPhone != null) {
+      bytes += generator.text(ReceiptLayout.dash());
+    }
+
     bytes += generator.text(
       ReceiptLayout.pair('Item x Qty', 'Rate'),
       styles: const PosStyles(bold: true),
     );
 
-    for (final line in lines) {
+    for (final line in document.lines) {
       final printed = ReceiptLayout.itemLines(
         name: line.name,
         qty: ReceiptLayout.qtyText(line.qty),
@@ -100,29 +109,29 @@ class EscPosReceiptBuilder {
     bytes += generator.text(
       ReceiptLayout.pair(
         'SubTotal',
-        ReceiptLayout.money(subtotal, forceDecimals: true),
+        ReceiptLayout.money(document.subtotal, forceDecimals: true),
       ),
     );
-    if (tax > 0) {
+    if (document.tax > 0) {
       bytes += generator.text(
         ReceiptLayout.pair(
-          ReceiptLayout.taxLabel(tax, subtotal),
-          ReceiptLayout.money(tax, forceDecimals: true),
+          ReceiptLayout.taxLabel(document.tax, document.subtotal),
+          ReceiptLayout.money(document.tax, forceDecimals: true),
         ),
       );
     }
-    if (discount > 0) {
+    if (document.discount > 0) {
       bytes += generator.text(
         ReceiptLayout.pair(
           'Discount',
-          ReceiptLayout.money(discount, forceDecimals: true),
+          ReceiptLayout.money(document.discount, forceDecimals: true),
         ),
       );
     }
     bytes += generator.text(
       ReceiptLayout.pair(
         'Grand Total',
-        ReceiptLayout.money(grandTotal, forceDecimals: true),
+        ReceiptLayout.money(document.grandTotal, forceDecimals: true),
       ),
       styles: const PosStyles(
         bold: true,
@@ -130,10 +139,15 @@ class EscPosReceiptBuilder {
       ),
     );
 
+    bytes += await _logo(generator, BrandAssets.logo, footerLogoWidth);
+    bytes += generator.text(
+      'Thank You',
+      styles: const PosStyles(
+        align: PosAlign.center,
+        bold: true,
+      ),
+    );
     bytes += generator.feed(1);
-    bytes += await _logo(generator, BrandAssets.logo, 168);
-    bytes += await _logo(generator, BrandAssets.thankYou, 200);
-    bytes += generator.feed(3);
     bytes += generator.cut();
     return bytes;
   }
@@ -141,7 +155,7 @@ class EscPosReceiptBuilder {
   static Future<List<int>> _logo(
     Generator generator,
     String asset, [
-    int width = 180,
+    int width = 104,
   ]) async {
     try {
       final data = await rootBundle.load(asset);

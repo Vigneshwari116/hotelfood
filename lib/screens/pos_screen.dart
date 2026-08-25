@@ -27,10 +27,19 @@ class _PosScreenState extends State<PosScreen> {
   final TextEditingController _barcodeController =
   TextEditingController();
 
+  final TextEditingController _customerNameController =
+  TextEditingController();
+
+  final TextEditingController _customerPhoneController =
+  TextEditingController();
+
   final ScrollController _cartScrollController =
   ScrollController();
 
+  static const int _comboCategoryFilter = -2;
+
   List<RawMaterial> _materials = [];
+  List<Combo> _combos = [];
   List<Category> _categories = [];
   int? _categoryId;
 
@@ -75,6 +84,8 @@ class _PosScreenState extends State<PosScreen> {
     _taxController.dispose();
     _discountController.dispose();
     _barcodeController.dispose();
+    _customerNameController.dispose();
+    _customerPhoneController.dispose();
     _cartScrollController.dispose();
 
     super.dispose();
@@ -93,12 +104,14 @@ class _PosScreenState extends State<PosScreen> {
 
     try {
       final materials = await _repo.rawMaterials();
+      final combos = await _repo.combosWithItems(activeOnly: true);
       final categories = await _repo.categories(type: 'raw_material');
 
       if (!mounted) return;
 
       setState(() {
         _materials = materials;
+        _combos = combos;
         _categories = categories;
         _loading = false;
         if (_categoryId != null &&
@@ -122,11 +135,13 @@ class _PosScreenState extends State<PosScreen> {
   Future<void> _refreshStock() async {
     try {
       final materials = await _repo.rawMaterials();
+      final combos = await _repo.combosWithItems(activeOnly: true);
 
       if (!mounted) return;
 
       setState(() {
         _materials = materials;
+        _combos = combos;
       });
     } catch (e) {
       if (!mounted) return;
@@ -146,8 +161,18 @@ class _PosScreenState extends State<PosScreen> {
 
   List<RawMaterial> get _allMaterials => _materials;
 
+  List<Combo> get _activeCombos =>
+      _combos.where((combo) => combo.isActive && combo.id != null).toList();
+
   Set<int?> get _categoryIdsWithItems {
-    return {for (final material in _allMaterials) material.categoryId};
+    final ids = {for (final material in _allMaterials) material.categoryId};
+    for (final combo in _activeCombos) {
+      ids.add(combo.categoryId);
+    }
+    if (_activeCombos.isNotEmpty) {
+      ids.add(_comboCategoryFilter);
+    }
+    return ids;
   }
 
   List<Category> get _categoriesWithItems {
@@ -156,6 +181,10 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   List<RawMaterial> get _filteredMaterials {
+    if (_categoryId == _comboCategoryFilter) {
+      return const [];
+    }
+
     var list = _allMaterials;
     if (_categoryId == -1) {
       list = list.where((material) => material.categoryId == null).toList();
@@ -178,10 +207,51 @@ class _PosScreenState extends State<PosScreen> {
     }).toList();
   }
 
-  List<({String title, List<RawMaterial> materials})> get _materialSections {
-    final items = _filteredMaterials;
-    if (items.isEmpty) {
+  List<Combo> get _filteredCombos {
+    if (_categoryId != null &&
+        _categoryId != _comboCategoryFilter &&
+        _categoryId != -1) {
+      var list = _activeCombos
+          .where((combo) => combo.categoryId == _categoryId)
+          .toList();
+      if (_search.isEmpty) return list;
+      return list.where(_comboMatchesSearch).toList();
+    }
+
+    if (_categoryId == -1) {
       return const [];
+    }
+
+    var list = _activeCombos;
+    if (_categoryId == _comboCategoryFilter) {
+      if (_search.isEmpty) return list;
+      return list.where(_comboMatchesSearch).toList();
+    }
+
+    if (_search.isEmpty) {
+      return list;
+    }
+
+    return list.where(_comboMatchesSearch).toList();
+  }
+
+  bool _comboMatchesSearch(Combo combo) {
+    final name = combo.name.toLowerCase();
+    final barcode = combo.barcode?.toLowerCase() ?? '';
+    return name.contains(_search) || barcode.contains(_search);
+  }
+
+  List<({String title, List<RawMaterial> materials, List<Combo> combos})>
+      get _productSections {
+    final items = _filteredMaterials;
+    final combos = _filteredCombos;
+
+    if (items.isEmpty && combos.isEmpty) {
+      return const [];
+    }
+
+    if (_categoryId == _comboCategoryFilter) {
+      return _comboOnlySections(combos);
     }
 
     if (_categoryId != null) {
@@ -192,31 +262,98 @@ class _PosScreenState extends State<PosScreen> {
                   .map((category) => category.name)
                   .firstOrNull ??
               'Category';
-      return [(title: title, materials: items)];
+      return [
+        (
+          title: title,
+          materials: items,
+          combos: combos,
+        ),
+      ];
     }
 
-    final grouped = <int?, List<RawMaterial>>{};
+    final materialGroups = <int?, List<RawMaterial>>{};
     for (final material in items) {
-      grouped.putIfAbsent(material.categoryId, () => []).add(material);
+      materialGroups.putIfAbsent(material.categoryId, () => []).add(material);
     }
 
-    final sections = <({String title, List<RawMaterial> materials})>[];
+    final comboGroups = <int?, List<Combo>>{};
+    for (final combo in combos) {
+      comboGroups.putIfAbsent(combo.categoryId, () => []).add(combo);
+    }
+
+    final sections =
+        <({String title, List<RawMaterial> materials, List<Combo> combos})>[];
+    for (final category in _categories) {
+      final materials = materialGroups.remove(category.id) ?? const [];
+      final categoryCombos = comboGroups.remove(category.id) ?? const [];
+      if (materials.isEmpty && categoryCombos.isEmpty) continue;
+      sections.add((
+        title: category.name,
+        materials: materials,
+        combos: categoryCombos,
+      ));
+    }
+
+    final uncategorizedMaterials = materialGroups.remove(null) ?? const [];
+    final uncategorizedCombos = comboGroups.remove(null) ?? const [];
+    if (uncategorizedMaterials.isNotEmpty || uncategorizedCombos.isNotEmpty) {
+      sections.add((
+        title: 'Other',
+        materials: uncategorizedMaterials,
+        combos: uncategorizedCombos,
+      ));
+    }
+
+    for (final entry in materialGroups.entries) {
+      final materials = entry.value;
+      final categoryCombos = comboGroups.remove(entry.key) ?? const [];
+      if (materials.isEmpty && categoryCombos.isEmpty) continue;
+      sections.add((
+        title: 'Other',
+        materials: materials,
+        combos: categoryCombos,
+      ));
+    }
+
+    for (final entry in comboGroups.entries) {
+      if (entry.value.isEmpty) continue;
+      sections.add((
+        title: 'Combos',
+        materials: const [],
+        combos: entry.value,
+      ));
+    }
+
+    return sections;
+  }
+
+  List<({String title, List<RawMaterial> materials, List<Combo> combos})>
+      _comboOnlySections(List<Combo> combos) {
+    if (combos.isEmpty) {
+      return const [];
+    }
+
+    final grouped = <int?, List<Combo>>{};
+    for (final combo in combos) {
+      grouped.putIfAbsent(combo.categoryId, () => []).add(combo);
+    }
+
+    final sections =
+        <({String title, List<RawMaterial> materials, List<Combo> combos})>[];
     for (final category in _categories) {
       final list = grouped.remove(category.id);
-      if (list != null && list.isNotEmpty) {
-        sections.add((title: category.name, materials: list));
-      }
+      if (list == null || list.isEmpty) continue;
+      sections.add((title: category.name, materials: const [], combos: list));
     }
 
     final uncategorized = grouped.remove(null);
     if (uncategorized != null && uncategorized.isNotEmpty) {
-      sections.add((title: 'Other', materials: uncategorized));
+      sections.add((title: 'Combos', materials: const [], combos: uncategorized));
     }
 
     for (final entry in grouped.entries) {
-      final list = entry.value;
-      if (list.isEmpty) continue;
-      sections.add((title: 'Other', materials: list));
+      if (entry.value.isEmpty) continue;
+      sections.add((title: 'Combos', materials: const [], combos: entry.value));
     }
 
     return sections;
@@ -244,9 +381,14 @@ class _PosScreenState extends State<PosScreen> {
       );
 
       if (material == null) {
-        _showError(
-          'No raw material found for barcode "$barcode".',
-        );
+        final combo = await _repo.comboByBarcode(barcode);
+        if (combo == null) {
+          _showError(
+            'No item found for barcode "$barcode".',
+          );
+          return;
+        }
+        _addCombo(combo);
         return;
       }
 
@@ -278,6 +420,24 @@ class _PosScreenState extends State<PosScreen> {
     return _cart.indexWhere(
           (line) => line.rawMaterialId == id,
     );
+  }
+
+  int _cartIndexForCombo(
+      int id,
+      ) {
+    return _cart.indexWhere(
+          (line) => line.comboId == id,
+    );
+  }
+
+  double _cartQtyForCombo(
+      int id,
+      ) {
+    final index = _cartIndexForCombo(id);
+    if (index == -1) {
+      return 0;
+    }
+    return _cart[index].qty;
   }
 
   double _cartQtyForRaw(
@@ -332,6 +492,40 @@ class _PosScreenState extends State<PosScreen> {
     _refreshUi();
   }
 
+  void _addCombo(
+      Combo combo,
+      ) {
+    if (combo.id == null) {
+      return;
+    }
+
+    final index = _cartIndexForCombo(combo.id!);
+
+    if (index == -1) {
+      _cart.add(
+        CartLine(
+          comboId: combo.id,
+          name: combo.name,
+          qty: 1,
+          price: combo.price,
+        ),
+      );
+      _refreshUi();
+      return;
+    }
+
+    final old = _cart[index];
+    _cart[index] = CartLine(
+      rawMaterialId: old.rawMaterialId,
+      comboId: old.comboId,
+      name: old.name,
+      subItem: old.subItem,
+      qty: old.qty + 1,
+      price: old.price,
+    );
+    _refreshUi();
+  }
+
   // ============================================================
   // CHANGE QUANTITY
   // ============================================================
@@ -355,7 +549,7 @@ class _PosScreenState extends State<PosScreen> {
     final line =
     _cart[index];
 
-    if (line.rawMaterialId == null) {
+    if (line.rawMaterialId == null && line.comboId == null) {
       return;
     }
 
@@ -509,6 +703,12 @@ class _PosScreenState extends State<PosScreen> {
       _discountController.text =
       '0';
 
+      final customerName = _customerNameController.text.trim();
+      final customerPhone = _customerPhoneController.text.trim();
+
+      _customerNameController.clear();
+      _customerPhoneController.clear();
+
       await _refreshStock();
 
       if (!mounted) return;
@@ -527,6 +727,10 @@ class _PosScreenState extends State<PosScreen> {
             tax: tax,
             discount: discount,
             grandTotal: grandTotal,
+            customerName:
+                customerName.isEmpty ? null : customerName,
+            customerPhone:
+                customerPhone.isEmpty ? null : customerPhone,
           ),
         ),
       );
@@ -789,6 +993,109 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
+  Widget _comboCard(
+      Combo combo,
+      ) {
+    final cartQty =
+    combo.id == null
+        ? 0.0
+        : _cartQtyForCombo(
+      combo.id!,
+    );
+
+    return Card(
+      clipBehavior:
+      Clip.antiAlias,
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        onTap: () => _addCombo(combo),
+        child: Column(
+          crossAxisAlignment:
+          CrossAxisAlignment
+              .start,
+          children: [
+            _image(
+              combo.imagePath,
+              height: 100,
+            ),
+            Expanded(
+              child: Padding(
+                padding:
+                const EdgeInsets.all(
+                  10,
+                ),
+                child: Column(
+                  crossAxisAlignment:
+                  CrossAxisAlignment
+                      .start,
+                  children: [
+                    Text(
+                      combo.name,
+                      maxLines: 2,
+                      overflow:
+                      TextOverflow
+                          .ellipsis,
+                      style:
+                      const TextStyle(
+                        fontWeight:
+                        FontWeight
+                            .bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Combo',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.orange.shade800,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '₹${combo.price.toStringAsFixed(2)}',
+                      style:
+                      const TextStyle(
+                        fontWeight:
+                        FontWeight
+                            .w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const Spacer(),
+                    Row(
+                      children: [
+                        const Spacer(),
+                        if (cartQty >
+                            0)
+                          CircleAvatar(
+                            radius:
+                            11,
+                            child:
+                            Text(
+                              _formatQty(
+                                cartQty,
+                              ),
+                              style:
+                              const TextStyle(
+                                fontSize:
+                                10,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ============================================================
   // CART VIEW
   // ============================================================
@@ -884,9 +1191,10 @@ class _PosScreenState extends State<PosScreen> {
           CircleAvatar(
             radius: 17,
             child:
-            const Icon(
-              Icons
-                  .inventory_2_outlined,
+            Icon(
+              line.isCombo
+                  ? Icons.local_offer_outlined
+                  : Icons.inventory_2_outlined,
               size: 17,
             ),
           ),
@@ -1062,6 +1370,34 @@ class _PosScreenState extends State<PosScreen> {
         CrossAxisAlignment
             .stretch,
         children: [
+          TextField(
+            controller: _customerNameController,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Customer name (optional)',
+              border: OutlineInputBorder(),
+              isDense: true,
+              prefixIcon: Icon(Icons.person_outline),
+            ),
+            onChanged: (_) => _refreshUi(),
+          ),
+
+          const SizedBox(height: 8),
+
+          TextField(
+            controller: _customerPhoneController,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              labelText: 'Mobile number (optional)',
+              border: OutlineInputBorder(),
+              isDense: true,
+              prefixIcon: Icon(Icons.phone_outlined),
+            ),
+            onChanged: (_) => _refreshUi(),
+          ),
+
+          const SizedBox(height: 8),
+
           // ------------------------------------------------------
           // PAYMENT
           // ------------------------------------------------------
@@ -1623,7 +1959,8 @@ class _PosScreenState extends State<PosScreen> {
 
   Widget _categoryChips() {
     final hasOther = _categoryIdsWithItems.contains(null);
-    if (_categoriesWithItems.isEmpty && !hasOther) {
+    final hasCombos = _activeCombos.isNotEmpty;
+    if (_categoriesWithItems.isEmpty && !hasOther && !hasCombos) {
       return const SizedBox.shrink();
     }
 
@@ -1665,13 +2002,19 @@ class _PosScreenState extends State<PosScreen> {
               selected: _categoryId == -1,
               onTap: () => setState(() => _categoryId = -1),
             ),
+          if (hasCombos)
+            chip(
+              label: 'Combos',
+              selected: _categoryId == _comboCategoryFilter,
+              onTap: () => setState(() => _categoryId = _comboCategoryFilter),
+            ),
         ],
       ),
     );
   }
 
   Widget _materialsGrid() {
-    final sections = _materialSections;
+    final sections = _productSections;
 
     if (sections.isEmpty) {
       return _emptyProducts(
@@ -1683,7 +2026,9 @@ class _PosScreenState extends State<PosScreen> {
             ? 'No items match this search'
             : _categoryId == null
                 ? 'No menu items found'
-                : 'No items in this category',
+                : _categoryId == _comboCategoryFilter
+                    ? 'No combos found'
+                    : 'No items in this category',
       );
     }
 
@@ -1712,9 +2057,16 @@ class _PosScreenState extends State<PosScreen> {
                 mainAxisSpacing: 10,
               ),
               delegate: SliverChildBuilderDelegate(
-                (context, index) =>
-                    _materialCard(section.materials[index]),
-                childCount: section.materials.length,
+                (context, index) {
+                  final materialCount = section.materials.length;
+                  if (index < materialCount) {
+                    return _materialCard(section.materials[index]);
+                  }
+                  return _comboCard(
+                    section.combos[index - materialCount],
+                  );
+                },
+                childCount: section.materials.length + section.combos.length,
               ),
             ),
           ),

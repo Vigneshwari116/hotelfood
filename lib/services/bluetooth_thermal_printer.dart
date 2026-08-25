@@ -2,6 +2,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/esc_pos_receipt_builder.dart';
+import 'package:foodstock/services/receipt_document.dart';
 import 'package:foodstock/services/receipt_profile.dart';
 import 'package:foodstock/services/thermal/thermal_bridge.dart';
 
@@ -92,23 +93,13 @@ class BluetoothThermalPrinter {
   }
 
   static Future<void> printSale({
-    required int saleId,
-    required List<CartLine> lines,
-    required double subtotal,
-    required double tax,
-    required double discount,
-    required double grandTotal,
+    required ReceiptDocument document,
     bool testBanner = false,
   }) async {
     final profile = await ReceiptProfile.load();
     final bytes = await EscPosReceiptBuilder.build(
       profile: profile,
-      saleId: saleId,
-      lines: lines,
-      subtotal: subtotal,
-      tax: tax,
-      discount: discount,
-      grandTotal: grandTotal,
+      document: document,
       testBanner: testBanner,
     );
     await printBytes(bytes);

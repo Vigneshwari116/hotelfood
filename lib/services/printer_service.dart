@@ -12,6 +12,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/bluetooth_thermal_printer.dart';
+import 'package:foodstock/services/receipt_document.dart';
 import 'package:foodstock/services/receipt_layout.dart';
 import 'package:foodstock/services/receipt_profile.dart';
 import 'package:foodstock/widgets/brand_logo.dart';
@@ -34,17 +35,23 @@ class ReceiptPaper {
   static PdfPageFormat format(
     String size, {
     int itemCount = 1,
+    bool hasCustomer = false,
+    bool hasTax = false,
+    bool hasDiscount = false,
   }) {
     final mm = PdfPageFormat.mm;
     final lines = itemCount < 1 ? 1 : itemCount;
 
     switch (size) {
       case '58mm':
-        // Compact thermal slip — extra height wastes roll paper.
+        var heightMm = 78.0 + lines * 5.5;
+        if (hasCustomer) heightMm += 7;
+        if (hasTax) heightMm += 4;
+        if (hasDiscount) heightMm += 4;
         return PdfPageFormat(
           58 * mm,
-          (145 + lines * 8) * mm,
-          marginAll: 2 * mm,
+          heightMm * mm,
+          marginAll: 1.5 * mm,
         );
       case 'A5':
         return PdfPageFormat.a5.copyWith(
@@ -84,6 +91,8 @@ class ReceiptScreen extends StatefulWidget {
   final double tax;
   final double discount;
   final double grandTotal;
+  final String? customerName;
+  final String? customerPhone;
 
   const ReceiptScreen({
     super.key,
@@ -94,7 +103,21 @@ class ReceiptScreen extends StatefulWidget {
     required this.tax,
     required this.discount,
     required this.grandTotal,
+    this.customerName,
+    this.customerPhone,
   });
+
+  ReceiptDocument get _document => ReceiptDocument(
+        saleId: saleId,
+        lines: lines,
+        paymentType: paymentType,
+        subtotal: subtotal,
+        tax: tax,
+        discount: discount,
+        grandTotal: grandTotal,
+        customerName: customerName,
+        customerPhone: customerPhone,
+      );
 
   @override
   State<ReceiptScreen> createState() =>
@@ -208,6 +231,9 @@ class _ReceiptScreenState
     return ReceiptPaper.format(
       _paperSize,
       itemCount: widget.lines.length,
+      hasCustomer: _document.hasCustomer,
+      hasTax: widget.tax > 0,
+      hasDiscount: widget.discount > 0,
     );
   }
 
@@ -295,7 +321,6 @@ class _ReceiptScreenState
 
     pw.MemoryImage? chickenLogo;
     pw.MemoryImage? footerLogo;
-    pw.MemoryImage? thankYouHands;
     try {
       chickenLogo = pw.MemoryImage(
         (await rootBundle.load(BrandAssets.chicken)).buffer.asUint8List(),
@@ -303,24 +328,27 @@ class _ReceiptScreenState
       footerLogo = pw.MemoryImage(
         (await rootBundle.load(BrandAssets.logo)).buffer.asUint8List(),
       );
-      thankYouHands = pw.MemoryImage(
-        (await rootBundle.load(BrandAssets.thankYou)).buffer.asUint8List(),
-      );
     } catch (_) {}
+
+    final document = _document;
+    final customerName = document.trimmedCustomerName;
+    final customerPhone = document.trimmedCustomerPhone;
 
     pdf.addPage(
       pw.Page(
         pageFormat: format,
+        margin: pw.EdgeInsets.all(_narrow ? 1.5 * PdfPageFormat.mm : 3 * PdfPageFormat.mm),
         build: (context) {
           return pw.Column(
             crossAxisAlignment:
             pw.CrossAxisAlignment.stretch,
+            mainAxisAlignment: pw.MainAxisAlignment.start,
             children: [
               if (chickenLogo != null)
                 pw.Center(
                   child: pw.Image(
                     chickenLogo,
-                    height: _narrow ? 28 : 44,
+                    height: _narrow ? 22 : 36,
                   ),
                 ),
 
@@ -359,12 +387,12 @@ class _ReceiptScreenState
                   ),
                 ),
 
-              pw.SizedBox(height: _thermal ? 4 : 8),
+              pw.SizedBox(height: _thermal ? 2 : 4),
 
               pw.Divider(height: 1, borderStyle: pw.BorderStyle.dashed),
 
               pw.Padding(
-                padding: pw.EdgeInsets.only(top: _thermal ? 2 : 4),
+                padding: pw.EdgeInsets.only(top: _thermal ? 1 : 2),
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
@@ -373,16 +401,29 @@ class _ReceiptScreenState
                       style: pw.TextStyle(fontSize: _bodySize),
                     ),
                     pw.Text(
-                      ReceiptLayout.billWhen(DateTime.now()),
+                      ReceiptLayout.billWhen(document.billedAt),
                       style: pw.TextStyle(fontSize: _bodySize),
                     ),
                   ],
                 ),
               ),
 
-              pw.SizedBox(height: _thermal ? 3 : 6),
-
               pw.Divider(height: 1, borderStyle: pw.BorderStyle.dashed),
+
+              if (customerName != null) ...[
+                pw.Text(
+                  'Customer: $customerName',
+                  style: pw.TextStyle(fontSize: _bodySize),
+                ),
+              ],
+              if (customerPhone != null) ...[
+                pw.Text(
+                  'Mobile: $customerPhone',
+                  style: pw.TextStyle(fontSize: _bodySize),
+                ),
+              ],
+              if (customerName != null || customerPhone != null)
+                pw.Divider(height: 1, borderStyle: pw.BorderStyle.dashed),
 
               _itemHeaderRow(),
 
@@ -390,33 +431,25 @@ class _ReceiptScreenState
 
               pw.Divider(height: 1, borderStyle: pw.BorderStyle.dashed),
 
-              pw.SizedBox(height: 3),
-
               _pdfAmountRow(
                 'SubTotal',
                 widget.subtotal,
                 fontSize: _bodySize,
               ),
 
-              if (widget.tax > 0) ...[
-                pw.SizedBox(height: 2),
+              if (widget.tax > 0)
                 _pdfAmountRow(
                   ReceiptLayout.taxLabel(widget.tax, widget.subtotal),
                   widget.tax,
                   fontSize: _bodySize,
                 ),
-              ],
 
-              if (widget.discount > 0) ...[
-                pw.SizedBox(height: 2),
+              if (widget.discount > 0)
                 _pdfAmountRow(
                   'Discount',
                   widget.discount,
                   fontSize: _bodySize,
                 ),
-              ],
-
-              pw.SizedBox(height: 3),
 
               _pdfAmountRow(
                 'Grand Total',
@@ -425,35 +458,25 @@ class _ReceiptScreenState
                 fontSize: _totalSize,
               ),
 
-              pw.SizedBox(height: _thermal ? 8 : 14),
+              pw.SizedBox(height: _thermal ? 3 : 6),
 
-              if (footerLogo != null) ...[
+              if (footerLogo != null)
                 pw.Center(
                   child: pw.Image(
                     footerLogo,
-                    height: _narrow ? 26 : 40,
+                    height: _narrow ? 20 : 30,
                   ),
                 ),
-                pw.SizedBox(height: 4),
-              ],
 
-              if (thankYouHands != null)
-                pw.Center(
-                  child: pw.Image(
-                    thankYouHands,
-                    height: _narrow ? 14 : 20,
-                  ),
-                )
-              else
-                pw.Center(
-                  child: pw.Text(
-                    'Thank You',
-                    style: pw.TextStyle(
-                      fontSize: _subtitleSize,
-                      fontWeight: pw.FontWeight.bold,
-                    ),
+              pw.Center(
+                child: pw.Text(
+                  'Thank You',
+                  style: pw.TextStyle(
+                    fontSize: _subtitleSize,
+                    fontWeight: pw.FontWeight.bold,
                   ),
                 ),
+              ),
             ],
           );
         },
@@ -589,12 +612,7 @@ class _ReceiptScreenState
     try {
       if (_thermalPrinter != null) {
         await BluetoothThermalPrinter.printSale(
-          saleId: widget.saleId,
-          lines: widget.lines,
-          subtotal: widget.subtotal,
-          tax: widget.tax,
-          discount: widget.discount,
-          grandTotal: widget.grandTotal,
+          document: _document,
         );
 
         if (!mounted) return;
