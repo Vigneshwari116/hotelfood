@@ -231,7 +231,7 @@ class _ReceiptScreenState
     return ReceiptPaper.format(
       _paperSize,
       itemCount: widget.lines.length,
-      hasCustomer: _document.hasCustomer,
+      hasCustomer: widget._document.hasCustomer,
       hasTax: widget.tax > 0,
       hasDiscount: widget.discount > 0,
     );
@@ -330,7 +330,7 @@ class _ReceiptScreenState
       );
     } catch (_) {}
 
-    final document = _document;
+    final document = widget._document;
     final customerName = document.trimmedCustomerName;
     final customerPhone = document.trimmedCustomerPhone;
 
@@ -612,7 +612,7 @@ class _ReceiptScreenState
     try {
       if (_thermalPrinter != null) {
         await BluetoothThermalPrinter.printSale(
-          document: _document,
+          document: widget._document,
         );
 
         if (!mounted) return;

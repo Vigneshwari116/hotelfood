@@ -13,7 +13,7 @@ class ReceiptDocument {
   final String? customerPhone;
   final DateTime billedAt;
 
-  const ReceiptDocument({
+  ReceiptDocument({
     required this.saleId,
     required this.lines,
     required this.paymentType,
