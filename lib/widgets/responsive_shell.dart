@@ -691,7 +691,7 @@ class _AppDrawer extends StatelessWidget {
           Theme(
             data: theme.copyWith(dividerColor: Colors.transparent),
             child: ExpansionTile(
-              key: PageStorageKey('drawer_nav_group_$entryIndex'),
+              key: ValueKey('drawer_nav_group_${entryIndex}_$expanded'),
               initiallyExpanded: expanded,
               onExpansionChanged: (value) =>
                   onGroupExpansionChanged(entryIndex, value),

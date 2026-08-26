@@ -443,6 +443,11 @@ class _MainShellState extends State<MainShell> {
               page: const SimpleMastersScreen(),
             ),
             NavItem(
+              icon: Icons.bar_chart_outlined,
+              label: 'Reports',
+              page: const ReportsScreen(),
+            ),
+            NavItem(
               icon: Icons.print_outlined,
               label: 'Printers',
               page: const PrinterSettingsScreen(),
@@ -451,11 +456,6 @@ class _MainShellState extends State<MainShell> {
               icon: Icons.settings_outlined,
               label: 'Settings',
               children: [
-                NavItem(
-                  icon: Icons.bar_chart_outlined,
-                  label: 'Reports',
-                  page: const ReportsScreen(),
-                ),
                 NavItem(
                   icon: Icons.backup_outlined,
                   label: 'Backup',
