@@ -257,11 +257,7 @@ class _PosScreenState extends State<PosScreen> {
     if (_categoryId != null) {
       final title = _categoryId == -1
           ? 'Other'
-          : _categories
-                  .where((category) => category.id == _categoryId)
-                  .map((category) => category.name)
-                  .firstOrNull ??
-              'Category';
+          : _categoryName(_categoryId!) ?? 'Category';
       return [
         (
           title: title,

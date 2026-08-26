@@ -63,7 +63,8 @@ int? groupIndexContainingFlat(
     if (entry is NavItem) {
       if (index == flatIndex) return null;
       index++;
-    } else if (entry is NavGroup group) {
+    } else if (entry is NavGroup) {
+      final group = entry;
       for (final _ in group.children) {
         if (index == flatIndex) return groupIndex;
         index++;
@@ -390,7 +391,8 @@ class _DesktopSidebar extends StatelessWidget {
           ),
         );
         flatIndex++;
-      } else if (entry is NavGroup group) {
+      } else if (entry is NavGroup) {
+        final group = entry;
         final expanded = expandedGroupIndices.contains(entryIndex);
         children.add(
           Theme(
@@ -651,7 +653,8 @@ class _AppDrawer extends StatelessWidget {
 
     for (var entryIndex = 0; entryIndex < entries.length; entryIndex++) {
       final entry = entries[entryIndex];
-      if (entry is NavItem item) {
+      if (entry is NavItem) {
+        final item = entry;
         final selected = selectedIndex == flatIndex;
         children.add(
           Padding(
@@ -685,7 +688,8 @@ class _AppDrawer extends StatelessWidget {
           ),
         );
         flatIndex++;
-      } else if (entry is NavGroup group) {
+      } else if (entry is NavGroup) {
+        final group = entry;
         final expanded = expandedGroupIndices.contains(entryIndex);
         children.add(
           Theme(
