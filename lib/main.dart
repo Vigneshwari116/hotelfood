@@ -22,6 +22,7 @@ import 'screens/pos_screen.dart';
 import 'screens/reports_screen.dart';
 import 'screens/printer_settings_screen.dart';
 import 'screens/backup_screen.dart';
+import 'screens/reset_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -380,7 +381,7 @@ class _LoginScreenState extends State<LoginScreen> {
 // MAIN SHELL
 // ============================================================
 
-class MainShell extends StatelessWidget {
+class MainShell extends StatefulWidget {
   final String username;
   final String role;
 
@@ -390,7 +391,20 @@ class MainShell extends StatelessWidget {
     required this.role,
   });
 
-  bool get _isAdmin => role.toLowerCase() == 'admin';
+  @override
+  State<MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends State<MainShell> {
+  int _shellGeneration = 0;
+
+  bool get _isAdmin => widget.role.toLowerCase() == 'admin';
+
+  void _handleSessionReset() {
+    setState(() {
+      _shellGeneration++;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -401,7 +415,7 @@ class MainShell extends StatelessWidget {
     );
 
     final items = _isAdmin
-        ? [
+        ? <NavEntry>[
             NavItem(
               icon: Icons.dashboard_outlined,
               label: 'Dashboard',
@@ -429,26 +443,40 @@ class MainShell extends StatelessWidget {
               page: const SimpleMastersScreen(),
             ),
             NavItem(
-              icon: Icons.bar_chart_outlined,
-              label: 'Reports',
-              page: const ReportsScreen(),
-            ),
-            NavItem(
               icon: Icons.print_outlined,
               label: 'Printers',
               page: const PrinterSettingsScreen(),
             ),
-            NavItem(
-              icon: Icons.backup_outlined,
-              label: 'Backup',
-              page: const BackupScreen(),
+            NavGroup(
+              icon: Icons.settings_outlined,
+              label: 'Settings',
+              children: [
+                NavItem(
+                  icon: Icons.bar_chart_outlined,
+                  label: 'Reports',
+                  page: const ReportsScreen(),
+                ),
+                NavItem(
+                  icon: Icons.backup_outlined,
+                  label: 'Backup',
+                  page: const BackupScreen(),
+                ),
+                NavItem(
+                  icon: Icons.restart_alt,
+                  label: 'Reset',
+                  page: ResetScreen(
+                    onSessionReset: _handleSessionReset,
+                  ),
+                ),
+              ],
             ),
           ]
-        : [salesItem];
+        : <NavEntry>[salesItem];
 
     return ResponsiveShell(
+      key: ValueKey(_shellGeneration),
       title: 'Shilpa Enterprise',
-      userLabel: username,
+      userLabel: widget.username,
       items: items,
       onLogout: () async {
         await AuthSession.clear();

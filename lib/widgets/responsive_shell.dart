@@ -12,10 +12,12 @@ class Breakpoints {
 }
 
 /// ============================================================
-/// NAV ITEM
+/// NAV ITEM / GROUP
 /// ============================================================
 
-class NavItem {
+abstract class NavEntry {}
+
+class NavItem extends NavEntry {
   final IconData icon;
   final String label;
   final Widget page;
@@ -25,6 +27,50 @@ class NavItem {
     required this.label,
     required this.page,
   });
+}
+
+class NavGroup extends NavEntry {
+  final IconData icon;
+  final String label;
+  final List<NavItem> children;
+
+  NavGroup({
+    required this.icon,
+    required this.label,
+    required this.children,
+  });
+}
+
+List<NavItem> flattenNavEntries(List<NavEntry> entries) {
+  final flat = <NavItem>[];
+  for (final entry in entries) {
+    if (entry is NavItem) {
+      flat.add(entry);
+    } else if (entry is NavGroup) {
+      flat.addAll(entry.children);
+    }
+  }
+  return flat;
+}
+
+int? groupIndexContainingFlat(
+  List<NavEntry> entries,
+  int flatIndex,
+) {
+  var index = 0;
+  for (var groupIndex = 0; groupIndex < entries.length; groupIndex++) {
+    final entry = entries[groupIndex];
+    if (entry is NavItem) {
+      if (index == flatIndex) return null;
+      index++;
+    } else if (entry is NavGroup group) {
+      for (final _ in group.children) {
+        if (index == flatIndex) return groupIndex;
+        index++;
+      }
+    }
+  }
+  return null;
 }
 
 /// ============================================================
@@ -45,7 +91,7 @@ class NavItem {
 class ResponsiveShell extends StatefulWidget {
   final String title;
   final String? userLabel;
-  final List<NavItem> items;
+  final List<NavEntry> items;
   final VoidCallback? onLogout;
 
   const ResponsiveShell({
@@ -62,12 +108,38 @@ class ResponsiveShell extends StatefulWidget {
 
 class _ResponsiveShellState extends State<ResponsiveShell> {
   int _index = 0;
+  Set<int> _expandedGroupIndices = {};
+
+  List<NavItem> get _flatItems => flattenNavEntries(widget.items);
+
+  @override
+  void initState() {
+    super.initState();
+    _syncExpandedGroups();
+  }
+
+  @override
+  void didUpdateWidget(ResponsiveShell oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.items != widget.items) {
+      _index = 0;
+      _syncExpandedGroups();
+    }
+  }
+
+  void _syncExpandedGroups() {
+    final groupIndex = groupIndexContainingFlat(widget.items, _index);
+    if (groupIndex != null) {
+      _expandedGroupIndices = {groupIndex};
+    }
+  }
 
   void _selectPage(int index) {
-    if (index < 0 || index >= widget.items.length) return;
+    if (index < 0 || index >= _flatItems.length) return;
 
     setState(() {
       _index = index;
+      _syncExpandedGroups();
     });
   }
 
@@ -77,7 +149,7 @@ class _ResponsiveShellState extends State<ResponsiveShell> {
 
     final isDesktop = width >= Breakpoints.tablet;
 
-    final currentItem = widget.items[_index];
+    final currentItem = _flatItems[_index];
 
     if (isDesktop) {
       return _buildDesktop(
@@ -111,8 +183,19 @@ class _ResponsiveShellState extends State<ResponsiveShell> {
             width: 250,
             child: _DesktopSidebar(
               title: widget.title,
-              items: widget.items,
+              entries: widget.items,
+              flatItems: _flatItems,
               selectedIndex: _index,
+              expandedGroupIndices: _expandedGroupIndices,
+              onGroupExpansionChanged: (groupIndex, expanded) {
+                setState(() {
+                  if (expanded) {
+                    _expandedGroupIndices.add(groupIndex);
+                  } else {
+                    _expandedGroupIndices.remove(groupIndex);
+                  }
+                });
+              },
               onSelected: _selectPage,
               userLabel: widget.userLabel,
               onLogout: widget.onLogout,
@@ -185,8 +268,19 @@ class _ResponsiveShellState extends State<ResponsiveShell> {
 
       drawer: _AppDrawer(
         title: widget.title,
-        items: widget.items,
+        entries: widget.items,
+        flatItems: _flatItems,
         selectedIndex: _index,
+        expandedGroupIndices: _expandedGroupIndices,
+        onGroupExpansionChanged: (groupIndex, expanded) {
+          setState(() {
+            if (expanded) {
+              _expandedGroupIndices.add(groupIndex);
+            } else {
+              _expandedGroupIndices.remove(groupIndex);
+            }
+          });
+        },
         onSelected: (index) {
           _selectPage(index);
 
@@ -211,16 +305,22 @@ class _ResponsiveShellState extends State<ResponsiveShell> {
 
 class _DesktopSidebar extends StatelessWidget {
   final String title;
-  final List<NavItem> items;
+  final List<NavEntry> entries;
+  final List<NavItem> flatItems;
   final int selectedIndex;
+  final Set<int> expandedGroupIndices;
+  final void Function(int groupIndex, bool expanded) onGroupExpansionChanged;
   final ValueChanged<int> onSelected;
   final String? userLabel;
   final VoidCallback? onLogout;
 
   const _DesktopSidebar({
     required this.title,
-    required this.items,
+    required this.entries,
+    required this.flatItems,
     required this.selectedIndex,
+    required this.expandedGroupIndices,
+    required this.onGroupExpansionChanged,
     required this.onSelected,
     this.userLabel,
     this.onLogout,
@@ -234,10 +334,6 @@ class _DesktopSidebar extends StatelessWidget {
       color: theme.colorScheme.surface,
       child: Column(
         children: [
-          // --------------------------------------------------
-          // LOGO / TITLE
-          // --------------------------------------------------
-
           Container(
             height: 108,
             width: double.infinity,
@@ -252,36 +348,12 @@ class _DesktopSidebar extends StatelessWidget {
             ),
           ),
 
-          // --------------------------------------------------
-          // MENU
-          // --------------------------------------------------
-
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(
-                vertical: 12,
-              ),
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                final item = items[index];
-
-                final selected =
-                    selectedIndex == index;
-
-                return _SidebarItem(
-                  item: item,
-                  selected: selected,
-                  onTap: () {
-                    onSelected(index);
-                  },
-                );
-              },
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              children: _buildNavChildren(context),
             ),
           ),
-
-          // --------------------------------------------------
-          // FOOTER
-          // --------------------------------------------------
 
           if (onLogout != null)
             Padding(
@@ -299,6 +371,125 @@ class _DesktopSidebar extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  List<Widget> _buildNavChildren(BuildContext context) {
+    final children = <Widget>[];
+    var flatIndex = 0;
+
+    for (var entryIndex = 0; entryIndex < entries.length; entryIndex++) {
+      final entry = entries[entryIndex];
+      if (entry is NavItem) {
+        children.add(
+          _SidebarItem(
+            item: entry,
+            selected: selectedIndex == flatIndex,
+            onTap: () => onSelected(flatIndex),
+          ),
+        );
+        flatIndex++;
+      } else if (entry is NavGroup group) {
+        final expanded = expandedGroupIndices.contains(entryIndex);
+        children.add(
+          Theme(
+            data: Theme.of(context).copyWith(
+              dividerColor: Colors.transparent,
+            ),
+            child: ExpansionTile(
+              key: ValueKey('nav_group_${entryIndex}_$expanded'),
+              initiallyExpanded: expanded,
+              onExpansionChanged: (value) =>
+                  onGroupExpansionChanged(entryIndex, value),
+              leading: Icon(
+                group.icon,
+                color: Colors.grey.shade700,
+              ),
+              title: Text(
+                group.label,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              children: [
+                for (final child in group.children)
+                  Builder(
+                    builder: (context) {
+                      final currentFlat = flatIndex;
+                      flatIndex++;
+                      return _SidebarSubItem(
+                        item: child,
+                        selected: selectedIndex == currentFlat,
+                        onTap: () => onSelected(currentFlat),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      }
+    }
+
+    return children;
+  }
+}
+
+class _SidebarSubItem extends StatelessWidget {
+  final NavItem item;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _SidebarSubItem({
+    required this.item,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: const EdgeInsets.only(left: 8, right: 10, bottom: 2),
+      child: Material(
+        color: selected
+            ? theme.colorScheme.primaryContainer
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: Row(
+              children: [
+                Icon(
+                  item.icon,
+                  size: 20,
+                  color: selected
+                      ? theme.colorScheme.primary
+                      : Colors.grey.shade600,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    item.label,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight:
+                          selected ? FontWeight.bold : FontWeight.w500,
+                      color: selected
+                          ? theme.colorScheme.primary
+                          : Colors.grey.shade800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -389,16 +580,22 @@ class _SidebarItem extends StatelessWidget {
 
 class _AppDrawer extends StatelessWidget {
   final String title;
-  final List<NavItem> items;
+  final List<NavEntry> entries;
+  final List<NavItem> flatItems;
   final int selectedIndex;
+  final Set<int> expandedGroupIndices;
+  final void Function(int groupIndex, bool expanded) onGroupExpansionChanged;
   final ValueChanged<int> onSelected;
   final String? userLabel;
   final VoidCallback? onLogout;
 
   const _AppDrawer({
     required this.title,
-    required this.items,
+    required this.entries,
+    required this.flatItems,
     required this.selectedIndex,
+    required this.expandedGroupIndices,
+    required this.onGroupExpansionChanged,
     required this.onSelected,
     this.userLabel,
     this.onLogout,
@@ -411,96 +608,22 @@ class _AppDrawer extends StatelessWidget {
     return Drawer(
       child: Column(
         children: [
-          // --------------------------------------------------
-          // DRAWER HEADER
-          // --------------------------------------------------
-
           Container(
             width: double.infinity,
             color: Colors.white,
-            padding: const EdgeInsets.fromLTRB(
-              16,
-              40,
-              16,
-              16,
-            ),
+            padding: const EdgeInsets.fromLTRB(16, 40, 16, 16),
             child: Semantics(
               label: title,
               child: const BrandLogo(height: 110),
             ),
           ),
 
-          // --------------------------------------------------
-          // MENU
-          // --------------------------------------------------
-
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.symmetric(
-                vertical: 10,
-              ),
-              itemCount: items.length,
-              itemBuilder: (context, index) {
-                final item = items[index];
-
-                final selected =
-                    selectedIndex == index;
-
-                return Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  child: ListTile(
-                    leading: Icon(
-                      item.icon,
-                      color: selected
-                          ? theme.colorScheme.primary
-                          : Colors.grey.shade700,
-                    ),
-
-                    title: Text(
-                      item.label,
-                      style: TextStyle(
-                        fontWeight: selected
-                            ? FontWeight.bold
-                            : FontWeight.w500,
-                        color: selected
-                            ? theme.colorScheme.primary
-                            : Colors.grey.shade800,
-                      ),
-                    ),
-
-                    selected: selected,
-
-                    selectedTileColor:
-                    theme.colorScheme.primaryContainer,
-
-                    shape: RoundedRectangleBorder(
-                      borderRadius:
-                      BorderRadius.circular(10),
-                    ),
-
-                    trailing: selected
-                        ? Icon(
-                      Icons.chevron_right,
-                      color:
-                      theme.colorScheme.primary,
-                    )
-                        : null,
-
-                    onTap: () {
-                      onSelected(index);
-                    },
-                  ),
-                );
-              },
+            child: ListView(
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              children: _buildNavChildren(context, theme),
             ),
           ),
-
-          // --------------------------------------------------
-          // FOOTER
-          // --------------------------------------------------
 
           if (onLogout != null)
             SafeArea(
@@ -510,9 +633,7 @@ class _AppDrawer extends StatelessWidget {
                   color: Colors.grey.shade700,
                 ),
                 title: const Text('Logout'),
-                subtitle: userLabel == null
-                    ? null
-                    : Text(userLabel!),
+                subtitle: userLabel == null ? null : Text(userLabel!),
                 onTap: () {
                   Navigator.of(context).pop();
                   onLogout!();
@@ -522,6 +643,101 @@ class _AppDrawer extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  List<Widget> _buildNavChildren(BuildContext context, ThemeData theme) {
+    final children = <Widget>[];
+    var flatIndex = 0;
+
+    for (var entryIndex = 0; entryIndex < entries.length; entryIndex++) {
+      final entry = entries[entryIndex];
+      if (entry is NavItem item) {
+        final selected = selectedIndex == flatIndex;
+        children.add(
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            child: ListTile(
+              leading: Icon(
+                item.icon,
+                color: selected
+                    ? theme.colorScheme.primary
+                    : Colors.grey.shade700,
+              ),
+              title: Text(
+                item.label,
+                style: TextStyle(
+                  fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                  color: selected
+                      ? theme.colorScheme.primary
+                      : Colors.grey.shade800,
+                ),
+              ),
+              selected: selected,
+              selectedTileColor: theme.colorScheme.primaryContainer,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              trailing: selected
+                  ? Icon(Icons.chevron_right, color: theme.colorScheme.primary)
+                  : null,
+              onTap: () => onSelected(flatIndex),
+            ),
+          ),
+        );
+        flatIndex++;
+      } else if (entry is NavGroup group) {
+        final expanded = expandedGroupIndices.contains(entryIndex);
+        children.add(
+          Theme(
+            data: theme.copyWith(dividerColor: Colors.transparent),
+            child: ExpansionTile(
+              key: PageStorageKey('drawer_nav_group_$entryIndex'),
+              initiallyExpanded: expanded,
+              onExpansionChanged: (value) =>
+                  onGroupExpansionChanged(entryIndex, value),
+              leading: Icon(group.icon, color: Colors.grey.shade700),
+              title: Text(
+                group.label,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              children: [
+                for (final child in group.children)
+                  Builder(
+                    builder: (context) {
+                      final currentFlat = flatIndex;
+                      final selected = selectedIndex == currentFlat;
+                      flatIndex++;
+                      return ListTile(
+                        leading: Icon(
+                          child.icon,
+                          size: 20,
+                          color: selected
+                              ? theme.colorScheme.primary
+                              : Colors.grey.shade600,
+                        ),
+                        title: Text(
+                          child.label,
+                          style: TextStyle(
+                            fontWeight:
+                                selected ? FontWeight.bold : FontWeight.w500,
+                            color: selected
+                                ? theme.colorScheme.primary
+                                : Colors.grey.shade800,
+                          ),
+                        ),
+                        selected: selected,
+                        onTap: () => onSelected(currentFlat),
+                      );
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      }
+    }
+
+    return children;
   }
 }
 
