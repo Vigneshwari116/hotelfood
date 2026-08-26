@@ -44,14 +44,14 @@ class ReceiptPaper {
 
     switch (size) {
       case '58mm':
-        var heightMm = 78.0 + lines * 5.5;
-        if (hasCustomer) heightMm += 7;
-        if (hasTax) heightMm += 4;
-        if (hasDiscount) heightMm += 4;
+        var heightMm = 62.0 + lines * 5.0;
+        if (hasCustomer) heightMm += 6;
+        if (hasTax) heightMm += 3.5;
+        if (hasDiscount) heightMm += 3.5;
         return PdfPageFormat(
           58 * mm,
           heightMm * mm,
-          marginAll: 1.5 * mm,
+          marginAll: 1 * mm,
         );
       case 'A5':
         return PdfPageFormat.a5.copyWith(
@@ -320,13 +320,9 @@ class _ReceiptScreenState
     );
 
     pw.MemoryImage? chickenLogo;
-    pw.MemoryImage? footerLogo;
     try {
       chickenLogo = pw.MemoryImage(
         (await rootBundle.load(BrandAssets.chicken)).buffer.asUint8List(),
-      );
-      footerLogo = pw.MemoryImage(
-        (await rootBundle.load(BrandAssets.logo)).buffer.asUint8List(),
       );
     } catch (_) {}
 
@@ -348,7 +344,7 @@ class _ReceiptScreenState
                 pw.Center(
                   child: pw.Image(
                     chickenLogo,
-                    height: _narrow ? 22 : 36,
+                    height: _narrow ? 18 : 32,
                   ),
                 ),
 
@@ -387,7 +383,7 @@ class _ReceiptScreenState
                   ),
                 ),
 
-              pw.SizedBox(height: _thermal ? 2 : 4),
+              pw.SizedBox(height: _thermal ? 1 : 3),
 
               pw.Divider(height: 1, borderStyle: pw.BorderStyle.dashed),
 
@@ -458,15 +454,7 @@ class _ReceiptScreenState
                 fontSize: _totalSize,
               ),
 
-              pw.SizedBox(height: _thermal ? 3 : 6),
-
-              if (footerLogo != null)
-                pw.Center(
-                  child: pw.Image(
-                    footerLogo,
-                    height: _narrow ? 20 : 30,
-                  ),
-                ),
+              pw.SizedBox(height: _thermal ? 2 : 4),
 
               pw.Center(
                 child: pw.Text(

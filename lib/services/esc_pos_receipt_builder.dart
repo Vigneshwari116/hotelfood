@@ -8,8 +8,7 @@ import 'package:foodstock/services/receipt_profile.dart';
 import 'package:foodstock/widgets/brand_logo.dart';
 
 class EscPosReceiptBuilder {
-  static const topLogoWidth = 104;
-  static const footerLogoWidth = 118;
+  static const topLogoWidth = 88;
 
   static Future<List<int>> build({
     required ReceiptProfile profile,
@@ -32,7 +31,6 @@ class EscPosReceiptBuilder {
         align: PosAlign.center,
         bold: true,
         height: PosTextSize.size2,
-        width: PosTextSize.size2,
       ),
     );
 
@@ -139,7 +137,6 @@ class EscPosReceiptBuilder {
       ),
     );
 
-    bytes += await _logo(generator, BrandAssets.logo, footerLogoWidth);
     bytes += generator.text(
       'Thank You',
       styles: const PosStyles(
@@ -147,7 +144,6 @@ class EscPosReceiptBuilder {
         bold: true,
       ),
     );
-    bytes += generator.feed(1);
     bytes += generator.cut();
     return bytes;
   }
