@@ -138,9 +138,8 @@ class EscPosReceiptBuilder {
     );
 
     bytes += generator.text(
-      'Thank You',
+      ReceiptLayout.center('Thank You'),
       styles: const PosStyles(
-        align: PosAlign.center,
         bold: true,
       ),
     );

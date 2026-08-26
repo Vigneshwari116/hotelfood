@@ -459,6 +459,7 @@ class _ReceiptScreenState
               pw.Center(
                 child: pw.Text(
                   'Thank You',
+                  textAlign: pw.TextAlign.center,
                   style: pw.TextStyle(
                     fontSize: _subtitleSize,
                     fontWeight: pw.FontWeight.bold,

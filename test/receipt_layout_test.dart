@@ -46,4 +46,11 @@ void main() {
     expect(line.startsWith('Bill #11'), isTrue);
     expect(line.endsWith('22/08/2026 11:20 AM'), isTrue);
   });
+
+  test('center pads thank-you line for 58mm width', () {
+    final line = ReceiptLayout.center('Thank You');
+    expect(line.length, ReceiptLayout.cols58);
+    expect(line.trim(), 'Thank You');
+    expect(line.indexOf('Thank You'), 11);
+  });
 }

@@ -111,4 +111,16 @@ class ReceiptLayout {
   static String billWhen(DateTime date) {
     return DateFormat('dd/MM/yyyy hh:mm a', 'en_US').format(date);
   }
+
+  /// Pads text so it prints centered on 58mm thermal (32 columns).
+  static String center(String text, {int width = cols58}) {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return '';
+    if (trimmed.length >= width) {
+      return trimmed.substring(0, width);
+    }
+    final pad = width - trimmed.length;
+    final left = pad ~/ 2;
+    return (' ' * left) + trimmed;
+  }
 }

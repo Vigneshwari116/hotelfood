@@ -548,10 +548,9 @@ class _PrinterSettingsScreenState
 
               pw.Text(
                 'Thank You',
-                style:
-                pw.TextStyle(
-                  fontWeight:
-                  pw.FontWeight.bold,
+                textAlign: pw.TextAlign.center,
+                style: pw.TextStyle(
+                  fontWeight: pw.FontWeight.bold,
                 ),
               ),
             ],
