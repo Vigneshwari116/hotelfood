@@ -159,6 +159,15 @@ class _PosScreenState extends State<PosScreen> {
   String get _search =>
       _searchController.text.trim().toLowerCase();
 
+  String? _categoryName(int categoryId) {
+    for (final category in _categories) {
+      if (category.id == categoryId) {
+        return category.name;
+      }
+    }
+    return null;
+  }
+
   List<RawMaterial> get _allMaterials => _materials;
 
   List<Combo> get _activeCombos =>
