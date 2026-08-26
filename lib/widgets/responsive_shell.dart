@@ -383,17 +383,31 @@ class _DesktopSidebar extends StatelessWidget {
     for (var entryIndex = 0; entryIndex < entries.length; entryIndex++) {
       final entry = entries[entryIndex];
       if (entry is NavItem) {
+        final currentFlat = flatIndex;
         children.add(
           _SidebarItem(
             item: entry,
-            selected: selectedIndex == flatIndex,
-            onTap: () => onSelected(flatIndex),
+            selected: selectedIndex == currentFlat,
+            onTap: () => onSelected(currentFlat),
           ),
         );
         flatIndex++;
       } else if (entry is NavGroup) {
         final group = entry;
         final expanded = expandedGroupIndices.contains(entryIndex);
+        final groupStart = flatIndex;
+        final subItems = <Widget>[];
+        for (var i = 0; i < group.children.length; i++) {
+          final currentFlat = groupStart + i;
+          subItems.add(
+            _SidebarSubItem(
+              item: group.children[i],
+              selected: selectedIndex == currentFlat,
+              onTap: () => onSelected(currentFlat),
+            ),
+          );
+        }
+        flatIndex += group.children.length;
         children.add(
           Theme(
             data: Theme.of(context).copyWith(
@@ -414,20 +428,7 @@ class _DesktopSidebar extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              children: [
-                for (final child in group.children)
-                  Builder(
-                    builder: (context) {
-                      final currentFlat = flatIndex;
-                      flatIndex++;
-                      return _SidebarSubItem(
-                        item: child,
-                        selected: selectedIndex == currentFlat,
-                        onTap: () => onSelected(currentFlat),
-                      );
-                    },
-                  ),
-              ],
+              children: subItems,
             ),
           ),
         );
@@ -655,7 +656,8 @@ class _AppDrawer extends StatelessWidget {
       final entry = entries[entryIndex];
       if (entry is NavItem) {
         final item = entry;
-        final selected = selectedIndex == flatIndex;
+        final currentFlat = flatIndex;
+        final selected = selectedIndex == currentFlat;
         children.add(
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -683,7 +685,7 @@ class _AppDrawer extends StatelessWidget {
               trailing: selected
                   ? Icon(Icons.chevron_right, color: theme.colorScheme.primary)
                   : null,
-              onTap: () => onSelected(flatIndex),
+              onTap: () => onSelected(currentFlat),
             ),
           ),
         );
@@ -691,6 +693,36 @@ class _AppDrawer extends StatelessWidget {
       } else if (entry is NavGroup) {
         final group = entry;
         final expanded = expandedGroupIndices.contains(entryIndex);
+        final groupStart = flatIndex;
+        final subItems = <Widget>[];
+        for (var i = 0; i < group.children.length; i++) {
+          final child = group.children[i];
+          final currentFlat = groupStart + i;
+          final selected = selectedIndex == currentFlat;
+          subItems.add(
+            ListTile(
+              leading: Icon(
+                child.icon,
+                size: 20,
+                color: selected
+                    ? theme.colorScheme.primary
+                    : Colors.grey.shade600,
+              ),
+              title: Text(
+                child.label,
+                style: TextStyle(
+                  fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                  color: selected
+                      ? theme.colorScheme.primary
+                      : Colors.grey.shade800,
+                ),
+              ),
+              selected: selected,
+              onTap: () => onSelected(currentFlat),
+            ),
+          );
+        }
+        flatIndex += group.children.length;
         children.add(
           Theme(
             data: theme.copyWith(dividerColor: Colors.transparent),
@@ -704,37 +736,7 @@ class _AppDrawer extends StatelessWidget {
                 group.label,
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
-              children: [
-                for (final child in group.children)
-                  Builder(
-                    builder: (context) {
-                      final currentFlat = flatIndex;
-                      final selected = selectedIndex == currentFlat;
-                      flatIndex++;
-                      return ListTile(
-                        leading: Icon(
-                          child.icon,
-                          size: 20,
-                          color: selected
-                              ? theme.colorScheme.primary
-                              : Colors.grey.shade600,
-                        ),
-                        title: Text(
-                          child.label,
-                          style: TextStyle(
-                            fontWeight:
-                                selected ? FontWeight.bold : FontWeight.w500,
-                            color: selected
-                                ? theme.colorScheme.primary
-                                : Colors.grey.shade800,
-                          ),
-                        ),
-                        selected: selected,
-                        onTap: () => onSelected(currentFlat),
-                      );
-                    },
-                  ),
-              ],
+              children: subItems,
             ),
           ),
         );
