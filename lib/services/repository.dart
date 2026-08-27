@@ -2822,12 +2822,13 @@ class Repository {
       }
 
       // ============================================================
-      // FACTORY RESET (SETTINGS → RESET)
+      // DEMO RESET (SETTINGS → RESET)
       // ============================================================
 
-      /// Permanently deletes sales, purchases, stock history, customers,
-      /// menu items, combos, and masters. Keeps login users and app_meta.
-      Future<void> factoryResetShopData() async {
+      /// Deletes sales and purchases, clears stock movement history, and
+      /// restores each menu item's stock to its opening_stock. Keeps menu
+      /// items, categories, units, customers, combos, and suppliers.
+      Future<void> resetDemoTransactionData() async {
             final db = await _db;
 
             await db.transaction((txn) async {
@@ -2839,15 +2840,9 @@ class Repository {
                   await txn.delete('stock_ledger');
                   await txn.delete('stock_adjustments');
                   await txn.delete('stock_batches');
-                  await txn.delete('combo_items');
-                  await txn.delete('combo_raw_materials');
-                  await txn.delete('combos');
-                  await txn.delete('raw_materials');
-                  await txn.delete('customers');
-                  await txn.delete('suppliers');
-                  await txn.delete('categories');
-                  await txn.delete('units');
             });
+
+            await resetAllStockToOpening();
 
             if (!ApiConfig.enabled) {
                   final sqlite = await DBHelper.instance.database;
@@ -2855,27 +2850,18 @@ class Repository {
                         'sqlite_sequence',
                         where: '''
                           name IN (
-                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                            ?, ?, ?, ?
+                            ?, ?, ?, ?, ?, ?, ?, ?
                           )
                         ''',
                         whereArgs: [
                           'sale_items',
                           'sales',
                           'customer_ledger',
-                          'combo_items',
-                          'combo_raw_materials',
-                          'combos',
                           'stock_ledger',
                           'stock_adjustments',
                           'purchase_items',
                           'purchases',
                           'stock_batches',
-                          'raw_materials',
-                          'customers',
-                          'suppliers',
-                          'categories',
-                          'units',
                         ],
                   );
             }

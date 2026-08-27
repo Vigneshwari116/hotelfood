@@ -35,14 +35,10 @@ class _ResetScreenState extends State<ResetScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Reset all shop data?'),
+        title: const Text('Reset demo data?'),
         content: const Text(
-          'This permanently deletes every sale, purchase, stock record, '
-          'customer, menu item, and combo from the shop database '
-          '(including data on the VPS server). '
-          'Default menu items are restored and stock is reset to each '
-          'item\'s opening stock (usually 0 until you purchase again). '
-          'This cannot be undone.',
+          'This deletes all sales and purchase records for this demo '
+          'and resets stock to its starting value. Menu items are not affected.',
         ),
         actions: [
           TextButton(
@@ -62,7 +58,7 @@ class _ResetScreenState extends State<ResetScreen> {
     setState(() => _resetting = true);
 
     try {
-      await SessionResetService.clearAllShopData();
+      await SessionResetService.resetDemoData();
       _codeController.clear();
       widget.onSessionReset?.call();
 
@@ -71,7 +67,7 @@ class _ResetScreenState extends State<ResetScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'All sales and records deleted. Shop data has been reset.',
+            'Sales and purchases cleared. Stock reset to starting values.',
           ),
           backgroundColor: Colors.green,
         ),
@@ -112,7 +108,7 @@ class _ResetScreenState extends State<ResetScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Reset shop data',
+                      'Reset demo data',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
@@ -120,10 +116,9 @@ class _ResetScreenState extends State<ResetScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Deletes all sales, purchases, stock history, customers, '
-                      'and menu items. Stock is reset to opening stock on each '
-                      'menu item (default menu uses 0). Printer preferences '
-                      'are cleared too.',
+                      'Deletes all sales and purchase records for this demo '
+                      'and resets stock to its starting value. Menu items, '
+                      'categories, units, and customers are not affected.',
                       style: TextStyle(
                         color: Colors.grey.shade700,
                         height: 1.35,
