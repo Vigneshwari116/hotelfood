@@ -68,6 +68,7 @@ class SessionResetService {
         updateExisting: true,
         replaceCatalog: true,
       );
+      await Repository.instance.resetAllStockToOpening();
       if (remote) {
         final db = await DBHelper.instance.appDb;
         await db.insert('app_meta', {

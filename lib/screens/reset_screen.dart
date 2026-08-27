@@ -40,7 +40,8 @@ class _ResetScreenState extends State<ResetScreen> {
           'This permanently deletes every sale, purchase, stock record, '
           'customer, menu item, and combo from the shop database '
           '(including data on the VPS server). '
-          'Default menu items will be restored from the built-in list. '
+          'Default menu items are restored and stock is reset to each '
+          'item\'s opening stock (usually 0 until you purchase again). '
           'This cannot be undone.',
         ),
         actions: [
@@ -120,8 +121,9 @@ class _ResetScreenState extends State<ResetScreen> {
                     const SizedBox(height: 8),
                     Text(
                       'Deletes all sales, purchases, stock history, customers, '
-                      'and menu items from the database. Also clears printer '
-                      'and receipt screen preferences. Default menu is restored.',
+                      'and menu items. Stock is reset to opening stock on each '
+                      'menu item (default menu uses 0). Printer preferences '
+                      'are cleared too.',
                       style: TextStyle(
                         color: Colors.grey.shade700,
                         height: 1.35,

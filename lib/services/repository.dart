@@ -2881,6 +2881,57 @@ class Repository {
             }
       }
 
+      /// Sets every item's stock to its opening_stock and rebuilds batches.
+      Future<void> resetAllStockToOpening() async {
+            final db = await _db;
+            final now = DateTime.now().toIso8601String();
+
+            await db.transaction((txn) async {
+                  await txn.delete('stock_ledger');
+                  await txn.delete('stock_adjustments');
+                  await txn.delete('stock_batches');
+
+                  final materials = await txn.query('raw_materials');
+                  for (final row in materials) {
+                        final id = (row['id'] as num).toInt();
+                        final opening =
+                            (row['opening_stock'] as num?)?.toDouble() ?? 0.0;
+                        final cost =
+                            (row['cost_price'] as num?)?.toDouble();
+
+                        await txn.update(
+                              'raw_materials',
+                              {'current_stock': opening},
+                              where: 'id = ?',
+                              whereArgs: [id],
+                        );
+
+                        if (opening > 0.0) {
+                              await txn.insert(
+                                    'stock_batches',
+                                    {
+                                          'raw_material_id': id,
+                                          'qty_remaining': opening,
+                                          'rate': cost,
+                                          'expiry_date': null,
+                                          'purchase_item_id': null,
+                                          'created_at': now,
+                                    },
+                              );
+
+                              await _writeLedger(
+                                    txn: txn,
+                                    rawMaterialId: id,
+                                    refType: 'opening',
+                                    qtyIn: opening,
+                                    unitCost: cost,
+                                    balanceAfter: opening,
+                              );
+                        }
+                  }
+            });
+      }
+
       // ============================================================
       // CLOSE DATABASE
       // ============================================================
