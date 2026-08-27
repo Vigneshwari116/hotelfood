@@ -3,6 +3,7 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/model/models.dart';
@@ -2818,6 +2819,66 @@ class Repository {
         rm.name ASC
       ''',
             );
+      }
+
+      // ============================================================
+      // FACTORY RESET (SETTINGS → RESET)
+      // ============================================================
+
+      /// Permanently deletes sales, purchases, stock history, customers,
+      /// menu items, combos, and masters. Keeps login users and app_meta.
+      Future<void> factoryResetShopData() async {
+            final db = await _db;
+
+            await db.transaction((txn) async {
+                  await txn.delete('customer_ledger');
+                  await txn.delete('sale_items');
+                  await txn.delete('sales');
+                  await txn.delete('purchase_items');
+                  await txn.delete('purchases');
+                  await txn.delete('stock_ledger');
+                  await txn.delete('stock_adjustments');
+                  await txn.delete('stock_batches');
+                  await txn.delete('combo_items');
+                  await txn.delete('combo_raw_materials');
+                  await txn.delete('combos');
+                  await txn.delete('raw_materials');
+                  await txn.delete('customers');
+                  await txn.delete('suppliers');
+                  await txn.delete('categories');
+                  await txn.delete('units');
+            });
+
+            if (!ApiConfig.enabled) {
+                  final sqlite = await DBHelper.instance.database;
+                  await sqlite.delete(
+                        'sqlite_sequence',
+                        where: '''
+                          name IN (
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                            ?, ?, ?, ?
+                          )
+                        ''',
+                        whereArgs: [
+                          'sale_items',
+                          'sales',
+                          'customer_ledger',
+                          'combo_items',
+                          'combo_raw_materials',
+                          'combos',
+                          'stock_ledger',
+                          'stock_adjustments',
+                          'purchase_items',
+                          'purchases',
+                          'stock_batches',
+                          'raw_materials',
+                          'customers',
+                          'suppliers',
+                          'categories',
+                          'units',
+                        ],
+                  );
+            }
       }
 
       // ============================================================

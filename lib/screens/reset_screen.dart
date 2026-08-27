@@ -35,11 +35,13 @@ class _ResetScreenState extends State<ResetScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Reset session?'),
+        title: const Text('Reset all shop data?'),
         content: const Text(
-          'This clears open forms and saved screen preferences '
-          '(printer choice, receipt header edits, etc.). '
-          'Customers, sales, stock, and other shop records are kept.',
+          'This permanently deletes every sale, purchase, stock record, '
+          'customer, menu item, and combo from the shop database '
+          '(including data on the VPS server). '
+          'Default menu items will be restored from the built-in list. '
+          'This cannot be undone.',
         ),
         actions: [
           TextButton(
@@ -59,7 +61,7 @@ class _ResetScreenState extends State<ResetScreen> {
     setState(() => _resetting = true);
 
     try {
-      await SessionResetService.clearSessionData();
+      await SessionResetService.clearAllShopData();
       _codeController.clear();
       widget.onSessionReset?.call();
 
@@ -67,7 +69,9 @@ class _ResetScreenState extends State<ResetScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Session cleared. Screens have been reset.'),
+          content: Text(
+            'All sales and records deleted. Shop data has been reset.',
+          ),
           backgroundColor: Colors.green,
         ),
       );
@@ -107,7 +111,7 @@ class _ResetScreenState extends State<ResetScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Reset session',
+                      'Reset shop data',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
@@ -115,8 +119,9 @@ class _ResetScreenState extends State<ResetScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Clears unsaved form entries and screen preferences. '
-                      'Does not delete customers, sales, stock, or purchases.',
+                      'Deletes all sales, purchases, stock history, customers, '
+                      'and menu items from the database. Also clears printer '
+                      'and receipt screen preferences. Default menu is restored.',
                       style: TextStyle(
                         color: Colors.grey.shade700,
                         height: 1.35,
