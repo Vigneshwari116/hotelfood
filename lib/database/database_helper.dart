@@ -90,7 +90,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 15,
+      version: 16,
 
       onConfigure: (db) async {
         await db.execute(
@@ -447,7 +447,7 @@ class DBHelper {
 
         sale_id INTEGER NOT NULL,
 
-        raw_material_id INTEGER NOT NULL,
+        raw_material_id INTEGER,
 
         combo_id INTEGER,
 
@@ -1228,6 +1228,68 @@ class DBHelper {
           'ALTER TABLE combos ADD COLUMN price REAL NOT NULL DEFAULT 0',
         );
       }
+    }
+
+    if (oldVersion < 16) {
+      // Combo sale lines have combo_id set and raw_material_id NULL.
+      // Rebuild sale_items so combo checkout can complete and deduct components.
+      await db.execute('''
+        CREATE TABLE sale_items_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sale_id INTEGER NOT NULL,
+          raw_material_id INTEGER,
+          combo_id INTEGER,
+          item_name TEXT NOT NULL,
+          sub_item TEXT,
+          qty REAL NOT NULL,
+          price REAL NOT NULL,
+          amount REAL NOT NULL,
+          FOREIGN KEY (sale_id)
+            REFERENCES sales (id)
+            ON DELETE CASCADE,
+          FOREIGN KEY (raw_material_id)
+            REFERENCES raw_materials (id)
+        )
+      ''');
+
+      await db.execute('''
+        INSERT INTO sale_items_new (
+          id, sale_id, raw_material_id, combo_id,
+          item_name, sub_item, qty, price, amount
+        )
+        SELECT
+          id, sale_id, raw_material_id, combo_id,
+          item_name, sub_item, qty, price, amount
+        FROM sale_items
+      ''');
+
+      await db.execute('DROP TABLE sale_items');
+      await db.execute(
+        'ALTER TABLE sale_items_new RENAME TO sale_items',
+      );
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_sale_items_sale
+        ON sale_items(sale_id)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_sale_items_material
+        ON sale_items(raw_material_id)
+      ''');
+
+      // Legacy combo_items rows may exist without combo_raw_materials copies.
+      await db.execute('''
+        INSERT INTO combo_raw_materials (combo_id, raw_material_id, qty)
+        SELECT ci.combo_id, ci.raw_material_id, ci.qty
+        FROM combo_items ci
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM combo_raw_materials crm
+          WHERE crm.combo_id = ci.combo_id
+            AND crm.raw_material_id = ci.raw_material_id
+        )
+      ''');
     }
   }
 

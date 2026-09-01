@@ -351,10 +351,17 @@ class _ItemSalesTabState extends State<_ItemSalesTab> {
                 final r = _rows[i];
                 final sub = (r['sub_item'] as String?)?.trim();
                 final stock = (r['current_stock'] as num?)?.toDouble();
+                final kind = r['sale_kind']?.toString() ?? 'item';
+                final kindLabel = kind == 'combo'
+                    ? 'Combo bundle'
+                    : kind == 'component'
+                        ? 'Used in combos'
+                        : null;
                 return ListTile(
                   title: Text(r['item_name']?.toString() ?? ''),
                   subtitle: Text(
                     [
+                      if (kindLabel != null) kindLabel,
                       if (sub != null && sub.isNotEmpty) sub,
                       'Sold ${r['sold_qty']}',
                       if (stock != null) 'Stock left ${_formatNumber(stock)}',
