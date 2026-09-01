@@ -287,11 +287,18 @@ class _RawMaterialMasterScreenState
   }) async {
     if (!mounted) return;
 
+    RawMaterial? item = existing;
+    if (existing?.id != null) {
+      item =
+          await Repository.instance.rawMaterialById(existing!.id!) ??
+              existing;
+    }
+
     final saved = await showDialog<bool>(
       context: context,
       builder: (_) {
         return RawMaterialEditorDialog(
-          existing: existing,
+          existing: item,
           categories: _categories,
           units: _units,
           onPickImage: () {
@@ -1506,7 +1513,7 @@ class _RawMaterialEditorDialogState
         ? stock.toStringAsFixed(0)
         : stock.toStringAsFixed(2);
 
-    if (_openingController.text == text) return;
+    if (_openingController.text.trim() == text) return;
     _openingController.text = text;
   }
 
@@ -1607,17 +1614,14 @@ class _RawMaterialEditorDialogState
         unitId:
         _unitId,
         openingStock:
-        double.tryParse(
-          _openingController
-              .text
-              .trim(),
-        ) ??
-            0,
+        widget.existing?.openingStock ??
+            (double.tryParse(
+                  _openingController.text.trim(),
+                ) ??
+                0),
         currentStock:
         double.tryParse(
-          _openingController
-              .text
-              .trim(),
+          _openingController.text.trim(),
         ) ??
             0,
         reorderLevel:

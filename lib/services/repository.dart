@@ -414,7 +414,7 @@ class Repository {
                   );
             }
 
-            if (rm.openingStock < 0.0) {
+            if (rm.id == null && rm.openingStock < 0.0) {
                   throw InvalidInventoryException(
                         'Opening stock cannot be negative.',
                   );
@@ -492,18 +492,97 @@ class Repository {
             // UPDATE EXISTING MATERIAL
             // ----------------------------------------------------------
 
-            await db.update(
-                  'raw_materials',
-                  {
-                        ...map,
-                        'current_stock': rm.currentStock,
-                        'opening_stock': rm.openingStock,
-                  },
-                  where: 'id = ?',
-                  whereArgs: [rm.id],
-            );
+            return db.transaction((txn) async {
+                  final existingRows = await txn.query(
+                        'raw_materials',
+                        where: 'id = ?',
+                        whereArgs: [rm.id],
+                        limit: 1,
+                  );
 
-            return rm.id!;
+                  if (existingRows.isEmpty) {
+                        throw InvalidInventoryException(
+                              'Raw material does not exist.',
+                        );
+                  }
+
+                  final existing = existingRows.first;
+                  final double oldStock =
+                      (existing['current_stock'] as num).toDouble();
+                  final double newStock = rm.currentStock;
+                  final double delta = newStock - oldStock;
+
+                  final updateMap = Map<String, Object?>.from(map)
+                    ..remove('created_at')
+                    ..remove('current_stock')
+                    ..remove('opening_stock');
+
+                  await txn.update(
+                        'raw_materials',
+                        {
+                              ...updateMap,
+                              'opening_stock': existing['opening_stock'],
+                              'current_stock': oldStock,
+                        },
+                        where: 'id = ?',
+                        whereArgs: [rm.id],
+                  );
+
+                  if (delta.abs() > 0.000001) {
+                        final adjustmentId = await txn.insert(
+                              'stock_adjustments',
+                              {
+                                    'raw_material_id': rm.id,
+                                    'adjust_date':
+                                        DateTime.now().toIso8601String(),
+                                    'qty': delta,
+                                    'reason': 'Manual stock update from item editor',
+                              },
+                        );
+
+                        if (delta > 0.0) {
+                              await txn.insert(
+                                    'stock_batches',
+                                    {
+                                          'raw_material_id': rm.id,
+                                          'qty_remaining': delta,
+                                          'rate': rm.costPrice,
+                                          'expiry_date': null,
+                                          'purchase_item_id': null,
+                                          'created_at':
+                                              DateTime.now().toIso8601String(),
+                                    },
+                              );
+
+                              final double newBalance = await _bumpStock(
+                                    txn,
+                                    rm.id!,
+                                    delta,
+                              );
+
+                              await _writeLedger(
+                                    txn: txn,
+                                    rawMaterialId: rm.id!,
+                                    refType: 'adjustment',
+                                    refId: adjustmentId,
+                                    qtyIn: delta,
+                                    unitCost: rm.costPrice,
+                                    balanceAfter: newBalance,
+                              );
+                        } else {
+                              await _deductFEFO(
+                                    txn,
+                                    rm.id!,
+                                    -delta,
+                                    refType: 'adjustment',
+                                    refId: adjustmentId,
+                                    allowNegative: true,
+                              );
+                        }
+                  }
+
+                  return rm.id!;
+            });
       }
 
       Future<void> hideRawMaterial(int rawMaterialId) async {
@@ -2745,7 +2824,7 @@ class Repository {
 
       SELECT
         si.item_name AS item_name,
-        si.sub_item AS sub_item,
+        MAX(si.sub_item) AS sub_item,
         SUM(si.qty) AS sold_qty,
         SUM(si.amount) AS total_amount,
         NULL AS current_stock,
@@ -2757,8 +2836,7 @@ class Repository {
         AND si.combo_id IS NOT NULL
       GROUP BY
         si.combo_id,
-        si.item_name,
-        COALESCE(si.sub_item, '')
+        si.item_name
 
       ORDER BY
         sale_kind ASC,
