@@ -2695,23 +2695,72 @@ class Repository {
 
             return db.rawQuery(
                   '''
+      WITH component_usage AS (
+        SELECT
+          crm.raw_material_id AS raw_material_id,
+          SUM(
+            crm.qty * si.qty * COALESCE(rm.qty_needed, 1)
+          ) AS consumed_qty
+        FROM sale_items si
+        JOIN sales s
+          ON s.id = si.sale_id
+        JOIN combo_raw_materials crm
+          ON crm.combo_id = si.combo_id
+        JOIN raw_materials rm
+          ON rm.id = crm.raw_material_id
+        WHERE s.is_voided = 0
+          AND si.combo_id IS NOT NULL
+        GROUP BY crm.raw_material_id
+      ),
+      direct_sales AS (
+        SELECT
+          si.raw_material_id AS raw_material_id,
+          SUM(si.qty) AS sold_qty,
+          SUM(si.amount) AS total_amount
+        FROM sale_items si
+        JOIN sales s
+          ON s.id = si.sale_id
+        WHERE s.is_voided = 0
+          AND si.raw_material_id IS NOT NULL
+        GROUP BY si.raw_material_id
+      )
       SELECT
-        si.item_name,
-        si.sub_item,
+        rm.name AS item_name,
+        rm.sub_item AS sub_item,
+        COALESCE(ds.sold_qty, 0) + COALESCE(cu.consumed_qty, 0) AS sold_qty,
+        COALESCE(ds.total_amount, 0) AS total_amount,
+        rm.current_stock AS current_stock,
+        'item' AS sale_kind
+      FROM raw_materials rm
+      LEFT JOIN direct_sales ds
+        ON ds.raw_material_id = rm.id
+      LEFT JOIN component_usage cu
+        ON cu.raw_material_id = rm.id
+      WHERE COALESCE(ds.sold_qty, 0) + COALESCE(cu.consumed_qty, 0) > 0
+
+      UNION ALL
+
+      SELECT
+        si.item_name AS item_name,
+        si.sub_item AS sub_item,
         SUM(si.qty) AS sold_qty,
         SUM(si.amount) AS total_amount,
-        MAX(rm.current_stock) AS current_stock
+        NULL AS current_stock,
+        'combo' AS sale_kind
       FROM sale_items si
       JOIN sales s
         ON s.id = si.sale_id
-      LEFT JOIN raw_materials rm
-        ON rm.id = si.raw_material_id
       WHERE s.is_voided = 0
+        AND si.combo_id IS NOT NULL
       GROUP BY
+        si.combo_id,
         si.item_name,
-        COALESCE(si.sub_item, ''),
-        si.raw_material_id
-      ORDER BY si.item_name ASC, si.sub_item ASC
+        COALESCE(si.sub_item, '')
+
+      ORDER BY
+        sale_kind ASC,
+        item_name ASC,
+        sub_item ASC
       ''',
             );
       }
