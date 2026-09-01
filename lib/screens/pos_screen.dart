@@ -2155,7 +2155,7 @@ class _PosScreenState extends State<PosScreen> {
 
   String _formatStockLabel(double value) {
     if (value.abs() < 0.000001) {
-      return 'Stock not set';
+      return 'Stock 0';
     }
     return 'Stock ${_formatQty(value)}';
   }
