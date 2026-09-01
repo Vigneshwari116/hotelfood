@@ -1397,8 +1397,11 @@ class Repository {
           double qtyNeeded, {
                 required String refType,
                 int? refId,
-                bool allowNegative = false,
+                bool? allowNegative,
           }) async {
+            final permitNegative =
+                allowNegative ?? refType == 'sale_deduction';
+
             if (qtyNeeded <= 0.0) {
                   return _getCurrentStock(
                         txn,
@@ -1423,7 +1426,7 @@ class Repository {
             final double currentStock =
             (materialRows.first['current_stock'] as num).toDouble();
 
-            if (!allowNegative &&
+            if (!permitNegative &&
                 currentStock + 1e-9 < qtyNeeded) {
                   throw InsufficientStockException(
                         materialName: materialRows.first['name'] as String,
@@ -1482,7 +1485,7 @@ class Repository {
                   remaining -= take;
             }
 
-            if (!allowNegative && remaining > 0.000001) {
+            if (!permitNegative && remaining > 0.000001) {
                   throw InvalidInventoryException(
                         'Stock batch data is inconsistent for '
                             '${materialRows.first['name']}.',

@@ -12,6 +12,7 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   int _materials = 0;
   int _lowStock = 0;
+  int _negativeStock = 0;
 
   double _todaySales = 0;
 
@@ -48,7 +49,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
         final current = (r['current_stock'] as num).toDouble();
         final reorder = (r['reorder_level'] as num).toDouble();
 
-        return current <= reorder;
+        return current >= 0 && current <= reorder;
+      }).length;
+
+      final negativeStock = stock.where((r) {
+        final current = (r['current_stock'] as num).toDouble();
+        return current < -0.000001;
       }).length;
 
       if (!mounted) return;
@@ -56,6 +62,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       setState(() {
         _materials = materials.length;
         _lowStock = lowStock;
+        _negativeStock = negativeStock;
         _todaySales = todayTotal;
         _loading = false;
       });
@@ -108,7 +115,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                         _statCard(
                           'Low Stock Alerts',
-                          '$_lowStock',
+                          _negativeStock > 0
+                              ? '$_lowStock low, $_negativeStock negative'
+                              : '$_lowStock',
                           Icons.warning_amber,
                         ),
                       ],

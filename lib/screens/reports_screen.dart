@@ -107,7 +107,12 @@ class _StockReportTabState extends State<_StockReportTab> {
     final lowStockCount = _rows.where((r) {
       final stock = (r['current_stock'] as num?)?.toDouble() ?? 0;
       final reorder = (r['reorder_level'] as num?)?.toDouble() ?? 0;
-      return stock <= reorder;
+      return stock >= 0 && stock <= reorder;
+    }).length;
+
+    final negativeStockCount = _rows.where((r) {
+      final stock = (r['current_stock'] as num?)?.toDouble() ?? 0;
+      return stock < -0.000001;
     }).length;
 
     // Items with no Cost Price set — their value can't be counted,
@@ -132,18 +137,33 @@ class _StockReportTabState extends State<_StockReportTab> {
               ], rows: _rows.map((r) {
                 final stock = (r['current_stock'] as num?)?.toDouble() ?? 0;
                 final reorder = (r['reorder_level'] as num?)?.toDouble() ?? 0;
-                final low = stock <= reorder;
+                final negative = stock < -0.000001;
+                final low = !negative && stock <= reorder;
                 final value = _rowValue(r);
                 final hasPrice = r['cost_price'] != null;
+                final stockStyle = negative
+                    ? const TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
+                      )
+                    : low
+                        ? const TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.bold,
+                          )
+                        : null;
 
                 return DataRow(cells: [
                   DataCell(Text(
                     r['name'] ?? '',
-                    style: low ? const TextStyle(color: Colors.red, fontWeight: FontWeight.bold) : null,
+                    style: stockStyle,
                   )),
                   DataCell(Text(r['sub_item']?.toString() ?? '-')),
                   DataCell(Text(r['category'] ?? '-')),
-                  DataCell(Text(_formatNumber(stock))),
+                  DataCell(Text(
+                    _formatNumber(stock),
+                    style: stockStyle,
+                  )),
                   DataCell(Text(r['unit'] ?? '-')),
                   DataCell(Text(
                     hasPrice ? _formatNumber(value) : '—',
@@ -185,6 +205,15 @@ class _StockReportTabState extends State<_StockReportTab> {
                         Text(
                           '$lowStockCount low stock',
                           style: const TextStyle(color: Colors.red, fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                      if (negativeStockCount > 0)
+                        Text(
+                          '$negativeStockCount negative stock',
+                          style: TextStyle(
+                            color: Colors.red.shade900,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                     ],
                   ),
@@ -357,6 +386,8 @@ class _ItemSalesTabState extends State<_ItemSalesTab> {
                     : kind == 'component'
                         ? 'Used in combos'
                         : null;
+                final negativeStock =
+                    stock != null && stock < -0.000001;
                 return ListTile(
                   title: Text(r['item_name']?.toString() ?? ''),
                   subtitle: Text(
@@ -364,8 +395,17 @@ class _ItemSalesTabState extends State<_ItemSalesTab> {
                       if (kindLabel != null) kindLabel,
                       if (sub != null && sub.isNotEmpty) sub,
                       'Sold ${r['sold_qty']}',
-                      if (stock != null) 'Stock left ${_formatNumber(stock)}',
+                      if (stock != null)
+                        negativeStock
+                            ? 'Stock ${_formatNumber(stock)} (negative)'
+                            : 'Stock left ${_formatNumber(stock)}',
                     ].join('  •  '),
+                    style: negativeStock
+                        ? TextStyle(
+                            color: Colors.red.shade800,
+                            fontWeight: FontWeight.w600,
+                          )
+                        : null,
                   ),
                   trailing: Text('₹${r['total_amount']}'),
                 );
