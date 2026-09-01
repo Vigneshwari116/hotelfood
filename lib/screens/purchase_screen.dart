@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:foodstock/model/models.dart';
 
 import '../services/repository.dart';
+import '../theme/brand_theme.dart';
 import '../widgets/responsive_shell.dart';
 
 class PurchaseScreen extends StatefulWidget {
@@ -32,6 +33,13 @@ class _PurchaseLine {
     packetsCtrl.dispose();
     qtyCtrl.dispose();
     rateCtrl.dispose();
+  }
+
+  void reset() {
+    material = null;
+    packetsCtrl.clear();
+    qtyCtrl.clear();
+    rateCtrl.clear();
   }
 
   double get packets {
@@ -102,6 +110,26 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   bool _saving = false;
 
   String? _error;
+
+  void _applyMaterial(_PurchaseLine line, RawMaterial? value) {
+    setState(() {
+      line.material = value;
+      line.packetsCtrl.clear();
+      if (line.rateCtrl.text.trim().isEmpty &&
+          value?.costPrice != null &&
+          value!.costPrice! > 0) {
+        final cp = value.costPrice!;
+        line.rateCtrl.text =
+            cp % 1 == 0 ? cp.toStringAsFixed(0) : cp.toStringAsFixed(2);
+      }
+      if (value != null && value.currentStock < -0.000001) {
+        final suggested = value.currentStock.abs();
+        line.qtyCtrl.text = suggested % 1 == 0
+            ? suggested.toStringAsFixed(0)
+            : suggested.toStringAsFixed(2);
+      }
+    });
+  }
 
   // ==========================================================
   // INIT
@@ -390,16 +418,19 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
   void _removeLine(int index) {
     if (_saving) return;
+    if (index < 0 || index >= _lines.length) return;
 
-    if (_lines.length == 1) {
-      return;
-    }
+    FocusScope.of(context).unfocus();
 
-    final line = _lines.removeAt(index);
+    setState(() {
+      if (_lines.length == 1) {
+        _lines.first.reset();
+        return;
+      }
 
-    line.dispose();
-
-    setState(() {});
+      final line = _lines.removeAt(index);
+      line.dispose();
+    });
   }
 
   // ==========================================================
@@ -708,14 +739,6 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
             crossAxisAlignment:
             CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Purchase',
-                style: TextStyle(
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 4),
               Text(
                 'Add raw materials and update stock',
                 style: TextStyle(
@@ -1113,55 +1136,25 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               ),
               const Spacer(),
               IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
-                tooltip: 'Remove item',
-                iconSize: 20,
+                tooltip: _lines.length == 1 ? 'Clear item' : 'Remove item',
+                iconSize: 22,
+                visualDensity: VisualDensity.compact,
                 icon: const Icon(
                   Icons.delete_outline,
                   color: Colors.red,
                 ),
-                onPressed: _saving || _lines.length == 1
-                    ? null
-                    : () => _removeLine(index),
+                onPressed: _saving ? null : () => _removeLine(index),
               ),
             ],
           ),
 
           const SizedBox(height: 8),
 
-          // RAW MATERIAL
-          DropdownButtonFormField<RawMaterial>(
+          _PurchaseItemTypeahead(
+            materials: _materials,
             value: line.material,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              isDense: true,
-              labelText: 'Raw Material',
-              border: OutlineInputBorder(),
-            ),
-            items: _materials.map((material) {
-              return DropdownMenuItem<RawMaterial>(
-                value: material,
-                child: Text(
-                  material.name,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              );
-            }).toList(),
-            onChanged: _saving
-                ? null
-                : (value) {
-              setState(() {
-                line.material = value;
-                line.packetsCtrl.clear();
-                if (line.rateCtrl.text.trim().isEmpty && value?.costPrice != null &&
-                    value!.costPrice! > 0) {
-                  final cp = value.costPrice!;
-                  line.rateCtrl.text =
-                  cp % 1 == 0 ? cp.toStringAsFixed(0) : cp.toStringAsFixed(2);
-    }
-              });
-            },
+            enabled: !_saving,
+            onSelected: (material) => _applyMaterial(line, material),
           ),
 
           // PACKETS (only for materials with a known packet size)
@@ -1434,6 +1427,280 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 },
               ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+String _purchaseItemName(RawMaterial material) => material.name.trim();
+
+String? _purchaseItemExtra(RawMaterial material) {
+  final name = _purchaseItemName(material).toLowerCase();
+  final sub = material.trimmedSubItem;
+  final barcode = material.barcode?.trim();
+  final parts = <String>[];
+  if (sub != null && sub.toLowerCase() != name) {
+    parts.add(sub);
+  }
+  if (barcode != null && barcode.isNotEmpty) {
+    parts.add(barcode);
+  }
+  if (parts.isEmpty) return null;
+  return parts.join('  •  ');
+}
+
+class _PurchaseItemTypeahead extends StatefulWidget {
+  final List<RawMaterial> materials;
+  final RawMaterial? value;
+  final bool enabled;
+  final ValueChanged<RawMaterial> onSelected;
+
+  const _PurchaseItemTypeahead({
+    required this.materials,
+    required this.value,
+    required this.enabled,
+    required this.onSelected,
+  });
+
+  @override
+  State<_PurchaseItemTypeahead> createState() => _PurchaseItemTypeaheadState();
+}
+
+class _PurchaseItemTypeaheadState extends State<_PurchaseItemTypeahead> {
+  static const _tapGroup = 'purchase-item-search';
+
+  final _controller = TextEditingController();
+  final _focus = FocusNode();
+  final _fieldKey = GlobalKey();
+  final _link = LayerLink();
+  final _portal = OverlayPortalController();
+  double _fieldWidth = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncTextFromValue();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PurchaseItemTypeahead oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.value?.id != oldWidget.value?.id && !_focus.hasFocus) {
+      _syncTextFromValue();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _syncTextFromValue() {
+    final next = widget.value == null ? '' : _purchaseItemName(widget.value!);
+    if (_controller.text != next) {
+      _controller.text = next;
+    }
+  }
+
+  List<RawMaterial> _matchesFor(String query) {
+    final q = query.trim().toLowerCase();
+    Iterable<RawMaterial> list = widget.materials;
+    if (q.isNotEmpty) {
+      final words = q.split(RegExp(r'\s+'));
+      list = list.where((material) {
+        final haystack = [
+          material.name,
+          material.trimmedSubItem ?? '',
+          material.barcode ?? '',
+        ].join(' ').toLowerCase();
+        return words.every((word) => haystack.contains(word));
+      });
+    }
+    return list.take(12).toList();
+  }
+
+  void _openList() {
+    if (!widget.enabled) return;
+    final box = _fieldKey.currentContext?.findRenderObject() as RenderBox?;
+    setState(() {
+      _fieldWidth = box?.size.width ?? MediaQuery.sizeOf(context).width;
+    });
+    if (!_portal.isShowing) {
+      _portal.show();
+    } else {
+      setState(() {});
+    }
+  }
+
+  void _closeList() {
+    if (_portal.isShowing) {
+      _portal.hide();
+    }
+  }
+
+  void _pick(RawMaterial material) {
+    _controller.text = _purchaseItemName(material);
+    _closeList();
+    _focus.unfocus();
+    widget.onSelected(material);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final matches = _matchesFor(_controller.text);
+
+    return TapRegion(
+      groupId: _tapGroup,
+      onTapOutside: (_) {
+        _closeList();
+        _focus.unfocus();
+      },
+      child: OverlayPortal(
+        controller: _portal,
+        overlayChildBuilder: (context) {
+          return CompositedTransformFollower(
+            link: _link,
+            showWhenUnlinked: false,
+            targetAnchor: Alignment.bottomLeft,
+            followerAnchor: Alignment.topLeft,
+            offset: const Offset(0, 4),
+            child: Align(
+              alignment: Alignment.topLeft,
+              widthFactor: 1,
+              heightFactor: 1,
+              child: TapRegion(
+                groupId: _tapGroup,
+                child: Material(
+                  color: Colors.white,
+                  elevation: 6,
+                  shadowColor: Colors.black26,
+                  borderRadius: BorderRadius.circular(8),
+                  child: SizedBox(
+                    width: _fieldWidth,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxHeight: 220),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFD5DDDB)),
+                        ),
+                        child: matches.isEmpty
+                            ? const Padding(
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 14,
+                                ),
+                                child: Text(
+                                  'No matching items',
+                                  style: TextStyle(
+                                    color: Colors.black54,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              )
+                            : ListView.separated(
+                                padding: EdgeInsets.zero,
+                                shrinkWrap: true,
+                                itemCount: matches.length,
+                                separatorBuilder: (_, __) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (context, i) {
+                                  final material = matches[i];
+                                  final extra = _purchaseItemExtra(material);
+                                  final selected = material.id != null &&
+                                      material.id == widget.value?.id;
+                                  return InkWell(
+                                    onTapDown: (_) => _pick(material),
+                                    child: ColoredBox(
+                                      color: selected
+                                          ? BrandColors.teal.withOpacity(0.08)
+                                          : Colors.white,
+                                      child: Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 12,
+                                          vertical: 10,
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              _purchaseItemName(material),
+                                              overflow: TextOverflow.ellipsis,
+                                              style: TextStyle(
+                                                fontSize: 14,
+                                                fontWeight: selected
+                                                    ? FontWeight.w600
+                                                    : FontWeight.w500,
+                                                color: selected
+                                                    ? BrandColors.teal
+                                                    : Colors.black87,
+                                              ),
+                                            ),
+                                            if (extra != null)
+                                              Text(
+                                                extra,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  color: Colors.black54,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+        child: CompositedTransformTarget(
+          link: _link,
+          child: TextField(
+            key: _fieldKey,
+            controller: _controller,
+            focusNode: _focus,
+            enabled: widget.enabled,
+            onTap: _openList,
+            onChanged: (_) => _openList(),
+            onSubmitted: (value) {
+              final matches = _matchesFor(value);
+              if (matches.isNotEmpty) {
+                _pick(matches.first);
+              }
+            },
+            decoration: InputDecoration(
+              isDense: true,
+              filled: true,
+              fillColor: Colors.white,
+              labelText: 'Item',
+              hintText: 'Type name, sub item or barcode',
+              prefixIcon: const Icon(Icons.search, size: 20),
+              suffixIcon: _controller.text.isEmpty
+                  ? const Icon(Icons.arrow_drop_down)
+                  : IconButton(
+                      tooltip: 'Clear',
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () {
+                        _controller.clear();
+                        _focus.requestFocus();
+                        _openList();
+                      },
+                    ),
+              border: const OutlineInputBorder(),
+            ),
+          ),
         ),
       ),
     );

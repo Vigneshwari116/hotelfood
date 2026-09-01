@@ -3,6 +3,10 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:foodstock/database/api_config.dart';
+import 'package:foodstock/database/app_db.dart';
+import 'package:foodstock/database/http_app_db.dart';
+import 'package:foodstock/database/sqlite_app_db.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -12,6 +16,7 @@ class DBHelper {
   static final DBHelper instance = DBHelper._();
 
   static Database? _db;
+  static AppDb? _appDb;
 
   // ============================================================
   // DESKTOP CHECK
@@ -43,6 +48,21 @@ class DBHelper {
     return _db!;
   }
 
+  Future<AppDb> get appDb async {
+    if (_appDb != null) return _appDb!;
+    if (ApiConfig.enabled) {
+      _appDb = HttpAppDb();
+      await _appDb!.rawQuery('SELECT 1 AS ok');
+      return _appDb!;
+    }
+    _appDb = SqliteAppDb(await database);
+    return _appDb!;
+  }
+
+  Future<void> reconnect() async {
+    await close();
+  }
+
   // ============================================================
   // DATABASE INITIALIZATION
   // ============================================================
@@ -62,9 +82,7 @@ class DBHelper {
       // DATABASE VERSION
       // ========================================================
       //
-      // Version 10
-      //
-      // Architecture:
+      // Version 13 — sale_items.combo_id (nullable) for combo lines.
       //
       // raw_materials
       //      |
@@ -72,14 +90,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      // There are NO:
-      //
-      // menu_items
-      // recipe_items
-      //
-      // Combos are built directly from raw materials.
-      //
-      version: 10,
+      version: 16,
 
       onConfigure: (db) async {
         await db.execute(
@@ -207,6 +218,10 @@ class DBHelper {
 
         name TEXT NOT NULL,
 
+        sub_item TEXT,
+
+        qty_needed REAL NOT NULL DEFAULT 1,
+
         category_id INTEGER,
 
         unit_id INTEGER,
@@ -228,6 +243,8 @@ class DBHelper {
         cost_price REAL,
 
         selling_price REAL,
+
+        listed INTEGER NOT NULL DEFAULT 1,
 
         created_at TEXT NOT NULL,
 
@@ -430,9 +447,13 @@ class DBHelper {
 
         sale_id INTEGER NOT NULL,
 
-        raw_material_id INTEGER NOT NULL,
+        raw_material_id INTEGER,
+
+        combo_id INTEGER,
 
         item_name TEXT NOT NULL,
+
+        sub_item TEXT,
 
         qty REAL NOT NULL,
 
@@ -501,6 +522,26 @@ class DBHelper {
 
     batch.execute('''
       CREATE TABLE combo_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        combo_id INTEGER NOT NULL,
+
+        raw_material_id INTEGER NOT NULL,
+
+        qty REAL NOT NULL DEFAULT 1,
+
+        FOREIGN KEY (combo_id)
+          REFERENCES combos (id)
+          ON DELETE CASCADE,
+
+        FOREIGN KEY (raw_material_id)
+          REFERENCES raw_materials (id)
+          ON DELETE CASCADE
+      )
+    ''');
+
+    batch.execute('''
+      CREATE TABLE combo_raw_materials (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
 
         combo_id INTEGER NOT NULL,
@@ -1070,6 +1111,186 @@ class DBHelper {
         ON combo_items(raw_material_id)
       ''');
     }
+
+    // ==========================================================
+    // VERSION 10 -> 11
+    // ==========================================================
+
+    if (oldVersion < 11) {
+      final columns = await db.rawQuery(
+        'PRAGMA table_info(raw_materials)',
+      );
+
+      final columnNames = columns
+          .map((c) => c['name'] as String)
+          .toSet();
+
+      if (!columnNames.contains('sub_item')) {
+        await db.execute(
+          'ALTER TABLE raw_materials ADD COLUMN sub_item TEXT',
+        );
+      }
+    }
+
+    // ==========================================================
+    // VERSION 11 -> 12
+    // ==========================================================
+
+    if (oldVersion < 12) {
+      final materialColumns = await db.rawQuery(
+        'PRAGMA table_info(raw_materials)',
+      );
+      final materialNames = materialColumns
+          .map((c) => c['name'] as String)
+          .toSet();
+
+      if (!materialNames.contains('qty_needed')) {
+        await db.execute(
+          '''
+          ALTER TABLE raw_materials
+          ADD COLUMN qty_needed REAL NOT NULL DEFAULT 1
+          ''',
+        );
+      }
+
+      final saleColumns = await db.rawQuery(
+        'PRAGMA table_info(sale_items)',
+      );
+      final saleNames = saleColumns
+          .map((c) => c['name'] as String)
+          .toSet();
+
+      if (!saleNames.contains('sub_item')) {
+        await db.execute(
+          'ALTER TABLE sale_items ADD COLUMN sub_item TEXT',
+        );
+      }
+    }
+
+    // ==========================================================
+    // VERSION 12 -> 13
+    // ==========================================================
+
+    if (oldVersion < 13) {
+      final saleColumns = await db.rawQuery(
+        'PRAGMA table_info(sale_items)',
+      );
+      final saleNames = saleColumns
+          .map((c) => c['name'] as String)
+          .toSet();
+
+      if (!saleNames.contains('combo_id')) {
+        await db.execute(
+          'ALTER TABLE sale_items ADD COLUMN combo_id INTEGER',
+        );
+      }
+
+      if (!saleNames.contains('sub_item')) {
+        await db.execute(
+          'ALTER TABLE sale_items ADD COLUMN sub_item TEXT',
+        );
+      }
+    }
+
+    if (oldVersion < 14) {
+      final columns = await db.rawQuery(
+        'PRAGMA table_info(raw_materials)',
+      );
+      final names = columns.map((c) => c['name'] as String).toSet();
+      if (!names.contains('listed')) {
+        await db.execute(
+          'ALTER TABLE raw_materials ADD COLUMN listed INTEGER NOT NULL DEFAULT 1',
+        );
+      }
+    }
+
+    if (oldVersion < 15) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS combo_raw_materials (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          combo_id INTEGER NOT NULL,
+          raw_material_id INTEGER NOT NULL,
+          qty REAL NOT NULL DEFAULT 1,
+          FOREIGN KEY (combo_id) REFERENCES combos (id) ON DELETE CASCADE,
+          FOREIGN KEY (raw_material_id) REFERENCES raw_materials (id) ON DELETE CASCADE
+        )
+      ''');
+      final comboCols = await db.rawQuery('PRAGMA table_info(combos)');
+      final comboNames = comboCols.map((c) => c['name'] as String).toSet();
+      if (!comboNames.contains('barcode')) {
+        await db.execute('ALTER TABLE combos ADD COLUMN barcode TEXT');
+      }
+      if (!comboNames.contains('category_id')) {
+        await db.execute('ALTER TABLE combos ADD COLUMN category_id INTEGER');
+      }
+      if (!comboNames.contains('price')) {
+        await db.execute(
+          'ALTER TABLE combos ADD COLUMN price REAL NOT NULL DEFAULT 0',
+        );
+      }
+    }
+
+    if (oldVersion < 16) {
+      // Combo sale lines have combo_id set and raw_material_id NULL.
+      // Rebuild sale_items so combo checkout can complete and deduct components.
+      await db.execute('''
+        CREATE TABLE sale_items_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          sale_id INTEGER NOT NULL,
+          raw_material_id INTEGER,
+          combo_id INTEGER,
+          item_name TEXT NOT NULL,
+          sub_item TEXT,
+          qty REAL NOT NULL,
+          price REAL NOT NULL,
+          amount REAL NOT NULL,
+          FOREIGN KEY (sale_id)
+            REFERENCES sales (id)
+            ON DELETE CASCADE,
+          FOREIGN KEY (raw_material_id)
+            REFERENCES raw_materials (id)
+        )
+      ''');
+
+      await db.execute('''
+        INSERT INTO sale_items_new (
+          id, sale_id, raw_material_id, combo_id,
+          item_name, sub_item, qty, price, amount
+        )
+        SELECT
+          id, sale_id, raw_material_id, combo_id,
+          item_name, sub_item, qty, price, amount
+        FROM sale_items
+      ''');
+
+      await db.execute('DROP TABLE sale_items');
+      await db.execute(
+        'ALTER TABLE sale_items_new RENAME TO sale_items',
+      );
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_sale_items_sale
+        ON sale_items(sale_id)
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_sale_items_material
+        ON sale_items(raw_material_id)
+      ''');
+
+      // Legacy combo_items rows may exist without combo_raw_materials copies.
+      await db.execute('''
+        INSERT INTO combo_raw_materials (combo_id, raw_material_id, qty)
+        SELECT ci.combo_id, ci.raw_material_id, ci.qty
+        FROM combo_items ci
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM combo_raw_materials crm
+          WHERE crm.combo_id = ci.combo_id
+            AND crm.raw_material_id = ci.raw_material_id
+        )
+      ''');
+    }
   }
 
   // ============================================================
@@ -1077,6 +1298,8 @@ class DBHelper {
   // ============================================================
 
   Future<void> close() async {
+    _appDb = null;
+
     final db = _db;
 
     if (db != null) {

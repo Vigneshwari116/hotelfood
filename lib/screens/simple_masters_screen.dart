@@ -18,7 +18,7 @@ class _SimpleMastersScreenState extends State<SimpleMastersScreen>
     super.initState();
 
     _tab = TabController(
-      length: 3,
+      length: 2,
       vsync: this,
     );
   }
@@ -53,10 +53,6 @@ class _SimpleMastersScreenState extends State<SimpleMastersScreen>
                 text: 'Categories',
               ),
               Tab(
-                icon: Icon(Icons.straighten_outlined),
-                text: 'Units',
-              ),
-              Tab(
                 icon: Icon(Icons.local_shipping_outlined),
                 text: 'Suppliers',
               ),
@@ -69,7 +65,6 @@ class _SimpleMastersScreenState extends State<SimpleMastersScreen>
             controller: _tab,
             children: const [
               _CategoryTab(),
-              _UnitTab(),
               _SupplierTab(),
             ],
           ),
@@ -81,8 +76,7 @@ class _SimpleMastersScreenState extends State<SimpleMastersScreen>
 
 // ============================================================
 // CATEGORY TAB
-// (Raw Material categories only — Menu Item categories are
-// managed separately and are intentionally not offered here.)
+// Menu item categories. Defaults are seeded; you can still add more here.
 // ============================================================
 
 class _CategoryTab extends StatefulWidget {
@@ -261,6 +255,14 @@ class _CategoryTabState extends State<_CategoryTab> {
                 fontWeight: FontWeight.bold,
               ),
             ),
+            const SizedBox(height: 6),
+            Text(
+              'Starter, Fried Items, Gravy and other menu groups are already listed. Type a new name below to add more.',
+              style: TextStyle(
+                color: Colors.grey.shade700,
+                fontSize: 13,
+              ),
+            ),
 
             const SizedBox(height: 16),
 
@@ -404,330 +406,6 @@ class _CategoryTabState extends State<_CategoryTab> {
                       ),
                       onPressed: () =>
                           _deleteCategory(category),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================
-// UNIT TAB
-// ============================================================
-
-class _UnitTab extends StatefulWidget {
-  const _UnitTab();
-
-  @override
-  State<_UnitTab> createState() => _UnitTabState();
-}
-
-class _UnitTabState extends State<_UnitTab> {
-  List<UnitM> _units = [];
-
-  final TextEditingController _nameCtrl =
-  TextEditingController();
-
-  final TextEditingController _codeCtrl =
-  TextEditingController();
-
-  bool _loading = true;
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  @override
-  void dispose() {
-    _nameCtrl.dispose();
-    _codeCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _load() async {
-    try {
-      final result =
-      await Repository.instance.units();
-
-      if (!mounted) return;
-
-      setState(() {
-        _units = result;
-        _loading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-
-      setState(() {
-        _loading = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Failed to load units: $e',
-          ),
-        ),
-      );
-    }
-  }
-
-  Future<void> _addUnit() async {
-    final name = _nameCtrl.text.trim();
-    final code = _codeCtrl.text.trim();
-
-    if (name.isEmpty || code.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Enter unit name and short code',
-          ),
-        ),
-      );
-      return;
-    }
-
-    if (_saving) return;
-
-    setState(() {
-      _saving = true;
-    });
-
-    try {
-      await Repository.instance.addUnit(
-        UnitM(
-          name: name,
-          shortCode: code,
-        ),
-      );
-
-      _nameCtrl.clear();
-      _codeCtrl.clear();
-
-      await _load();
-
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Unit added successfully',
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Failed to add unit: $e',
-          ),
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _saving = false;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment:
-          CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Unit Master',
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final mobile =
-                    constraints.maxWidth < 600;
-
-                if (mobile) {
-                  return Column(
-                    children: [
-                      TextField(
-                        controller: _nameCtrl,
-                        decoration:
-                        const InputDecoration(
-                          labelText: 'Unit Name',
-                          hintText: 'Kilogram',
-                          border:
-                          OutlineInputBorder(),
-                        ),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      TextField(
-                        controller: _codeCtrl,
-                        decoration:
-                        const InputDecoration(
-                          labelText: 'Short Code',
-                          hintText: 'kg',
-                          border:
-                          OutlineInputBorder(),
-                        ),
-                      ),
-
-                      const SizedBox(height: 12),
-
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed:
-                          _saving
-                              ? null
-                              : _addUnit,
-                          icon: const Icon(
-                            Icons.add,
-                          ),
-                          label: Text(
-                            _saving
-                                ? 'Adding...'
-                                : 'Add Unit',
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                }
-
-                return Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _nameCtrl,
-                        decoration:
-                        const InputDecoration(
-                          labelText: 'Unit Name',
-                          hintText: 'Kilogram',
-                          border:
-                          OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(width: 12),
-
-                    SizedBox(
-                      width: 160,
-                      child: TextField(
-                        controller: _codeCtrl,
-                        decoration:
-                        const InputDecoration(
-                          labelText: 'Short Code',
-                          hintText: 'kg',
-                          border:
-                          OutlineInputBorder(),
-                        ),
-                      ),
-                    ),
-
-                    const SizedBox(width: 12),
-
-                    FilledButton.icon(
-                      onPressed:
-                      _saving
-                          ? null
-                          : _addUnit,
-                      icon: const Icon(
-                        Icons.add,
-                      ),
-                      label: Text(
-                        _saving
-                            ? 'Adding...'
-                            : 'Add',
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-
-            const SizedBox(height: 20),
-
-            const Divider(),
-
-            const SizedBox(height: 10),
-
-            const Text(
-              'Units',
-              style: TextStyle(
-                fontSize: 17,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-
-            const SizedBox(height: 8),
-
-            Expanded(
-              child: _loading
-                  ? const Center(
-                child:
-                CircularProgressIndicator(),
-              )
-                  : _units.isEmpty
-                  ? const Center(
-                child: Text(
-                  'No units found',
-                ),
-              )
-                  : ListView.separated(
-                itemCount:
-                _units.length,
-                separatorBuilder:
-                    (_, __) =>
-                const Divider(
-                  height: 1,
-                ),
-                itemBuilder:
-                    (context, index) {
-                  final unit =
-                  _units[index];
-
-                  return ListTile(
-                    leading:
-                    const CircleAvatar(
-                      child: Icon(
-                        Icons.straighten,
-                      ),
-                    ),
-                    title: Text(
-                      unit.name,
-                      style:
-                      const TextStyle(
-                        fontWeight:
-                        FontWeight.w600,
-                      ),
-                    ),
-                    trailing: Chip(
-                      label: Text(
-                        unit.shortCode,
-                      ),
                     ),
                   );
                 },

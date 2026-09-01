@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/printer_service.dart';
 import 'package:foodstock/services/repository.dart';
 
 class PosScreen extends StatefulWidget {
@@ -26,22 +27,35 @@ class _PosScreenState extends State<PosScreen> {
   final TextEditingController _barcodeController =
   TextEditingController();
 
+  final TextEditingController _customerNameController =
+  TextEditingController();
+
+  final TextEditingController _customerPhoneController =
+  TextEditingController();
+
   final ScrollController _cartScrollController =
   ScrollController();
 
-  List<RawMaterial> _materials = [];
-  List<Customer> _customers = [];
+  static const int _comboCategoryFilter = -2;
 
-  Map<int, double> _rawStock = {};
+  List<RawMaterial> _materials = [];
+  List<Combo> _combos = [];
+  List<Category> _categories = [];
+  int? _categoryId;
 
   final List<CartLine> _cart = [];
-
-  Customer? _selectedCustomer;
 
   String _paymentType = 'Cash';
 
   bool _loading = true;
   bool _saving = false;
+  bool _cartSheetOpen = false;
+  void Function(VoidCallback)? _sheetSetState;
+
+  void _refreshUi() {
+    if (mounted) setState(() {});
+    _sheetSetState?.call(() {});
+  }
 
   // ============================================================
   // INIT
@@ -70,6 +84,8 @@ class _PosScreenState extends State<PosScreen> {
     _taxController.dispose();
     _discountController.dispose();
     _barcodeController.dispose();
+    _customerNameController.dispose();
+    _customerPhoneController.dispose();
     _cartScrollController.dispose();
 
     super.dispose();
@@ -88,17 +104,20 @@ class _PosScreenState extends State<PosScreen> {
 
     try {
       final materials = await _repo.rawMaterials();
-      final customers = await _repo.customers();
-      final stock =
-      await _repo.maxQuantitiesForRawMaterials();
+      final combos = await _repo.combosWithItems(activeOnly: true);
+      final categories = await _repo.categories(type: 'raw_material');
 
       if (!mounted) return;
 
       setState(() {
         _materials = materials;
-        _customers = customers;
-        _rawStock = stock;
+        _combos = combos;
+        _categories = categories;
         _loading = false;
+        if (_categoryId != null &&
+            !_categoryIdsWithItems.contains(_categoryId)) {
+          _categoryId = null;
+        }
       });
     } catch (e) {
       if (!mounted) return;
@@ -115,13 +134,14 @@ class _PosScreenState extends State<PosScreen> {
 
   Future<void> _refreshStock() async {
     try {
-      final stock =
-      await _repo.maxQuantitiesForRawMaterials();
+      final materials = await _repo.rawMaterials();
+      final combos = await _repo.combosWithItems(activeOnly: true);
 
       if (!mounted) return;
 
       setState(() {
-        _rawStock = stock;
+        _materials = materials;
+        _combos = combos;
       });
     } catch (e) {
       if (!mounted) return;
@@ -139,21 +159,209 @@ class _PosScreenState extends State<PosScreen> {
   String get _search =>
       _searchController.text.trim().toLowerCase();
 
+  String? _categoryName(int categoryId) {
+    for (final category in _categories) {
+      if (category.id == categoryId) {
+        return category.name;
+      }
+    }
+    return null;
+  }
+
+  List<RawMaterial> get _allMaterials => _materials;
+
+  List<Combo> get _activeCombos =>
+      _combos.where((combo) => combo.isActive && combo.id != null).toList();
+
+  Set<int?> get _categoryIdsWithItems {
+    final ids = {for (final material in _allMaterials) material.categoryId};
+    for (final combo in _activeCombos) {
+      ids.add(combo.categoryId);
+    }
+    if (_activeCombos.isNotEmpty) {
+      ids.add(_comboCategoryFilter);
+    }
+    return ids;
+  }
+
+  List<Category> get _categoriesWithItems {
+    final ids = _categoryIdsWithItems;
+    return _categories.where((category) => ids.contains(category.id)).toList();
+  }
+
   List<RawMaterial> get _filteredMaterials {
-    if (_search.isEmpty) {
-      return _materials;
+    if (_categoryId == _comboCategoryFilter) {
+      return const [];
     }
 
-    return _materials.where((material) {
-      final name =
-      material.name.toLowerCase();
+    var list = _allMaterials;
+    if (_categoryId == -1) {
+      list = list.where((material) => material.categoryId == null).toList();
+    } else if (_categoryId != null) {
+      list = list
+          .where((material) => material.categoryId == _categoryId)
+          .toList();
+    }
+    if (_search.isEmpty) {
+      return list;
+    }
 
-      final barcode =
-          material.barcode?.toLowerCase() ?? '';
-
+    return list.where((material) {
+      final name = material.name.toLowerCase();
+      final subItem = material.trimmedSubItem?.toLowerCase() ?? '';
+      final barcode = material.barcode?.toLowerCase() ?? '';
       return name.contains(_search) ||
+          subItem.contains(_search) ||
           barcode.contains(_search);
     }).toList();
+  }
+
+  List<Combo> get _filteredCombos {
+    if (_categoryId != null &&
+        _categoryId != _comboCategoryFilter &&
+        _categoryId != -1) {
+      var list = _activeCombos
+          .where((combo) => combo.categoryId == _categoryId)
+          .toList();
+      if (_search.isEmpty) return list;
+      return list.where(_comboMatchesSearch).toList();
+    }
+
+    if (_categoryId == -1) {
+      return const [];
+    }
+
+    var list = _activeCombos;
+    if (_categoryId == _comboCategoryFilter) {
+      if (_search.isEmpty) return list;
+      return list.where(_comboMatchesSearch).toList();
+    }
+
+    if (_search.isEmpty) {
+      return list;
+    }
+
+    return list.where(_comboMatchesSearch).toList();
+  }
+
+  bool _comboMatchesSearch(Combo combo) {
+    final name = combo.name.toLowerCase();
+    final barcode = combo.barcode?.toLowerCase() ?? '';
+    return name.contains(_search) || barcode.contains(_search);
+  }
+
+  List<({String title, List<RawMaterial> materials, List<Combo> combos})>
+      get _productSections {
+    final items = _filteredMaterials;
+    final combos = _filteredCombos;
+
+    if (items.isEmpty && combos.isEmpty) {
+      return const [];
+    }
+
+    if (_categoryId == _comboCategoryFilter) {
+      return _comboOnlySections(combos);
+    }
+
+    if (_categoryId != null) {
+      final title = _categoryId == -1
+          ? 'Other'
+          : _categoryName(_categoryId!) ?? 'Category';
+      return [
+        (
+          title: title,
+          materials: items,
+          combos: combos,
+        ),
+      ];
+    }
+
+    final materialGroups = <int?, List<RawMaterial>>{};
+    for (final material in items) {
+      materialGroups.putIfAbsent(material.categoryId, () => []).add(material);
+    }
+
+    final comboGroups = <int?, List<Combo>>{};
+    for (final combo in combos) {
+      comboGroups.putIfAbsent(combo.categoryId, () => []).add(combo);
+    }
+
+    final sections =
+        <({String title, List<RawMaterial> materials, List<Combo> combos})>[];
+    for (final category in _categories) {
+      final materials = materialGroups.remove(category.id) ?? const [];
+      final categoryCombos = comboGroups.remove(category.id) ?? const [];
+      if (materials.isEmpty && categoryCombos.isEmpty) continue;
+      sections.add((
+        title: category.name,
+        materials: materials,
+        combos: categoryCombos,
+      ));
+    }
+
+    final uncategorizedMaterials = materialGroups.remove(null) ?? const [];
+    final uncategorizedCombos = comboGroups.remove(null) ?? const [];
+    if (uncategorizedMaterials.isNotEmpty || uncategorizedCombos.isNotEmpty) {
+      sections.add((
+        title: 'Other',
+        materials: uncategorizedMaterials,
+        combos: uncategorizedCombos,
+      ));
+    }
+
+    for (final entry in materialGroups.entries) {
+      final materials = entry.value;
+      final categoryCombos = comboGroups.remove(entry.key) ?? const [];
+      if (materials.isEmpty && categoryCombos.isEmpty) continue;
+      sections.add((
+        title: 'Other',
+        materials: materials,
+        combos: categoryCombos,
+      ));
+    }
+
+    for (final entry in comboGroups.entries) {
+      if (entry.value.isEmpty) continue;
+      sections.add((
+        title: 'Combos',
+        materials: const [],
+        combos: entry.value,
+      ));
+    }
+
+    return sections;
+  }
+
+  List<({String title, List<RawMaterial> materials, List<Combo> combos})>
+      _comboOnlySections(List<Combo> combos) {
+    if (combos.isEmpty) {
+      return const [];
+    }
+
+    final grouped = <int?, List<Combo>>{};
+    for (final combo in combos) {
+      grouped.putIfAbsent(combo.categoryId, () => []).add(combo);
+    }
+
+    final sections =
+        <({String title, List<RawMaterial> materials, List<Combo> combos})>[];
+    for (final category in _categories) {
+      final list = grouped.remove(category.id);
+      if (list == null || list.isEmpty) continue;
+      sections.add((title: category.name, materials: const [], combos: list));
+    }
+
+    final uncategorized = grouped.remove(null);
+    if (uncategorized != null && uncategorized.isNotEmpty) {
+      sections.add((title: 'Combos', materials: const [], combos: uncategorized));
+    }
+
+    for (final entry in grouped.entries) {
+      if (entry.value.isEmpty) continue;
+      sections.add((title: 'Combos', materials: const [], combos: entry.value));
+    }
+
+    return sections;
   }
 
   // ============================================================
@@ -178,9 +386,14 @@ class _PosScreenState extends State<PosScreen> {
       );
 
       if (material == null) {
-        _showError(
-          'No raw material found for barcode "$barcode".',
-        );
+        final combo = await _repo.comboByBarcode(barcode);
+        if (combo == null) {
+          _showError(
+            'No item found for barcode "$barcode".',
+          );
+          return;
+        }
+        _addCombo(combo);
         return;
       }
 
@@ -199,12 +412,7 @@ class _PosScreenState extends State<PosScreen> {
   double _stockForMaterial(
       RawMaterial material,
       ) {
-    if (material.id == null) {
-      return material.currentStock;
-    }
-
-    return _rawStock[material.id!] ??
-        material.currentStock;
+    return material.currentStock;
   }
 
   // ============================================================
@@ -217,6 +425,24 @@ class _PosScreenState extends State<PosScreen> {
     return _cart.indexWhere(
           (line) => line.rawMaterialId == id,
     );
+  }
+
+  int _cartIndexForCombo(
+      int id,
+      ) {
+    return _cart.indexWhere(
+          (line) => line.comboId == id,
+    );
+  }
+
+  double _cartQtyForCombo(
+      int id,
+      ) {
+    final index = _cartIndexForCombo(id);
+    if (index == -1) {
+      return 0;
+    }
+    return _cart[index].qty;
   }
 
   double _cartQtyForRaw(
@@ -243,70 +469,66 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    final available =
-    _stockForMaterial(material);
-
-    if (available <= 0) {
-      _showError(
-        '${material.name} is out of stock.',
-      );
-      return;
-    }
-
-    final index =
-    _cartIndexForRaw(material.id!);
-
-    // ----------------------------------------------------------
-    // NEW CART LINE
-    // ----------------------------------------------------------
+    final index = _cartIndexForRaw(material.id!);
 
     if (index == -1) {
-      setState(() {
-        _cart.add(
-          CartLine(
-            rawMaterialId:
-            material.id,
-            name: material.name,
-            qty: 1,
-            price:
-            material.sellingPrice ?? 0,
-          ),
-        );
-      });
-
+      _cart.add(
+        CartLine(
+          rawMaterialId: material.id,
+          name: material.name,
+          subItem: material.trimmedSubItem,
+          qty: 1,
+          price: material.sellingPrice ?? 0,
+        ),
+      );
+      _refreshUi();
       return;
     }
 
-    // ----------------------------------------------------------
-    // EXISTING CART LINE
-    // ----------------------------------------------------------
+    final old = _cart[index];
+    _cart[index] = CartLine(
+      rawMaterialId: old.rawMaterialId,
+      comboId: old.comboId,
+      name: old.name,
+      subItem: old.subItem,
+      qty: old.qty + 1,
+      price: old.price,
+    );
+    _refreshUi();
+  }
 
-    final currentQty =
-        _cart[index].qty;
-
-    if (currentQty + 1 >
-        available + 0.000001) {
-      _showError(
-        'Only ${_formatQty(available)} '
-            '${_unitForMaterial(material)} '
-            'of ${material.name} is available.',
-      );
-
+  void _addCombo(
+      Combo combo,
+      ) {
+    if (combo.id == null) {
       return;
     }
 
-    setState(() {
-      final old =
-      _cart[index];
+    final index = _cartIndexForCombo(combo.id!);
 
-      _cart[index] = CartLine(
-        rawMaterialId:
-        old.rawMaterialId,
-        name: old.name,
-        qty: old.qty + 1,
-        price: old.price,
+    if (index == -1) {
+      _cart.add(
+        CartLine(
+          comboId: combo.id,
+          name: combo.name,
+          qty: 1,
+          price: combo.price,
+        ),
       );
-    });
+      _refreshUi();
+      return;
+    }
+
+    final old = _cart[index];
+    _cart[index] = CartLine(
+      rawMaterialId: old.rawMaterialId,
+      comboId: old.comboId,
+      name: old.name,
+      subItem: old.subItem,
+      qty: old.qty + 1,
+      price: old.price,
+    );
+    _refreshUi();
   }
 
   // ============================================================
@@ -324,56 +546,27 @@ class _PosScreenState extends State<PosScreen> {
 
     // Remove line.
     if (newQty <= 0) {
-      setState(() {
-        _cart.removeAt(index);
-      });
-
+      _cart.removeAt(index);
+      _refreshUi();
       return;
     }
 
     final line =
     _cart[index];
 
-    if (line.rawMaterialId == null) {
+    if (line.rawMaterialId == null && line.comboId == null) {
       return;
     }
 
-    // Find original material.
-    final materialIndex =
-    _materials.indexWhere(
-          (material) =>
-      material.id ==
-          line.rawMaterialId,
+    _cart[index] = CartLine(
+      rawMaterialId: line.rawMaterialId,
+      comboId: line.comboId,
+      name: line.name,
+      subItem: line.subItem,
+      qty: newQty,
+      price: line.price,
     );
-
-    final maxQty =
-    materialIndex == -1
-        ? 0.0
-        : _stockForMaterial(
-      _materials[
-      materialIndex],
-    );
-
-    if (newQty >
-        maxQty + 0.000001) {
-      _showError(
-        'Maximum available quantity is '
-            '${_formatQty(maxQty)}.',
-      );
-
-      return;
-    }
-
-    setState(() {
-      _cart[index] =
-          CartLine(
-            rawMaterialId:
-            line.rawMaterialId,
-            name: line.name,
-            qty: newQty,
-            price: line.price,
-          );
-    });
+    _refreshUi();
   }
 
   // ============================================================
@@ -388,9 +581,8 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    setState(() {
-      _cart.removeAt(index);
-    });
+    _cart.removeAt(index);
+    _refreshUi();
   }
 
   // ============================================================
@@ -402,9 +594,8 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    setState(() {
-      _cart.clear();
-    });
+    _cart.clear();
+    _refreshUi();
   }
 
   // ============================================================
@@ -484,29 +675,20 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    if (_paymentType ==
-        'Credit' &&
-        _selectedCustomer ==
-            null) {
-      _showError(
-        'Select a customer for credit sales.',
-      );
-      return;
-    }
-
     setState(() {
       _saving = true;
     });
 
+    final soldLines =
+        List<CartLine>.from(_cart);
+    final subtotal = _subtotal;
+    final grandTotal = _total;
+
     try {
       final saleId =
       await _repo.recordSale(
-        customerId:
-        _selectedCustomer?.id,
-        lines:
-        List<CartLine>.from(
-          _cart,
-        ),
+        customerId: null,
+        lines: soldLines,
         tax: tax,
         discount: discount,
         paymentType:
@@ -526,20 +708,35 @@ class _PosScreenState extends State<PosScreen> {
       _discountController.text =
       '0';
 
+      final customerName = _customerNameController.text.trim();
+      final customerPhone = _customerPhoneController.text.trim();
+
+      _customerNameController.clear();
+      _customerPhoneController.clear();
+
       await _refreshStock();
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Sale #$saleId completed successfully.',
+      if (_cartSheetOpen && Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => ReceiptScreen(
+            saleId: saleId,
+            lines: soldLines,
+            paymentType: _paymentType,
+            subtotal: subtotal,
+            tax: tax,
+            discount: discount,
+            grandTotal: grandTotal,
+            customerName:
+                customerName.isEmpty ? null : customerName,
+            customerPhone:
+                customerPhone.isEmpty ? null : customerPhone,
           ),
-          behavior:
-          SnackBarBehavior
-              .floating,
         ),
       );
     } on InsufficientStockException catch (
@@ -576,182 +773,6 @@ class _PosScreenState extends State<PosScreen> {
       _showError(
         'Unable to complete sale: $e',
       );
-    }
-  }
-
-  // ============================================================
-  // CUSTOMER
-  // ============================================================
-
-  Future<void> _selectCustomer() async {
-    if (_customers.isEmpty) {
-      _showError(
-        'No customers found. Add a customer first.',
-      );
-      return;
-    }
-
-    final selected =
-    await showModalBottomSheet<Customer>(
-      context: context,
-      isScrollControlled:
-      true,
-      builder:
-          (sheetContext) {
-        String query = '';
-
-        return StatefulBuilder(
-          builder: (
-              context,
-              setSheetState,
-              ) {
-            final filtered =
-            _customers.where(
-                  (customer) {
-                if (query
-                    .trim()
-                    .isEmpty) {
-                  return true;
-                }
-
-                final q =
-                query
-                    .trim()
-                    .toLowerCase();
-
-                return customer.name
-                    .toLowerCase()
-                    .contains(q) ||
-                    (customer.phone ??
-                        '')
-                        .toLowerCase()
-                        .contains(q);
-              },
-            ).toList();
-
-            return SafeArea(
-              child: SizedBox(
-                height:
-                MediaQuery.of(
-                  context,
-                )
-                    .size
-                    .height *
-                    0.75,
-                child: Column(
-                  children: [
-                    Padding(
-                      padding:
-                      const EdgeInsets.all(
-                        16,
-                      ),
-                      child:
-                      TextField(
-                        autofocus:
-                        true,
-                        decoration:
-                        const InputDecoration(
-                          labelText:
-                          'Search customer',
-                          prefixIcon:
-                          Icon(
-                            Icons
-                                .search,
-                          ),
-                          border:
-                          OutlineInputBorder(),
-                        ),
-                        onChanged:
-                            (value) {
-                          setSheetState(
-                                () {
-                              query =
-                                  value;
-                            },
-                          );
-                        },
-                      ),
-                    ),
-
-                    Expanded(
-                      child:
-                      filtered.isEmpty
-                          ? const Center(
-                        child:
-                        Text(
-                          'No customers found',
-                        ),
-                      )
-                          : ListView
-                          .builder(
-                        itemCount:
-                        filtered.length,
-                        itemBuilder:
-                            (
-                            _,
-                            index,
-                            ) {
-                          final customer =
-                          filtered[
-                          index];
-
-                          return ListTile(
-                            leading:
-                            const CircleAvatar(
-                              child:
-                              Icon(
-                                Icons
-                                    .person,
-                              ),
-                            ),
-                            title:
-                            Text(
-                              customer
-                                  .name,
-                            ),
-                            subtitle:
-                            customer.phone ==
-                                null ||
-                                customer
-                                    .phone!
-                                    .isEmpty
-                                ? null
-                                : Text(
-                              customer
-                                  .phone!,
-                            ),
-                            trailing:
-                            Text(
-                              '₹${customer.openingBalance.toStringAsFixed(2)}',
-                            ),
-                            onTap:
-                                () {
-                              Navigator
-                                  .pop(
-                                context,
-                                customer,
-                              );
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-
-    if (!mounted) return;
-
-    if (selected != null) {
-      setState(() {
-        _selectedCustomer =
-            selected;
-      });
     }
   }
 
@@ -856,13 +877,6 @@ class _PosScreenState extends State<PosScreen> {
       material.id!,
     );
 
-    final availableToAdd =
-        stock - cartQty;
-
-    final canAdd =
-        availableToAdd >
-            0.000001;
-
     final unit =
     _unitForMaterial(
       material,
@@ -873,12 +887,7 @@ class _PosScreenState extends State<PosScreen> {
       Clip.antiAlias,
       margin: EdgeInsets.zero,
       child: InkWell(
-        onTap: canAdd
-            ? () =>
-            _addRawMaterial(
-              material,
-            )
-            : null,
+        onTap: () => _addRawMaterial(material),
         child: Column(
           crossAxisAlignment:
           CrossAxisAlignment
@@ -915,6 +924,21 @@ class _PosScreenState extends State<PosScreen> {
                       ),
                     ),
 
+                    if (material.trimmedSubItem !=
+                        null) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        material.trimmedSubItem!,
+                        maxLines: 1,
+                        overflow:
+                        TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade700,
+                        ),
+                      ),
+                    ],
+
                     const SizedBox(
                       height: 5,
                     ),
@@ -929,37 +953,125 @@ class _PosScreenState extends State<PosScreen> {
                         fontSize: 14,
                       ),
                     ),
+                    Text(
+                      _formatStockLabel(stock),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: stock < 0
+                            ? Colors.red.shade700
+                            : Colors.grey.shade700,
+                      ),
+                    ),
 
                     const Spacer(),
 
                     Row(
                       children: [
-                        Expanded(
-                          child:
-                          Text(
-                            'Stock: '
-                                '${_formatQty(stock)} '
-                                '$unit',
-                            maxLines:
-                            1,
-                            overflow:
-                            TextOverflow
-                                .ellipsis,
-                            style:
-                            TextStyle(
-                              fontSize:
-                              12,
-                              color: stock <=
-                                  material
-                                      .reorderLevel
-                                  ? Colors
-                                  .orange
-                                  .shade800
-                                  : null,
+                        const Spacer(),
+
+                        if (cartQty >
+                            0)
+                          CircleAvatar(
+                            radius:
+                            11,
+                            child:
+                            Text(
+                              _formatQty(
+                                cartQty,
+                              ),
+                              style:
+                              const TextStyle(
+                                fontSize:
+                                10,
+                              ),
                             ),
                           ),
-                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
+  Widget _comboCard(
+      Combo combo,
+      ) {
+    final cartQty =
+    combo.id == null
+        ? 0.0
+        : _cartQtyForCombo(
+      combo.id!,
+    );
+
+    return Card(
+      clipBehavior:
+      Clip.antiAlias,
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        onTap: () => _addCombo(combo),
+        child: Column(
+          crossAxisAlignment:
+          CrossAxisAlignment
+              .start,
+          children: [
+            _image(
+              combo.imagePath,
+              height: 100,
+            ),
+            Expanded(
+              child: Padding(
+                padding:
+                const EdgeInsets.all(
+                  10,
+                ),
+                child: Column(
+                  crossAxisAlignment:
+                  CrossAxisAlignment
+                      .start,
+                  children: [
+                    Text(
+                      combo.name,
+                      maxLines: 2,
+                      overflow:
+                      TextOverflow
+                          .ellipsis,
+                      style:
+                      const TextStyle(
+                        fontWeight:
+                        FontWeight
+                            .bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Combo',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Colors.orange.shade800,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '₹${combo.price.toStringAsFixed(2)}',
+                      style:
+                      const TextStyle(
+                        fontWeight:
+                        FontWeight
+                            .w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const Spacer(),
+                    Row(
+                      children: [
+                        const Spacer(),
                         if (cartQty >
                             0)
                           CircleAvatar(
@@ -996,154 +1108,70 @@ class _PosScreenState extends State<PosScreen> {
   Widget _cartView() {
     return Card(
       margin: EdgeInsets.zero,
-      clipBehavior:
-      Clip.antiAlias,
-      child: Column(
-        children: [
-          // ------------------------------------------------------
-          // CART HEADER
-          // ------------------------------------------------------
-
-          Padding(
-            padding:
-            const EdgeInsets.fromLTRB(
-              12,
-              8,
-              8,
-              6,
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons
-                      .shopping_cart_outlined,
-                  size: 21,
-                ),
-
-                const SizedBox(
-                  width: 8,
-                ),
-
-                Expanded(
-                  child: Text(
-                    'Current Sale',
-                    style: Theme.of(
-                      context,
-                    )
-                        .textTheme
-                        .titleMedium
-                        ?.copyWith(
-                      fontWeight:
-                      FontWeight
-                          .bold,
+      clipBehavior: Clip.antiAlias,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final checkoutMax = (constraints.maxHeight * 0.52).clamp(220.0, 420.0);
+          return Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 8, 6),
+                child: Row(
+                  children: [
+                    const Icon(Icons.shopping_cart_outlined, size: 21),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Current Sale',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                      ),
                     ),
-                  ),
+                    if (_cart.isNotEmpty)
+                      TextButton(
+                        onPressed: _clearCart,
+                        child: const Text('Clear'),
+                      ),
+                  ],
                 ),
-
-                if (_cart
-                    .isNotEmpty)
-                  TextButton(
-                    onPressed:
-                    _clearCart,
-                    child:
-                    const Text(
-                      'Clear',
-                    ),
-                  ),
-              ],
-            ),
-          ),
-
-          const Divider(
-            height: 1,
-          ),
-
-          // ------------------------------------------------------
-          // CART ITEMS
-          // ------------------------------------------------------
-
-          Expanded(
-            child: _cart.isEmpty
-                ? const Center(
-              child: Column(
-                mainAxisSize:
-                MainAxisSize
-                    .min,
-                children: [
-                  Icon(
-                    Icons
-                        .remove_shopping_cart_outlined,
-                    size: 42,
-                  ),
-                  SizedBox(
-                    height: 8,
-                  ),
-                  Text(
-                    'Cart is empty',
-                    style:
-                    TextStyle(
-                      fontWeight:
-                      FontWeight
-                          .w600,
-                    ),
-                  ),
-                  SizedBox(
-                    height: 3,
-                  ),
-                  Text(
-                    'Tap an item to add it',
-                  ),
-                ],
               ),
-            )
-                : ListView
-                .builder(
-              controller:
-              _cartScrollController,
-              padding:
-              const EdgeInsets
-                  .symmetric(
-                vertical: 4,
+              const Divider(height: 1),
+              Expanded(
+                child: _cart.isEmpty
+                    ? const SingleChildScrollView(
+                        padding: EdgeInsets.all(16),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.remove_shopping_cart_outlined, size: 42),
+                            SizedBox(height: 8),
+                            Text(
+                              'Cart is empty',
+                              style: TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                            SizedBox(height: 3),
+                            Text('Tap an item to add it'),
+                          ],
+                        ),
+                      )
+                    : ListView.builder(
+                        controller: _cartScrollController,
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        itemCount: _cart.length,
+                        itemBuilder: (context, index) {
+                          return _cartLine(index, _cart[index]);
+                        },
+                      ),
               ),
-              itemCount:
-              _cart.length,
-              itemBuilder:
-                  (
-                  context,
-                  index,
-                  ) {
-                return _cartLine(
-                  index,
-                  _cart[index],
-                );
-              },
-            ),
-          ),
-
-          const Divider(
-            height: 1,
-          ),
-
-          // ------------------------------------------------------
-          // CHECKOUT
-          //
-          // Constrained instead of fixed height.
-          // This prevents the 1px overflow seen in the screenshot.
-          // ------------------------------------------------------
-
-          Flexible(
-            flex: 0,
-            child:
-            ConstrainedBox(
-              constraints:
-              const BoxConstraints(
-                maxHeight: 360,
+              const Divider(height: 1),
+              ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: checkoutMax),
+                child: _checkoutPanel(),
               ),
-              child:
-              _checkoutPanel(),
-            ),
-          ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -1156,21 +1184,6 @@ class _PosScreenState extends State<PosScreen> {
       int index,
       CartLine line,
       ) {
-    final materialIndex =
-    _materials.indexWhere(
-          (material) =>
-      material.id ==
-          line.rawMaterialId,
-    );
-
-    final maxQty =
-    materialIndex == -1
-        ? 0.0
-        : _stockForMaterial(
-      _materials[
-      materialIndex],
-    );
-
     return Padding(
       padding:
       const EdgeInsets
@@ -1183,9 +1196,10 @@ class _PosScreenState extends State<PosScreen> {
           CircleAvatar(
             radius: 17,
             child:
-            const Icon(
-              Icons
-                  .inventory_2_outlined,
+            Icon(
+              line.isCombo
+                  ? Icons.local_offer_outlined
+                  : Icons.inventory_2_outlined,
               size: 17,
             ),
           ),
@@ -1217,6 +1231,17 @@ class _PosScreenState extends State<PosScreen> {
                     fontSize: 13,
                   ),
                 ),
+                if (line.subItem != null &&
+                    line.subItem!.trim().isNotEmpty)
+                  Text(
+                    line.subItem!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
                 Text(
                   '₹${line.price.toStringAsFixed(2)} × '
                       '${_formatQty(line.qty)}',
@@ -1282,18 +1307,9 @@ class _PosScreenState extends State<PosScreen> {
                   .add_circle_outline,
               size: 20,
             ),
-            onPressed:
-            line.qty + 1 <=
-                maxQty +
-                    0.000001
-                ? () {
-              _changeQuantity(
-                index,
-                line.qty +
-                    1,
-              );
-            }
-                : null,
+            onPressed: () {
+              _changeQuantity(index, line.qty + 1);
+            },
           ),
 
           SizedBox(
@@ -1359,105 +1375,33 @@ class _PosScreenState extends State<PosScreen> {
         CrossAxisAlignment
             .stretch,
         children: [
-          // ------------------------------------------------------
-          // CUSTOMER
-          // ------------------------------------------------------
-
-          InkWell(
-            onTap:
-            _selectCustomer,
-            borderRadius:
-            BorderRadius
-                .circular(
-              8,
+          TextField(
+            controller: _customerNameController,
+            textCapitalization: TextCapitalization.words,
+            decoration: const InputDecoration(
+              labelText: 'Customer name (optional)',
+              border: OutlineInputBorder(),
+              isDense: true,
+              prefixIcon: Icon(Icons.person_outline),
             ),
-            child:
-            Container(
-              padding:
-              const EdgeInsets
-                  .all(
-                9,
-              ),
-              decoration:
-              BoxDecoration(
-                border:
-                Border.all(
-                  color: Theme.of(
-                    context,
-                  ).dividerColor,
-                ),
-                borderRadius:
-                BorderRadius
-                    .circular(
-                  8,
-                ),
-              ),
-              child:
-              Row(
-                children: [
-                  const Icon(
-                    Icons
-                        .person_outline,
-                    size: 20,
-                  ),
-
-                  const SizedBox(
-                    width: 8,
-                  ),
-
-                  Expanded(
-                    child:
-                    Column(
-                      mainAxisSize:
-                      MainAxisSize
-                          .min,
-                      crossAxisAlignment:
-                      CrossAxisAlignment
-                          .start,
-                      children: [
-                        const Text(
-                          'Customer',
-                          style:
-                          TextStyle(
-                            fontSize:
-                            11,
-                          ),
-                        ),
-                        Text(
-                          _selectedCustomer
-                              ?.name ??
-                              'Walk-in Customer',
-                          maxLines:
-                          1,
-                          overflow:
-                          TextOverflow
-                              .ellipsis,
-                          style:
-                          const TextStyle(
-                            fontWeight:
-                            FontWeight
-                                .w600,
-                            fontSize:
-                            13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const Icon(
-                    Icons
-                        .chevron_right,
-                    size: 20,
-                  ),
-                ],
-              ),
-            ),
+            onChanged: (_) => _refreshUi(),
           ),
 
-          const SizedBox(
-            height: 8,
+          const SizedBox(height: 8),
+
+          TextField(
+            controller: _customerPhoneController,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              labelText: 'Mobile number (optional)',
+              border: OutlineInputBorder(),
+              isDense: true,
+              prefixIcon: Icon(Icons.phone_outlined),
+            ),
+            onChanged: (_) => _refreshUi(),
           ),
+
+          const SizedBox(height: 8),
 
           // ------------------------------------------------------
           // PAYMENT
@@ -1506,14 +1450,6 @@ class _PosScreenState extends State<PosScreen> {
                   'Card',
                 ),
               ),
-              DropdownMenuItem(
-                value:
-                'Credit',
-                child:
-                Text(
-                  'Credit',
-                ),
-              ),
             ],
             onChanged:
                 (value) {
@@ -1522,10 +1458,8 @@ class _PosScreenState extends State<PosScreen> {
                 return;
               }
 
-              setState(() {
-                _paymentType =
-                    value;
-              });
+              _paymentType = value;
+              _refreshUi();
             },
           ),
 
@@ -1756,28 +1690,9 @@ class _PosScreenState extends State<PosScreen> {
   Widget build(
       BuildContext context,
       ) {
+    final phone = MediaQuery.sizeOf(context).width < 900;
+
     return Scaffold(
-      appBar:
-      AppBar(
-        title:
-        const Text(
-          'POS',
-        ),
-        actions: [
-          IconButton(
-            tooltip:
-            'Refresh',
-            onPressed:
-            _loading
-                ? null
-                : _loadData,
-            icon:
-            const Icon(
-              Icons.refresh,
-            ),
-          ),
-        ],
-      ),
       body: _loading
           ? const Center(
         child:
@@ -1793,7 +1708,63 @@ class _PosScreenState extends State<PosScreen> {
           ),
         ],
       ),
+      floatingActionButton: _loading || !phone
+          ? null
+          : _mobileCartButton(),
     );
+  }
+
+  Widget _mobileCartButton() {
+    final count = _cart.fold<double>(0, (sum, line) => sum + line.qty);
+    final label = count == count.roundToDouble()
+        ? '${count.round()}'
+        : count.toStringAsFixed(1);
+    return FloatingActionButton.extended(
+      onPressed: _openMobileCart,
+      icon: Badge(
+        isLabelVisible: _cart.isNotEmpty,
+        label: Text(label),
+        child: const Icon(Icons.shopping_cart),
+      ),
+      label: Text(
+        _cart.isEmpty ? 'View bill' : '₹${_total.toStringAsFixed(2)}',
+      ),
+    );
+  }
+
+  Future<void> _openMobileCart() async {
+    _cartSheetOpen = true;
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModal) {
+            _sheetSetState = setModal;
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.viewInsetsOf(ctx).bottom,
+              ),
+              child: SizedBox(
+                height: MediaQuery.sizeOf(ctx).height * 0.78,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                  child: _cartView(),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+    _sheetSetState = null;
+    if (mounted) {
+      setState(() {
+        _cartSheetOpen = false;
+      });
+    }
   }
 
   // ============================================================
@@ -1802,78 +1773,48 @@ class _PosScreenState extends State<PosScreen> {
 
   Widget _topBar() {
     return Padding(
-      padding:
-      const EdgeInsets.fromLTRB(
-        10,
-        8,
-        10,
-        8,
-      ),
-      child:
-      Row(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
+      child: Column(
         children: [
-          Expanded(
-            child:
-            TextField(
-              controller:
-              _searchController,
-              decoration:
-              InputDecoration(
-                hintText:
-                'Search raw materials...',
-                prefixIcon:
-                const Icon(
-                  Icons.search,
-                ),
-                suffixIcon:
-                _search.isEmpty
-                    ? null
-                    : IconButton(
-                  onPressed:
-                      () {
-                    _searchController
-                        .clear();
-                  },
-                  icon:
-                  const Icon(
-                    Icons.clear,
+          TextField(
+            controller: _searchController,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: 'Search items',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _search.isEmpty
+                  ? null
+                  : IconButton(
+                      onPressed: _searchController.clear,
+                      icon: const Icon(Icons.clear),
+                    ),
+              border: const OutlineInputBorder(),
+              isDense: true,
+              filled: true,
+              fillColor: Colors.white,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _barcodeController,
+                  onSubmitted: _handleBarcode,
+                  decoration: const InputDecoration(
+                    hintText: 'Barcode',
+                    prefixIcon: Icon(Icons.qr_code_scanner),
+                    border: OutlineInputBorder(),
+                    isDense: true,
                   ),
                 ),
-                border:
-                const OutlineInputBorder(),
-                isDense:
-                true,
               ),
-            ),
-          ),
-
-          const SizedBox(
-            width: 8,
-          ),
-
-          SizedBox(
-            width: 210,
-            child:
-            TextField(
-              controller:
-              _barcodeController,
-              onSubmitted:
-              _handleBarcode,
-              decoration:
-              const InputDecoration(
-                hintText:
-                'Scan barcode',
-                prefixIcon:
-                Icon(
-                  Icons
-                      .qr_code_scanner,
-                ),
-                border:
-                OutlineInputBorder(),
-                isDense:
-                true,
+              IconButton(
+                tooltip: 'Refresh prices and stock',
+                onPressed: _loading ? null : _loadData,
+                icon: const Icon(Icons.refresh),
               ),
-            ),
+            ],
           ),
         ],
       ),
@@ -1931,35 +1872,7 @@ class _PosScreenState extends State<PosScreen> {
   // ============================================================
 
   Widget _mobileBody() {
-    return Column(
-      children: [
-        Expanded(
-          child:
-          _productArea(),
-        ),
-
-        const SizedBox(
-          height: 6,
-        ),
-
-        SizedBox(
-          height: 420,
-          child:
-          Padding(
-            padding:
-            const EdgeInsets
-                .fromLTRB(
-              8,
-              0,
-              8,
-              8,
-            ),
-            child:
-            _cartView(),
-          ),
-        ),
-      ],
-    );
+    return _productArea();
   }
 
   // ============================================================
@@ -2019,7 +1932,7 @@ class _PosScreenState extends State<PosScreen> {
               ),
 
               Text(
-                'Items',
+                'Menu items',
                 style: Theme.of(
                   context,
                 )
@@ -2035,9 +1948,7 @@ class _PosScreenState extends State<PosScreen> {
           ),
         ),
 
-        // --------------------------------------------------------
-        // PRODUCT GRID
-        // --------------------------------------------------------
+        _categoryChips(),
 
         Expanded(
           child:
@@ -2051,52 +1962,124 @@ class _PosScreenState extends State<PosScreen> {
   // MATERIAL GRID
   // ============================================================
 
-  Widget _materialsGrid() {
-    final materials =
-        _filteredMaterials;
+  Widget _categoryChips() {
+    final hasOther = _categoryIdsWithItems.contains(null);
+    final hasCombos = _activeCombos.isNotEmpty;
+    if (_categoriesWithItems.isEmpty && !hasOther && !hasCombos) {
+      return const SizedBox.shrink();
+    }
 
-    if (materials.isEmpty) {
+    Widget chip({
+      required String label,
+      required bool selected,
+      required VoidCallback onTap,
+    }) {
+      return Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: ChoiceChip(
+          label: Text(label),
+          selected: selected,
+          onSelected: (_) => onTap(),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 48,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        children: [
+          chip(
+            label: 'All',
+            selected: _categoryId == null,
+            onTap: () => setState(() => _categoryId = null),
+          ),
+          for (final category in _categoriesWithItems)
+            chip(
+              label: category.name,
+              selected: _categoryId == category.id,
+              onTap: () => setState(() => _categoryId = category.id),
+            ),
+          if (hasOther)
+            chip(
+              label: 'Other',
+              selected: _categoryId == -1,
+              onTap: () => setState(() => _categoryId = -1),
+            ),
+          if (hasCombos)
+            chip(
+              label: 'Combos',
+              selected: _categoryId == _comboCategoryFilter,
+              onTap: () => setState(() => _categoryId = _comboCategoryFilter),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _materialsGrid() {
+    final sections = _productSections;
+
+    if (sections.isEmpty) {
       return _emptyProducts(
         icon:
         Icons
             .inventory_2_outlined,
         title:
-        'No raw materials found',
+        _search.isNotEmpty
+            ? 'No items match this search'
+            : _categoryId == null
+                ? 'No menu items found'
+                : _categoryId == _comboCategoryFilter
+                    ? 'No combos found'
+                    : 'No items in this category',
       );
     }
 
-    return GridView.builder(
-      padding:
-      const EdgeInsets.all(
-        10,
-      ),
-      gridDelegate:
-      const SliverGridDelegateWithMaxCrossAxisExtent(
-        maxCrossAxisExtent:
-        230,
-
-        // Reduced from 220 to 205.
-        // This gives more vertical room
-        // in the POS window.
-        mainAxisExtent:
-        205,
-
-        crossAxisSpacing:
-        10,
-        mainAxisSpacing:
-        10,
-      ),
-      itemCount:
-      materials.length,
-      itemBuilder:
-          (
-          _,
-          index,
-          ) {
-        return _materialCard(
-          materials[index],
-        );
-      },
+    return CustomScrollView(
+      slivers: [
+        for (final section in sections) ...[
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 6),
+              child: Text(
+                section.title,
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(10, 0, 10, 4),
+            sliver: SliverGrid(
+              gridDelegate:
+                  const SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 230,
+                mainAxisExtent: 220,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+              ),
+              delegate: SliverChildBuilderDelegate(
+                (context, index) {
+                  final materialCount = section.materials.length;
+                  if (index < materialCount) {
+                    return _materialCard(section.materials[index]);
+                  }
+                  return _comboCard(
+                    section.combos[index - materialCount],
+                  );
+                },
+                childCount: section.materials.length + section.combos.length,
+              ),
+            ),
+          ),
+        ],
+        const SliverToBoxAdapter(
+          child: SizedBox(height: 88),
+        ),
+      ],
     );
   }
 
@@ -2169,6 +2152,13 @@ class _PosScreenState extends State<PosScreen> {
   // ============================================================
   // FORMAT QUANTITY
   // ============================================================
+
+  String _formatStockLabel(double value) {
+    if (value.abs() < 0.000001) {
+      return 'Stock 0';
+    }
+    return 'Stock ${_formatQty(value)}';
+  }
 
   String _formatQty(
       double value,

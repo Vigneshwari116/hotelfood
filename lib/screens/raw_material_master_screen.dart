@@ -1,11 +1,14 @@
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:foodstock/model/models.dart';
+import '../services/item_import_service.dart';
 import '../services/repository.dart';
 import '../widgets/barcode_field.dart';
 import '../widgets/responsive_shell.dart';
@@ -42,7 +45,11 @@ class _RawMaterialMasterScreenState
       vsync: this,
     );
 
-    _loadAll();
+    _loadMenuFromExcelThenItems();
+  }
+
+  Future<void> _loadMenuFromExcelThenItems() async {
+    await _loadAll();
   }
 
   @override
@@ -132,6 +139,98 @@ class _RawMaterialMasterScreenState
     return '-';
   }
 
+  Future<void> _saveImportTemplate() async {
+    final csv = await ItemImportService().exportCsv();
+    String? path;
+    if (!kIsWeb &&
+        (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save menu Excel/CSV',
+        fileName: 'Shilpa_Enterprise_menu_items.csv',
+        type: FileType.custom,
+        allowedExtensions: const ['csv', 'xlsx'],
+      );
+    }
+    path ??= p.join(
+      (await getApplicationDocumentsDirectory()).path,
+      'Shilpa_Enterprise_menu_items.csv',
+    );
+    if (path.toLowerCase().endsWith('.xlsx')) {
+      path = '${path.substring(0, path.length - 5)}.csv';
+    }
+    if (!path.toLowerCase().endsWith('.csv')) {
+      path = '$path.csv';
+    }
+    await File(path).writeAsString(csv);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Menu file saved to $path')),
+    );
+  }
+
+  Future<void> _importItemsFile() async {
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['csv', 'xlsx', 'xls'],
+      allowMultiple: false,
+    );
+    if (picked == null ||
+        picked.files.isEmpty ||
+        picked.files.first.path == null) {
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return const Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            ),
+          ),
+        );
+      },
+    );
+
+    try {
+      final result = await ItemImportService().importFile(
+        picked.files.first.path!,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      await _loadAll();
+      if (!mounted) return;
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: const Text('Import complete'),
+            content: Text(
+              'Added ${result.created} new item(s).\n'
+              'Updated ${result.updated} existing item(s).'
+              '${result.errors.isEmpty ? '' : '\n\n${result.errors.take(8).join('\n')}'}',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Import failed: $e')),
+      );
+    }
+  }
+
   // ============================================================
   // IMAGE PICKER
   // ============================================================
@@ -186,16 +285,6 @@ class _RawMaterialMasterScreenState
   Future<void> _openRawMaterialEditor({
     RawMaterial? existing,
   }) async {
-    if (existing != null &&
-        existing.id != null) {
-      final allowed =
-      await _verifyRawMaterialPassword(
-        existing.id!,
-      );
-
-      if (!allowed) return;
-    }
-
     if (!mounted) return;
 
     final saved = await showDialog<bool>(
@@ -220,106 +309,6 @@ class _RawMaterialMasterScreenState
   }
 
   // ============================================================
-  // RAW MATERIAL PASSWORD
-  // ============================================================
-
-  Future<bool> _verifyRawMaterialPassword(
-      int id,
-      ) async {
-    final controller =
-    TextEditingController();
-
-    final repository =
-        Repository.instance;
-
-    final noPassword =
-    await repository.verifyRawMaterialPin(
-      id,
-      '',
-    );
-
-    if (noPassword) {
-      controller.dispose();
-      return true;
-    }
-
-    if (!mounted) {
-      controller.dispose();
-      return false;
-    }
-
-    final result = await showDialog<bool>(
-      context: context,
-      builder: (_) {
-        return AlertDialog(
-          title: const Text(
-            'Enter Entry Password',
-          ),
-          content: TextField(
-            controller: controller,
-            obscureText: true,
-            autofocus: true,
-            decoration:
-            const InputDecoration(
-              labelText: 'PIN / Password',
-              border:
-              OutlineInputBorder(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.pop(
-                  context,
-                  false,
-                );
-              },
-              child: const Text('Cancel'),
-            ),
-            FilledButton(
-              onPressed: () async {
-                final valid =
-                await repository
-                    .verifyRawMaterialPin(
-                  id,
-                  controller.text,
-                );
-
-                if (context.mounted) {
-                  Navigator.pop(
-                    context,
-                    valid,
-                  );
-                }
-              },
-              child: const Text('Unlock'),
-            ),
-          ],
-        );
-      },
-    );
-
-    controller.dispose();
-
-    if (result != true) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Incorrect password',
-            ),
-          ),
-        );
-      }
-
-      return false;
-    }
-
-    return true;
-  }
-
-  // ============================================================
   // DELETE RAW MATERIAL
   // ============================================================
 
@@ -327,13 +316,6 @@ class _RawMaterialMasterScreenState
       RawMaterial item,
       ) async {
     if (item.id == null) return;
-
-    final allowed =
-    await _verifyRawMaterialPassword(
-      item.id!,
-    );
-
-    if (!allowed) return;
 
     if (!mounted) return;
 
@@ -343,7 +325,7 @@ class _RawMaterialMasterScreenState
       builder: (_) {
         return AlertDialog(
           title: const Text(
-            'Delete Raw Material?',
+            'Delete Item?',
           ),
           content: Text(
             'Delete "${item.name}"?',
@@ -486,52 +468,12 @@ class _RawMaterialMasterScreenState
             .width <
             Breakpoints.mobile;
 
-    return Scaffold(
-      body: ResponsivePage(
-        child: Column(
-          crossAxisAlignment:
-          CrossAxisAlignment.start,
-          children: [
-            // ==================================================
-            // HEADER
-            // ==================================================
-
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'Raw Materials',
-                    style: Theme.of(context)
-                        .textTheme
-                        .headlineSmall
-                        ?.copyWith(
-                      fontWeight:
-                      FontWeight.bold,
-                    ),
-                  ),
-                ),
-
-                if (_loading)
-                  const Padding(
-                    padding:
-                    EdgeInsets.only(
-                      right: 12,
-                    ),
-                    child:
-                    SizedBox(
-                      width: 20,
-                      height: 20,
-                      child:
-                      CircularProgressIndicator(
-                        strokeWidth: 2,
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-
-            const SizedBox(height: 16),
-
+    return Padding(
+      padding: EdgeInsets.all(isMobile ? 12 : 24),
+      child: Column(
+        crossAxisAlignment:
+        CrossAxisAlignment.start,
+        children: [
             // ==================================================
             // TABS
             // ==================================================
@@ -590,8 +532,7 @@ class _RawMaterialMasterScreenState
             ),
           ],
         ),
-      ),
-    );
+      );
   }
 
   // ============================================================
@@ -618,7 +559,7 @@ class _RawMaterialMasterScreenState
                   prefixIcon:
                   Icon(Icons.search),
                   hintText:
-                  'Search raw materials...',
+                  'Search menu items...',
                   border:
                   OutlineInputBorder(),
                 ),
@@ -628,7 +569,21 @@ class _RawMaterialMasterScreenState
               ),
             ),
 
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
+
+            IconButton(
+              tooltip: 'Save Excel/CSV template',
+              onPressed: _saveImportTemplate,
+              icon: const Icon(Icons.download_outlined),
+            ),
+
+            OutlinedButton.icon(
+              onPressed: _importItemsFile,
+              icon: const Icon(Icons.upload_file),
+              label: Text(isMobile ? 'Import' : 'Import CSV / Excel'),
+            ),
+
+            const SizedBox(width: 8),
 
             FilledButton.icon(
               onPressed: () {
@@ -839,6 +794,20 @@ class _RawMaterialMasterScreenState
                     ),
                   ),
 
+                  if (item.trimmedSubItem !=
+                      null) ...[
+                    const SizedBox(
+                      height: 2,
+                    ),
+                    Text(
+                      item.trimmedSubItem!,
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(
                     height: 5,
                   ),
@@ -854,6 +823,12 @@ class _RawMaterialMasterScreenState
                         _unitName(
                           item.unitId,
                         ),
+                      ),
+
+                      _DetailText(
+                        icon: Icons.pin,
+                        text:
+                        'Qty ${_formatNumber(item.qtyNeeded)}',
                       ),
 
                       if (item.barcode !=
@@ -1015,7 +990,7 @@ class _RawMaterialMasterScreenState
           children: [
             Expanded(
               child: Text(
-                'Raw Material Combos',
+                'Combos',
                 style: Theme.of(context)
                     .textTheme
                     .titleLarge
@@ -1048,7 +1023,7 @@ class _RawMaterialMasterScreenState
           alignment:
           Alignment.centerLeft,
           child: Text(
-            'Create combos directly from raw materials.',
+            'Create combos from menu items.',
             style: Theme.of(context)
                 .textTheme
                 .bodySmall,
@@ -1171,7 +1146,7 @@ class _RawMaterialMasterScreenState
 
                     if (combo.items.isEmpty)
                       const Text(
-                        'No raw materials added',
+                        'No menu items added',
                         style:
                         TextStyle(
                           color: Colors.red,
@@ -1305,7 +1280,7 @@ class _RawMaterialMasterScreenState
           ),
           SizedBox(height: 12),
           Text(
-            'No raw materials yet',
+            'No menu items yet',
             style: TextStyle(
               fontSize: 17,
               fontWeight:
@@ -1397,6 +1372,12 @@ class _RawMaterialEditorDialogState
   final _nameController =
   TextEditingController();
 
+  final _subItemController =
+  TextEditingController();
+
+  final _qtyController =
+  TextEditingController(text: '1');
+
   final _barcodeController =
   TextEditingController();
 
@@ -1407,6 +1388,9 @@ class _RawMaterialEditorDialogState
   TextEditingController(text: '0');
 
   final _shelfLifeController =
+  TextEditingController();
+
+  final _packetsController =
   TextEditingController();
 
   final _packetController =
@@ -1439,11 +1423,27 @@ class _RawMaterialEditorDialogState
       _nameController.text =
           item.name;
 
+      _subItemController.text =
+          item.subItem ?? item.name;
+
+      _qtyController.text =
+          item.qtyNeeded.toString();
+
       _barcodeController.text =
           item.barcode ?? '';
 
       _openingController.text =
-          item.openingStock.toString();
+          item.currentStock.toString();
+
+      if (item.unitsPerPacket != null &&
+          item.unitsPerPacket! > 0 &&
+          item.currentStock > 0) {
+        final packets =
+            item.currentStock / item.unitsPerPacket!;
+        _packetsController.text = packets % 1 == 0
+            ? packets.toStringAsFixed(0)
+            : packets.toStringAsFixed(2);
+      }
 
       _reorderController.text =
           item.reorderLevel.toString();
@@ -1487,15 +1487,51 @@ class _RawMaterialEditorDialogState
             widget.units.first.id;
       }
     }
+
+    _nameController.addListener(_copyNameToSubItem);
+    _packetsController.addListener(_recalculateStock);
+    _packetController.addListener(_recalculateStock);
+  }
+
+  void _recalculateStock() {
+    final packets =
+        double.tryParse(_packetsController.text.trim()) ?? 0;
+    final perPacket =
+        double.tryParse(_packetController.text.trim()) ?? 0;
+
+    if (packets <= 0 || perPacket <= 0) return;
+
+    final stock = packets * perPacket;
+    final text = stock % 1 == 0
+        ? stock.toStringAsFixed(0)
+        : stock.toStringAsFixed(2);
+
+    if (_openingController.text == text) return;
+    _openingController.text = text;
+  }
+
+  void _copyNameToSubItem() {
+    _subItemController.value = TextEditingValue(
+      text: _nameController.text,
+      selection: TextSelection.collapsed(
+        offset: _nameController.text.length,
+      ),
+    );
   }
 
   @override
   void dispose() {
+    _nameController.removeListener(_copyNameToSubItem);
+    _packetsController.removeListener(_recalculateStock);
+    _packetController.removeListener(_recalculateStock);
     _nameController.dispose();
+    _subItemController.dispose();
+    _qtyController.dispose();
     _barcodeController.dispose();
     _openingController.dispose();
     _reorderController.dispose();
     _shelfLifeController.dispose();
+    _packetsController.dispose();
     _packetController.dispose();
     _costController.dispose();
     _sellingController.dispose();
@@ -1557,6 +1593,15 @@ class _RawMaterialEditorDialogState
             : _barcodeController.text
             .trim(),
         name: name,
+        subItem:
+        _subItemController.text.trim().isEmpty
+            ? null
+            : _subItemController.text.trim(),
+        qtyNeeded:
+        double.tryParse(
+          _qtyController.text.trim(),
+        ) ??
+            1,
         categoryId:
         _categoryId,
         unitId:
@@ -1569,8 +1614,11 @@ class _RawMaterialEditorDialogState
         ) ??
             0,
         currentStock:
-        widget.existing
-            ?.currentStock ??
+        double.tryParse(
+          _openingController
+              .text
+              .trim(),
+        ) ??
             0,
         reorderLevel:
         double.tryParse(
@@ -1625,13 +1673,6 @@ class _RawMaterialEditorDialogState
       await Repository.instance
           .saveRawMaterial(
         item,
-        pin:
-        _pinController.text
-            .trim()
-            .isEmpty
-            ? null
-            : _pinController.text
-            .trim(),
       );
 
       if (!mounted) return;
@@ -1660,6 +1701,37 @@ class _RawMaterialEditorDialogState
     }
   }
 
+  static const double _fieldGap = 8;
+
+  InputDecoration _fieldDecoration(
+    String label, {
+    String? hint,
+    IconData? prefix,
+  }) {
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      isDense: true,
+      border: const OutlineInputBorder(),
+      prefixIcon: prefix == null ? null : Icon(prefix, size: 18),
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 12,
+        vertical: 10,
+      ),
+    );
+  }
+
+  Widget _twoFields(Widget left, Widget right) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(child: left),
+        const SizedBox(width: _fieldGap),
+        Expanded(child: right),
+      ],
+    );
+  }
+
   // ============================================================
   // BUILD
   // ============================================================
@@ -1673,364 +1745,201 @@ class _RawMaterialEditorDialogState
             .size
             .width;
 
+    final height =
+        MediaQuery.of(context).size.height;
+
     final dialogWidth =
     width < Breakpoints.mobile
         ? width * .94
-        : 560.0;
+        : 720.0;
 
     return Dialog(
-      child: ConstrainedBox(
-        constraints:
-        BoxConstraints(
-          maxWidth:
-          dialogWidth,
-        ),
-        child:
-        SingleChildScrollView(
-          padding:
-          const EdgeInsets.all(
-            20,
-          ),
+      insetPadding: const EdgeInsets.all(16),
+      child: SizedBox(
+        width: dialogWidth,
+        height: height * 0.9,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
           child: Column(
-            mainAxisSize:
-            MainAxisSize.min,
             crossAxisAlignment:
-            CrossAxisAlignment
-                .stretch,
+            CrossAxisAlignment.stretch,
             children: [
               Text(
                 widget.existing ==
                     null
-                    ? 'Add Raw Material'
-                    : 'Edit Raw Material',
+                    ? 'Add Item'
+                    : 'Edit Item',
                 style:
                 const TextStyle(
-                  fontSize: 20,
+                  fontSize: 18,
                   fontWeight:
                   FontWeight.bold,
                 ),
               ),
 
-              const SizedBox(
-                height: 20,
-              ),
-
-              // ------------------------------------------------
-              // IMAGE
-              // ------------------------------------------------
+              const SizedBox(height: 8),
 
               Center(
                 child: Stack(
                   children: [
                     _ItemImage(
-                      path:
-                      _imagePath,
-                      size: 130,
-                      icon: Icons
-                          .inventory_2_outlined,
+                      path: _imagePath,
+                      size: 56,
+                      icon: Icons.inventory_2_outlined,
                     ),
                     Positioned(
                       right: 0,
                       bottom: 0,
-                      child:
-                      FloatingActionButton
-                          .small(
-                        onPressed:
-                        _pickImage,
-                        child:
-                        const Icon(
-                          Icons
-                              .camera_alt,
-                        ),
+                      child: FloatingActionButton.small(
+                        onPressed: _pickImage,
+                        child: const Icon(Icons.camera_alt),
                       ),
                     ),
                   ],
                 ),
               ),
 
-              const SizedBox(
-                height: 20,
+              const SizedBox(height: 10),
+
+              DropdownButtonFormField<int>(
+                value: _categoryId,
+                isExpanded: true,
+                isDense: true,
+                decoration: _fieldDecoration('Category'),
+                items: widget.categories
+                    .map(
+                      (category) => DropdownMenuItem<int>(
+                        value: category.id,
+                        child: Text(
+                          category.name,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _categoryId = value;
+                  });
+                },
               ),
 
-              TextField(
-                controller:
-                _nameController,
-                decoration:
-                const InputDecoration(
-                  labelText:
-                  'Item Name',
-                  border:
-                  OutlineInputBorder(),
-                  prefixIcon:
-                  Icon(
-                    Icons
-                        .inventory_2_outlined,
+              const SizedBox(height: _fieldGap),
+
+              _twoFields(
+                TextField(
+                  controller: _nameController,
+                  decoration: _fieldDecoration(
+                    'Item Name',
+                    prefix: Icons.inventory_2_outlined,
+                  ),
+                ),
+                TextField(
+                  controller: _subItemController,
+                  decoration: _fieldDecoration(
+                    'Sub Item',
+                    prefix: Icons.subdirectory_arrow_right,
                   ),
                 ),
               ),
 
-              const SizedBox(
-                height: 12,
-              ),
+              const SizedBox(height: _fieldGap),
 
               BarcodeField(
-                controller:
-                _barcodeController,
+                controller: _barcodeController,
+                isDense: true,
               ),
 
-              const SizedBox(
-                height: 12,
-              ),
+              const SizedBox(height: _fieldGap),
 
-              DropdownButtonFormField<
-                  int>(
-                value: _categoryId,
-                decoration:
-                const InputDecoration(
-                  labelText:
-                  'Category',
-                  border:
-                  OutlineInputBorder(),
+              _twoFields(
+                TextField(
+                  controller: _qtyController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: _fieldDecoration(
+                    'Qty / sale',
+                    hint: '1.5',
+                  ),
                 ),
-                items: widget
-                    .categories
-                    .map(
-                      (category) {
-                    return DropdownMenuItem<
-                        int>(
-                      value:
-                      category.id,
-                      child: Text(
-                        category
-                            .name,
-                      ),
-                    );
-                  },
-                )
-                    .toList(),
-                onChanged:
-                    (value) {
-                  setState(() {
-                    _categoryId =
-                        value;
-                  });
-                },
+                TextField(
+                  controller: _packetsController,
+                  enabled: true,
+                  readOnly: false,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: _fieldDecoration('Packets'),
+                ),
               ),
 
-              const SizedBox(
-                height: 12,
+              const SizedBox(height: _fieldGap),
+
+              _twoFields(
+                TextField(
+                  controller: _packetController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: _fieldDecoration('Units / packet'),
+                ),
+                TextField(
+                  controller: _openingController,
+                  enabled: true,
+                  readOnly: false,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: _fieldDecoration('Stock'),
+                ),
               ),
 
-              DropdownButtonFormField<
-                  int>(
+              const SizedBox(height: _fieldGap),
+
+              _twoFields(
+                TextField(
+                  controller: _costController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: _fieldDecoration('C.P. (₹)'),
+                ),
+                TextField(
+                  controller: _sellingController,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: _fieldDecoration('S.P. (₹)'),
+                ),
+              ),
+
+              const SizedBox(height: _fieldGap),
+
+              DropdownButtonFormField<int>(
                 value: _unitId,
-                decoration:
-                const InputDecoration(
-                  labelText:
-                  'Unit',
-                  border:
-                  OutlineInputBorder(),
-                ),
+                isExpanded: true,
+                isDense: true,
+                decoration: _fieldDecoration('Unit'),
                 items: widget.units
                     .map(
-                      (unit) {
-                    return DropdownMenuItem<
-                        int>(
-                      value:
-                      unit.id,
-                      child: Text(
-                        '${unit.name} (${unit.shortCode})',
+                      (unit) => DropdownMenuItem<int>(
+                        value: unit.id,
+                        child: Text(
+                          '${unit.name} (${unit.shortCode})',
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    );
-                  },
-                )
+                    )
                     .toList(),
-                onChanged:
-                    (value) {
+                onChanged: (value) {
                   setState(() {
-                    _unitId =
-                        value;
+                    _unitId = value;
                   });
                 },
               ),
 
-              const SizedBox(
-                height: 12,
-              ),
-
-              Row(
-                children: [
-                  Expanded(
-                    child:
-                    TextField(
-                      controller:
-                      _openingController,
-                      enabled:
-                      widget.existing ==
-                          null,
-                      keyboardType:
-                      const TextInputType
-                          .numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration:
-                      const InputDecoration(
-                        labelText:
-                        'Opening Stock',
-                        border:
-                        OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(
-                    width: 12,
-                  ),
-                  Expanded(
-                    child:
-                    TextField(
-                      controller:
-                      _reorderController,
-                      keyboardType:
-                      const TextInputType
-                          .numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration:
-                      const InputDecoration(
-                        labelText:
-                        'Reorder Level',
-                        border:
-                        OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(
-                height: 12,
-              ),
-
-              Row(
-                children: [
-                  Expanded(
-                    child:
-                    TextField(
-                      controller:
-                      _shelfLifeController,
-                      keyboardType:
-                      TextInputType
-                          .number,
-                      decoration:
-                      const InputDecoration(
-                        labelText:
-                        'Shelf Life (days)',
-                        border:
-                        OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(
-                    width: 12,
-                  ),
-                  Expanded(
-                    child:
-                    TextField(
-                      controller:
-                      _packetController,
-                      keyboardType:
-                      const TextInputType
-                          .numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration:
-                      const InputDecoration(
-                        labelText:
-                        'Units Per Packet',
-                        border:
-                        OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(
-                height: 12,
-              ),
-
-              Row(
-                children: [
-                  Expanded(
-                    child:
-                    TextField(
-                      controller:
-                      _costController,
-                      keyboardType:
-                      const TextInputType
-                          .numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration:
-                      const InputDecoration(
-                        labelText:
-                        'Cost Price (₹) - C.P.',
-                        border:
-                        OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(
-                    width: 12,
-                  ),
-                  Expanded(
-                    child:
-                    TextField(
-                      controller:
-                      _sellingController,
-                      keyboardType:
-                      const TextInputType
-                          .numberWithOptions(
-                        decimal: true,
-                      ),
-                      decoration:
-                      const InputDecoration(
-                        labelText:
-                        'Selling Price (₹) - S.P.',
-                        border:
-                        OutlineInputBorder(),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(
-                height: 12,
-              ),
-
-              TextField(
-                controller:
-                _pinController,
-                obscureText: true,
-                decoration:
-                InputDecoration(
-                  labelText:
-                  'Entry Password',
-                  helperText:
-                  widget.existing
-                      ?.entryPasswordHash !=
-                      null
-                      ? 'Leave blank to keep existing password'
-                      : 'Optional',
-                  border:
-                  const OutlineInputBorder(),
-                ),
-              ),
-
-              const SizedBox(
-                height: 20,
-              ),
+              const Spacer(),
 
               Row(
                 mainAxisAlignment:
@@ -2221,14 +2130,16 @@ class _ComboEditorDialogState
       return;
     }
 
-    setState(() {
-      _lines.add(
-        _ComboLine(
-          rawMaterialId:
-          available.first.id,
-          qty: 1,
-        ),
-      );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      setState(() {
+        _lines.add(
+          _ComboLine(
+            rawMaterialId: available.first.id,
+            qty: 1,
+          ),
+        );
+      });
     });
   }
 
@@ -2383,30 +2294,23 @@ class _ComboEditorDialogState
             .size
             .width;
 
+    final height =
+        MediaQuery.of(context).size.height;
+
     final dialogWidth =
     width < Breakpoints.mobile
         ? width * .94
         : 650.0;
 
     return Dialog(
-      child: ConstrainedBox(
-        constraints:
-        BoxConstraints(
-          maxWidth:
-          dialogWidth,
-        ),
-        child:
-        SingleChildScrollView(
-          padding:
-          const EdgeInsets.all(
-            20,
-          ),
+      insetPadding: const EdgeInsets.all(16),
+      child: SizedBox(
+        width: dialogWidth,
+        height: height * 0.9,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
           child: Column(
-            mainAxisSize:
-            MainAxisSize.min,
-            crossAxisAlignment:
-            CrossAxisAlignment
-                .stretch,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               // ==================================================
               // TITLE
@@ -2526,7 +2430,7 @@ class _ComboEditorDialogState
                 children: [
                   const Expanded(
                     child: Text(
-                      'Raw Materials',
+                      'Menu Items',
                       style:
                       TextStyle(
                         fontSize: 17,
@@ -2557,51 +2461,33 @@ class _ComboEditorDialogState
               // RAW MATERIAL LINES
               // ==================================================
 
-              if (_lines.isEmpty)
-                Container(
-                  padding:
-                  const EdgeInsets
-                      .all(20),
-                  decoration:
-                  BoxDecoration(
-                    border:
-                    Border.all(
-                      color:
-                      Theme.of(
-                        context,
-                      )
-                          .dividerColor,
+              Expanded(
+                child: _lines.isEmpty
+                    ? Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Theme.of(context).dividerColor,
                     ),
-                    borderRadius:
-                    BorderRadius
-                        .circular(
-                      8,
-                    ),
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  child:
-                  const Center(
+                  child: const Center(
                     child: Text(
-                      'No raw materials added.\nTap "Add Item".',
-                      textAlign:
-                      TextAlign.center,
+                      'No menu items added.\nTap "Add Item".',
+                      textAlign: TextAlign.center,
                     ),
                   ),
                 )
-              else
-                ..._lines.asMap().entries.map(
-                      (entry) {
-                    final index =
-                        entry.key;
-
-                    final line =
-                        entry.value;
-
+                    : ListView.builder(
+                  itemCount: _lines.length,
+                  itemBuilder: (context, index) {
                     return _buildComboLine(
                       index,
-                      line,
+                      _lines[index],
                     );
                   },
                 ),
+              ),
 
               const SizedBox(
                 height: 20,
@@ -2684,12 +2570,15 @@ class _ComboEditorDialogState
             child:
             DropdownButtonFormField<
                 int>(
+              isExpanded: true,
+              isDense: true,
               value:
               line.rawMaterialId,
               decoration:
               const InputDecoration(
                 labelText:
-                'Raw Material',
+                'Menu Item',
+                isDense: true,
                 border:
                 OutlineInputBorder(),
               ),
@@ -2713,32 +2602,19 @@ class _ComboEditorDialogState
               )
                   .map(
                     (material) {
+                  final sub =
+                      material.trimmedSubItem;
                   return DropdownMenuItem<
                       int>(
                     value:
                     material.id,
-                    child:
-                    Row(
-                      children: [
-                        _ItemImage(
-                          path:
-                          material
-                              .imagePath,
-                          size: 35,
-                          icon: Icons
-                              .inventory_2_outlined,
-                        ),
-                        const SizedBox(
-                          width: 8,
-                        ),
-                        Flexible(
-                          child:
-                          Text(
-                            material
-                                .name,
-                          ),
-                        ),
-                      ],
+                    child: Text(
+                      sub == null
+                          ? material.name
+                          : '${material.name} ($sub)',
+                      overflow:
+                      TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
                   );
                 },

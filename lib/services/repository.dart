@@ -3,9 +3,10 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:foodstock/database/api_config.dart';
+import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/model/models.dart';
-import 'package:sqflite/sqflite.dart';
 
 // ============================================================
 // PIN / PASSWORD
@@ -56,9 +57,8 @@ class Repository {
 
       static final Repository instance = Repository._();
 
-      Future<Database> get _db async {
-            DBHelper.init();
-            return DBHelper.instance.database;
+      Future<AppDb> get _db async {
+            return DBHelper.instance.appDb;
       }
 
       // ============================================================
@@ -77,7 +77,6 @@ class Repository {
             return db.insert(
                   'categories',
                   category.toMap()..remove('id'),
-                  conflictAlgorithm: ConflictAlgorithm.abort,
             );
       }
 
@@ -187,7 +186,6 @@ class Repository {
             return db.insert(
                   'units',
                   unit.toMap()..remove('id'),
-                  conflictAlgorithm: ConflictAlgorithm.abort,
             );
       }
 
@@ -200,6 +198,121 @@ class Repository {
             );
 
             return rows.map(UnitM.fromMap).toList();
+      }
+
+      /// Built-in units shown in dropdowns (Raw Materials, etc.).
+      /// These are not managed from a separate Units tab.
+      Future<void> ensureStandardUnits() async {
+            final existing = await units();
+            final names = existing
+                  .map((u) => u.name.trim().toLowerCase())
+                  .toSet();
+            final codes = existing
+                  .map((u) => u.shortCode.trim().toLowerCase())
+                  .toSet();
+
+            const standard = [
+                  ('Kilogram', 'kg'),
+                  ('Gram', 'g'),
+                  ('Litre', 'L'),
+                  ('Millilitre', 'ml'),
+                  ('Piece', 'pc'),
+                  ('Packet', 'pkt'),
+                  ('Dozen', 'doz'),
+                  ('Box', 'box'),
+            ];
+
+            for (final unit in standard) {
+                  final nameKey = unit.$1.toLowerCase();
+                  final codeKey = unit.$2.toLowerCase();
+                  if (names.contains(nameKey) || codes.contains(codeKey)) {
+                        continue;
+                  }
+
+                  await addUnit(
+                        UnitM(
+                              name: unit.$1,
+                              shortCode: unit.$2,
+                        ),
+                  );
+                  names.add(nameKey);
+                  codes.add(codeKey);
+            }
+      }
+
+      /// Built-in menu categories. Extra names can still be added in Masters.
+      Future<void> ensureDefaultCategories() async {
+            final existing = await categories(type: 'raw_material');
+            final names = existing
+                  .map((c) => c.name.trim().toLowerCase())
+                  .toSet();
+
+            const defaults = [
+                  'Starters',
+                  'Fried Items',
+                  'Buns',
+                  'Fillings',
+                  'Gravy',
+                  'Tandoor',
+                  'Rice',
+                  'Breads',
+                  'Sauces',
+                  'Chinese',
+                  'Meals',
+                  'Desserts',
+                  'Beverages',
+            ];
+
+            for (final name in defaults) {
+                  if (names.contains(name.toLowerCase())) continue;
+                  await addCategory(
+                        Category(
+                              name: name,
+                              type: 'raw_material',
+                        ),
+                  );
+                  names.add(name.toLowerCase());
+            }
+      }
+
+      Future<void> ensureDefaultUsers() async {
+            final db = await _db;
+            final now = DateTime.now().toIso8601String();
+
+            Future<void> insertIfMissing({
+                  required String username,
+                  required String password,
+                  required String role,
+            }) async {
+                  final rows = await db.query(
+                        'users',
+                        where: 'username = ?',
+                        whereArgs: [username],
+                        limit: 1,
+                  );
+                  if (rows.isNotEmpty) return;
+
+                  await db.insert(
+                        'users',
+                        {
+                              'username': username,
+                              'password_hash': hashPin(password),
+                              'role': role,
+                              'created_at': now,
+                        },
+                  );
+            }
+
+            await insertIfMissing(
+                  username: 'admin',
+                  password: 'admin123',
+                  role: 'admin',
+            );
+            await insertIfMissing(
+                  username: 'staff',
+                  password: 'staff123',
+                  role: 'staff',
+            );
       }
 
       // ============================================================
@@ -381,12 +494,29 @@ class Repository {
 
             await db.update(
                   'raw_materials',
-                  map,
+                  {
+                        ...map,
+                        'current_stock': rm.currentStock,
+                        'opening_stock': rm.openingStock,
+                  },
                   where: 'id = ?',
                   whereArgs: [rm.id],
             );
 
             return rm.id!;
+      }
+
+      Future<void> hideRawMaterial(int rawMaterialId) async {
+            final db = await _db;
+            await db.update(
+                  'raw_materials',
+                  {
+                    'listed': 0,
+                    'barcode': null,
+                  },
+                  where: 'id = ?',
+                  whereArgs: [rawMaterialId],
+            );
       }
 
       Future<bool> verifyRawMaterialPin(
@@ -418,22 +548,32 @@ class Repository {
 
       Future<List<RawMaterial>> rawMaterials({
             String? search,
+            bool includeHidden = false,
       }) async {
             final db = await _db;
 
             final cleanSearch = search?.trim();
+            final filters = <String>[];
+            final args = <Object>[];
+            if (!includeHidden) {
+                  filters.add('(listed IS NULL OR listed = 1)');
+            }
+            if (cleanSearch != null && cleanSearch.isNotEmpty) {
+                  filters.add(
+                    '(name LIKE ? OR sub_item LIKE ? OR barcode LIKE ? OR barcode = ?)',
+                  );
+                  args.addAll([
+                    '%$cleanSearch%',
+                    '%$cleanSearch%',
+                    '%$cleanSearch%',
+                    cleanSearch,
+                  ]);
+            }
 
             final rows = await db.query(
                   'raw_materials',
-                  where: cleanSearch == null || cleanSearch.isEmpty
-                      ? null
-                      : '(name LIKE ? OR barcode = ?)',
-                  whereArgs: cleanSearch == null || cleanSearch.isEmpty
-                      ? null
-                      : [
-                        '%$cleanSearch%',
-                        cleanSearch,
-                  ],
+                  where: filters.isEmpty ? null : filters.join(' AND '),
+                  whereArgs: args.isEmpty ? null : args,
                   orderBy: 'name ASC',
             );
 
@@ -1252,12 +1392,16 @@ class Repository {
       // ============================================================
 
       Future<double> _deductFEFO(
-          DatabaseExecutor txn,
+          AppDb txn,
           int rawMaterialId,
           double qtyNeeded, {
                 required String refType,
                 int? refId,
+                bool? allowNegative,
           }) async {
+            final permitNegative =
+                allowNegative ?? refType == 'sale_deduction';
+
             if (qtyNeeded <= 0.0) {
                   return _getCurrentStock(
                         txn,
@@ -1282,7 +1426,8 @@ class Repository {
             final double currentStock =
             (materialRows.first['current_stock'] as num).toDouble();
 
-            if (currentStock + 1e-9 < qtyNeeded) {
+            if (!permitNegative &&
+                currentStock + 1e-9 < qtyNeeded) {
                   throw InsufficientStockException(
                         materialName: materialRows.first['name'] as String,
                         needed: qtyNeeded,
@@ -1340,7 +1485,7 @@ class Repository {
                   remaining -= take;
             }
 
-            if (remaining > 0.000001) {
+            if (!permitNegative && remaining > 0.000001) {
                   throw InvalidInventoryException(
                         'Stock batch data is inconsistent for '
                             '${materialRows.first['name']}.',
@@ -1373,7 +1518,7 @@ class Repository {
       // ============================================================
 
       Future<double> _getCurrentStock(
-          DatabaseExecutor txn,
+          AppDb txn,
           int rawMaterialId,
           ) async {
             final rows = await txn.query(
@@ -1397,7 +1542,7 @@ class Repository {
       }
 
       Future<double> _bumpStock(
-          DatabaseExecutor txn,
+          AppDb txn,
           int rawMaterialId,
           double delta,
           ) async {
@@ -1420,12 +1565,6 @@ class Repository {
 
             final double next = current + delta;
 
-            if (next < -0.000001) {
-                  throw InvalidInventoryException(
-                        'Stock cannot become negative.',
-                  );
-            }
-
             final double safeNext =
             next.abs() < 0.000001 ? 0.0 : next;
 
@@ -1446,7 +1585,7 @@ class Repository {
       // ============================================================
 
       Future<void> _writeLedger({
-            DatabaseExecutor? txn,
+            AppDb? txn,
             required int rawMaterialId,
             required String refType,
             int? refId,
@@ -1498,6 +1637,7 @@ class Repository {
       SELECT
         rm.id,
         rm.name,
+        rm.sub_item,
         rm.barcode,
         rm.current_stock,
         rm.reorder_level,
@@ -1662,18 +1802,23 @@ class Repository {
                   columns: [
                         'id',
                         'current_stock',
+                        'qty_needed',
                   ],
             );
 
             final result = <int, double>{};
 
             for (final row in rows) {
-                  final id = row['id'] as int;
+                  final id = (row['id'] as num).toInt();
 
                   final double stock =
                       (row['current_stock'] as num?)?.toDouble() ?? 0.0;
+                  final double needed =
+                      (row['qty_needed'] as num?)?.toDouble() ?? 1.0;
+                  final perSale = needed <= 0 ? 1.0 : needed;
 
-                  result[id] = stock < 0.0 ? 0.0 : stock;
+                  final sellable = stock / perSale;
+                  result[id] = sellable;
             }
 
             return result;
@@ -1721,8 +1866,7 @@ class Repository {
                   final double maxQty =
                       (row['max_qty'] as num?)?.toDouble() ?? 0.0;
 
-                  result[comboId] =
-                  maxQty < 0.0 ? 0.0 : maxQty;
+                  result[comboId] = maxQty;
             }
 
             return result;
@@ -1858,43 +2002,6 @@ class Repository {
                   );
 
                   // ----------------------------------------------------------
-                  // CHECK STOCK BEFORE WRITING ANYTHING
-                  // ----------------------------------------------------------
-
-                  for (final entry in totalNeeded.entries) {
-                        final rows = await txn.query(
-                              'raw_materials',
-                              columns: [
-                                    'name',
-                                    'current_stock',
-                              ],
-                              where: 'id = ?',
-                              whereArgs: [entry.key],
-                              limit: 1,
-                        );
-
-                        if (rows.isEmpty) {
-                              throw InvalidInventoryException(
-                                    'Sale references a raw material '
-                                        'that no longer exists.',
-                              );
-                        }
-
-                        final double available =
-                        (rows.first['current_stock'] as num)
-                            .toDouble();
-
-                        if (available + 1e-9 < entry.value) {
-                              throw InsufficientStockException(
-                                    materialName:
-                                    rows.first['name'] as String,
-                                    needed: entry.value,
-                                    available: available,
-                              );
-                        }
-                  }
-
-                  // ----------------------------------------------------------
                   // CREATE SALE
                   // ----------------------------------------------------------
 
@@ -1926,6 +2033,7 @@ class Repository {
                                     line.rawMaterialId,
                                     'combo_id': line.comboId,
                                     'item_name': line.name,
+                                    'sub_item': line.subItem,
                                     'qty': line.qty,
                                     'price': line.price,
                                     'amount': line.amount,
@@ -1944,6 +2052,7 @@ class Repository {
                               entry.value,
                               refType: 'sale_deduction',
                               refId: saleId,
+                              allowNegative: true,
                         );
                   }
 
@@ -1986,7 +2095,7 @@ class Repository {
 
       Future<Map<int, double>>
       _expandCartToRawMaterialNeeds(
-          DatabaseExecutor txn,
+          AppDb txn,
           List<CartLine> lines,
           ) async {
             final totalNeeded = <int, double>{};
@@ -2004,7 +2113,11 @@ class Repository {
                             totalNeeded[rawMaterialId] ?? 0.0;
 
                         totalNeeded[rawMaterialId] =
-                            existing + line.qty;
+                            existing +
+                                (line.qty * await _qtyNeeded(
+                                  txn,
+                                  rawMaterialId,
+                                ));
 
                         continue;
                   }
@@ -2072,7 +2185,12 @@ class Repository {
                               }
 
                               final double requiredQty =
-                                  comboQty * line.qty;
+                                  comboQty *
+                                      line.qty *
+                                      await _qtyNeeded(
+                                        txn,
+                                        rawMaterialId,
+                                      );
 
                               final double existing =
                                   totalNeeded[rawMaterialId] ?? 0.0;
@@ -2086,12 +2204,31 @@ class Repository {
             return totalNeeded;
       }
 
+      Future<double> _qtyNeeded(
+            AppDb txn,
+            int rawMaterialId,
+            ) async {
+            final rows = await txn.query(
+                  'raw_materials',
+                  columns: ['qty_needed'],
+                  where: 'id = ?',
+                  whereArgs: [rawMaterialId],
+                  limit: 1,
+            );
+
+            if (rows.isEmpty) return 1;
+
+            final value =
+                (rows.first['qty_needed'] as num?)?.toDouble() ?? 1;
+            return value <= 0 ? 1 : value;
+      }
+
       // ============================================================
       // CUSTOMER BALANCE
       // ============================================================
 
       Future<double> _customerBalance(
-          DatabaseExecutor executor,
+          AppDb executor,
           int customerId,
           ) async {
             final rows = await executor.query(
@@ -2529,17 +2666,105 @@ class Repository {
                   '''
       SELECT
         si.item_name,
+        si.sub_item,
         SUM(si.qty) AS total_qty,
         SUM(si.amount) AS total_amount
       FROM sale_items si
       JOIN sales s
         ON s.id = si.sale_id
       WHERE s.is_voided = 0
-      GROUP BY si.item_name
+      GROUP BY si.item_name, si.sub_item
       ORDER BY total_qty DESC
       LIMIT ?
       ''',
                   [limit],
+            );
+      }
+
+      Future<List<Map<String, dynamic>>> itemSalesReport() async {
+            final db = await _db;
+
+            final countRows = await db.rawQuery(
+                  'SELECT COUNT(*) AS cnt FROM sales WHERE is_voided = 0',
+            );
+            final saleCount =
+                (countRows.isEmpty
+                    ? 0
+                    : (countRows.first['cnt'] as num?)?.toInt()) ??
+                0;
+            if (saleCount == 0) {
+                  return const [];
+            }
+
+            return db.rawQuery(
+                  '''
+      WITH component_usage AS (
+        SELECT
+          crm.raw_material_id AS raw_material_id,
+          SUM(
+            crm.qty * si.qty * COALESCE(rm.qty_needed, 1)
+          ) AS consumed_qty
+        FROM sale_items si
+        JOIN sales s
+          ON s.id = si.sale_id
+        JOIN combo_raw_materials crm
+          ON crm.combo_id = si.combo_id
+        JOIN raw_materials rm
+          ON rm.id = crm.raw_material_id
+        WHERE s.is_voided = 0
+          AND si.combo_id IS NOT NULL
+        GROUP BY crm.raw_material_id
+      ),
+      direct_sales AS (
+        SELECT
+          si.raw_material_id AS raw_material_id,
+          SUM(si.qty) AS sold_qty,
+          SUM(si.amount) AS total_amount
+        FROM sale_items si
+        JOIN sales s
+          ON s.id = si.sale_id
+        WHERE s.is_voided = 0
+          AND si.raw_material_id IS NOT NULL
+        GROUP BY si.raw_material_id
+      )
+      SELECT
+        rm.name AS item_name,
+        rm.sub_item AS sub_item,
+        COALESCE(ds.sold_qty, 0) + COALESCE(cu.consumed_qty, 0) AS sold_qty,
+        COALESCE(ds.total_amount, 0) AS total_amount,
+        rm.current_stock AS current_stock,
+        'item' AS sale_kind
+      FROM raw_materials rm
+      LEFT JOIN direct_sales ds
+        ON ds.raw_material_id = rm.id
+      LEFT JOIN component_usage cu
+        ON cu.raw_material_id = rm.id
+      WHERE COALESCE(ds.sold_qty, 0) + COALESCE(cu.consumed_qty, 0) > 0
+
+      UNION ALL
+
+      SELECT
+        si.item_name AS item_name,
+        si.sub_item AS sub_item,
+        SUM(si.qty) AS sold_qty,
+        SUM(si.amount) AS total_amount,
+        NULL AS current_stock,
+        'combo' AS sale_kind
+      FROM sale_items si
+      JOIN sales s
+        ON s.id = si.sale_id
+      WHERE s.is_voided = 0
+        AND si.combo_id IS NOT NULL
+      GROUP BY
+        si.combo_id,
+        si.item_name,
+        COALESCE(si.sub_item, '')
+
+      ORDER BY
+        sale_kind ASC,
+        item_name ASC,
+        sub_item ASC
+      ''',
             );
       }
 
@@ -2646,6 +2871,103 @@ class Repository {
         rm.name ASC
       ''',
             );
+      }
+
+      // ============================================================
+      // DEMO RESET (SETTINGS → RESET)
+      // ============================================================
+
+      /// Deletes sales and purchases, clears stock movement history, and
+      /// restores each menu item's stock to its opening_stock. Keeps menu
+      /// items, categories, units, customers, combos, and suppliers.
+      Future<void> resetDemoTransactionData() async {
+            final db = await _db;
+
+            await db.transaction((txn) async {
+                  await txn.delete('customer_ledger');
+                  await txn.delete('sale_items');
+                  await txn.delete('sales');
+                  await txn.delete('purchase_items');
+                  await txn.delete('purchases');
+                  await txn.delete('stock_ledger');
+                  await txn.delete('stock_adjustments');
+                  await txn.delete('stock_batches');
+            });
+
+            await resetAllStockToOpening();
+
+            if (!ApiConfig.enabled) {
+                  final sqlite = await DBHelper.instance.database;
+                  await sqlite.delete(
+                        'sqlite_sequence',
+                        where: '''
+                          name IN (
+                            ?, ?, ?, ?, ?, ?, ?, ?
+                          )
+                        ''',
+                        whereArgs: [
+                          'sale_items',
+                          'sales',
+                          'customer_ledger',
+                          'stock_ledger',
+                          'stock_adjustments',
+                          'purchase_items',
+                          'purchases',
+                          'stock_batches',
+                        ],
+                  );
+            }
+      }
+
+      /// Sets every item's stock to its opening_stock and rebuilds batches.
+      Future<void> resetAllStockToOpening() async {
+            final db = await _db;
+            final now = DateTime.now().toIso8601String();
+
+            await db.transaction((txn) async {
+                  await txn.delete('stock_ledger');
+                  await txn.delete('stock_adjustments');
+                  await txn.delete('stock_batches');
+
+                  final materials = await txn.query('raw_materials');
+                  for (final row in materials) {
+                        final id = (row['id'] as num).toInt();
+                        final opening =
+                            (row['opening_stock'] as num?)?.toDouble() ?? 0.0;
+                        final cost =
+                            (row['cost_price'] as num?)?.toDouble();
+
+                        await txn.update(
+                              'raw_materials',
+                              {'current_stock': opening},
+                              where: 'id = ?',
+                              whereArgs: [id],
+                        );
+
+                        if (opening > 0.0) {
+                              await txn.insert(
+                                    'stock_batches',
+                                    {
+                                          'raw_material_id': id,
+                                          'qty_remaining': opening,
+                                          'rate': cost,
+                                          'expiry_date': null,
+                                          'purchase_item_id': null,
+                                          'created_at': now,
+                                    },
+                              );
+
+                              await _writeLedger(
+                                    txn: txn,
+                                    rawMaterialId: id,
+                                    refType: 'opening',
+                                    qtyIn: opening,
+                                    unitCost: cost,
+                                    balanceAfter: opening,
+                              );
+                        }
+                  }
+            });
       }
 
       // ============================================================

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import '../services/report_pdf.dart';
 import '../services/repository.dart';
 import '../widgets/responsive_shell.dart';
 
@@ -15,7 +16,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 5, vsync: this);
+    _tab = TabController(length: 6, vsync: this);
   }
 
   @override
@@ -28,6 +29,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
             isScrollable: true,
             tabs: const [
               Tab(text: 'Stock Report'),
+              Tab(text: 'Item Sales'),
               Tab(text: 'Sales Report'),
               Tab(text: 'Day End'),
               Tab(text: 'Purchase Report'),
@@ -37,6 +39,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
           Expanded(
             child: TabBarView(controller: _tab, children: const [
               _StockReportTab(),
+              _ItemSalesTab(),
               _SalesReportTab(),
               _DayEndTab(),
               _PurchaseReportTab(),
@@ -67,11 +70,20 @@ class _StockReportTabState extends State<_StockReportTab> {
 
   Future<void> _load() async {
     setState(() => _loading = true);
-    final r = await Repository.instance.currentStockReport();
-    setState(() {
-      _rows = r;
-      _loading = false;
-    });
+    try {
+      final r = await Repository.instance.currentStockReport();
+      if (!mounted) return;
+      setState(() {
+        _rows = r;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _rows = [];
+        _loading = false;
+      });
+    }
   }
 
   double _rowValue(Map<String, dynamic> r) {
@@ -95,7 +107,12 @@ class _StockReportTabState extends State<_StockReportTab> {
     final lowStockCount = _rows.where((r) {
       final stock = (r['current_stock'] as num?)?.toDouble() ?? 0;
       final reorder = (r['reorder_level'] as num?)?.toDouble() ?? 0;
-      return stock <= reorder;
+      return stock >= 0 && stock <= reorder;
+    }).length;
+
+    final negativeStockCount = _rows.where((r) {
+      final stock = (r['current_stock'] as num?)?.toDouble() ?? 0;
+      return stock < -0.000001;
     }).length;
 
     // Items with no Cost Price set — their value can't be counted,
@@ -108,10 +125,11 @@ class _StockReportTabState extends State<_StockReportTab> {
         children: [
           Expanded(
             child: _rows.isEmpty
-                ? const Center(child: Text('No raw materials yet'))
+                ? const Center(child: Text('No menu items yet'))
                 : SingleChildScrollView(
               child: DataTable(columns: const [
                 DataColumn(label: Text('Item')),
+                DataColumn(label: Text('Sub Item')),
                 DataColumn(label: Text('Category')),
                 DataColumn(label: Text('Stock')),
                 DataColumn(label: Text('Unit')),
@@ -119,17 +137,33 @@ class _StockReportTabState extends State<_StockReportTab> {
               ], rows: _rows.map((r) {
                 final stock = (r['current_stock'] as num?)?.toDouble() ?? 0;
                 final reorder = (r['reorder_level'] as num?)?.toDouble() ?? 0;
-                final low = stock <= reorder;
+                final negative = stock < -0.000001;
+                final low = !negative && stock <= reorder;
                 final value = _rowValue(r);
                 final hasPrice = r['cost_price'] != null;
+                final stockStyle = negative
+                    ? const TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
+                      )
+                    : low
+                        ? const TextStyle(
+                            color: Colors.red,
+                            fontWeight: FontWeight.bold,
+                          )
+                        : null;
 
                 return DataRow(cells: [
                   DataCell(Text(
                     r['name'] ?? '',
-                    style: low ? const TextStyle(color: Colors.red, fontWeight: FontWeight.bold) : null,
+                    style: stockStyle,
                   )),
+                  DataCell(Text(r['sub_item']?.toString() ?? '-')),
                   DataCell(Text(r['category'] ?? '-')),
-                  DataCell(Text(_formatNumber(stock))),
+                  DataCell(Text(
+                    _formatNumber(stock),
+                    style: stockStyle,
+                  )),
                   DataCell(Text(r['unit'] ?? '-')),
                   DataCell(Text(
                     hasPrice ? _formatNumber(value) : '—',
@@ -172,6 +206,15 @@ class _StockReportTabState extends State<_StockReportTab> {
                           '$lowStockCount low stock',
                           style: const TextStyle(color: Colors.red, fontSize: 13, fontWeight: FontWeight.w600),
                         ),
+                      if (negativeStockCount > 0)
+                        Text(
+                          '$negativeStockCount negative stock',
+                          style: TextStyle(
+                            color: Colors.red.shade900,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
                     ],
                   ),
                   if (missingPriceCount > 0) ...[
@@ -188,6 +231,197 @@ class _StockReportTabState extends State<_StockReportTab> {
         ],
       ),
     );
+  }
+}
+
+class _ItemSalesTab extends StatefulWidget {
+  const _ItemSalesTab();
+  @override
+  State<_ItemSalesTab> createState() => _ItemSalesTabState();
+}
+
+class _ItemSalesTabState extends State<_ItemSalesTab> {
+  List<Map<String, dynamic>> _rows = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  String? _error;
+
+  Future<void> _load() async {
+    try {
+      final r = await Repository.instance
+          .itemSalesReport()
+          .timeout(const Duration(seconds: 25));
+      if (!mounted) return;
+      setState(() {
+        _rows = r;
+        _error = null;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _rows = [];
+        _error = '$e';
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(height: 12),
+              Text('Loading item sales…'),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_error!, textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              FilledButton(
+                onPressed: () {
+                  setState(() {
+                    _loading = true;
+                    _error = null;
+                  });
+                  _load();
+                },
+                child: const Text('Retry'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    if (_rows.isEmpty) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'No sales yet.\nComplete a bill in Sales / POS, then open this tab again.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+
+    final totalQty = _rows.fold<double>(
+      0,
+      (sum, r) => sum + ((r['sold_qty'] as num?)?.toDouble() ?? 0),
+    );
+    final totalAmt = _rows.fold<double>(
+      0,
+      (sum, r) => sum + ((r['total_amount'] as num?)?.toDouble() ?? 0),
+    );
+
+    return ResponsivePage(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Total sold: ${_formatNumber(totalQty)}  •  ₹${totalAmt.toStringAsFixed(2)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: () async {
+                  await ReportPdf.shareTable(
+                    title: 'Item Sales',
+                    headers: const ['Item', 'Sub item', 'Sold qty', 'Amount'],
+                    rows: _rows
+                        .map(
+                          (r) => [
+                            r['item_name']?.toString() ?? '',
+                            (r['sub_item'] as String?)?.trim() ?? '',
+                            r['sold_qty']?.toString() ?? '',
+                            '₹${r['total_amount']}',
+                          ],
+                        )
+                        .toList(),
+                    totalLine:
+                        'Total sold ${_formatNumber(totalQty)}  •  Amount ₹${totalAmt.toStringAsFixed(2)}',
+                  );
+                },
+                icon: const Icon(Icons.picture_as_pdf, size: 18),
+                label: const Text('Share PDF'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: ListView.separated(
+              itemCount: _rows.length,
+              separatorBuilder: (_, __) => const Divider(height: 1),
+              itemBuilder: (context, i) {
+                final r = _rows[i];
+                final sub = (r['sub_item'] as String?)?.trim();
+                final stock = (r['current_stock'] as num?)?.toDouble();
+                final kind = r['sale_kind']?.toString() ?? 'item';
+                final kindLabel = kind == 'combo'
+                    ? 'Combo bundle'
+                    : kind == 'component'
+                        ? 'Used in combos'
+                        : null;
+                final negativeStock =
+                    stock != null && stock < -0.000001;
+                return ListTile(
+                  title: Text(r['item_name']?.toString() ?? ''),
+                  subtitle: Text(
+                    [
+                      if (kindLabel != null) kindLabel,
+                      if (sub != null && sub.isNotEmpty) sub,
+                      'Sold ${r['sold_qty']}',
+                      if (stock != null)
+                        negativeStock
+                            ? 'Stock ${_formatNumber(stock)} (negative)'
+                            : 'Stock left ${_formatNumber(stock)}',
+                    ].join('  •  '),
+                    style: negativeStock
+                        ? TextStyle(
+                            color: Colors.red.shade800,
+                            fontWeight: FontWeight.w600,
+                          )
+                        : null,
+                  ),
+                  trailing: Text('₹${r['total_amount']}'),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _formatNumber(double value) {
+    if ((value - value.roundToDouble()).abs() < 0.000001) {
+      return value.round().toString();
+    }
+    return value.toStringAsFixed(2);
   }
 }
 
@@ -403,18 +637,80 @@ class _PurchaseReportTabState extends State<_PurchaseReportTab> {
 
   @override
   Widget build(BuildContext context) {
+    final totalAmt = _rows.fold<double>(
+      0,
+      (sum, r) => sum + ((r['amount'] as num?)?.toDouble() ?? 0),
+    );
+
     return ResponsivePage(
-      child: ListView.separated(
-        itemCount: _rows.length,
-        separatorBuilder: (_, __) => const Divider(height: 1),
-        itemBuilder: (context, i) {
-          final r = _rows[i];
-          return ListTile(
-            title: Text('${r['material_name']}  •  qty ${r['qty']} @ ₹${r['rate']}'),
-            subtitle: Text('${r['supplier_name'] ?? '-'}  •  ${r['purchase_date']}'),
-            trailing: Text('₹${r['amount']}'),
-          );
-        },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Total purchase: ₹${totalAmt.toStringAsFixed(2)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+              FilledButton.icon(
+                onPressed: _rows.isEmpty
+                    ? null
+                    : () async {
+                        await ReportPdf.shareTable(
+                          title: 'Purchase Report',
+                          headers: const [
+                            'Date',
+                            'Supplier',
+                            'Item',
+                            'Qty',
+                            'Rate',
+                            'Amount',
+                          ],
+                          rows: _rows
+                              .map(
+                                (r) => [
+                                  r['purchase_date']?.toString() ?? '',
+                                  r['supplier_name']?.toString() ?? '-',
+                                  r['material_name']?.toString() ?? '',
+                                  r['qty']?.toString() ?? '',
+                                  '₹${r['rate']}',
+                                  '₹${r['amount']}',
+                                ],
+                              )
+                              .toList(),
+                          totalLine:
+                              'Total purchase ₹${totalAmt.toStringAsFixed(2)}',
+                        );
+                      },
+                icon: const Icon(Icons.picture_as_pdf, size: 18),
+                label: const Text('Share PDF'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _rows.isEmpty
+                ? const Center(child: Text('No purchases yet'))
+                : ListView.separated(
+                    itemCount: _rows.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, i) {
+                      final r = _rows[i];
+                      return ListTile(
+                        title: Text(
+                          '${r['material_name']}  •  qty ${r['qty']} @ ₹${r['rate']}',
+                        ),
+                        subtitle: Text(
+                          '${r['supplier_name'] ?? '-'}  •  ${r['purchase_date']}',
+                        ),
+                        trailing: Text('₹${r['amount']}'),
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
     );
   }
@@ -457,7 +753,18 @@ class _TopSellingTabState extends State<_TopSellingTab> {
                     if (idx < 0 || idx >= _rows.length) return const SizedBox.shrink();
                     return Padding(
                       padding: const EdgeInsets.only(top: 4),
-                      child: Text(_rows[idx]['item_name'], style: const TextStyle(fontSize: 10)),
+                      child: Text(
+                        [
+                          _rows[idx]['item_name'],
+                          if ((_rows[idx]['sub_item'] as String?)
+                                  ?.trim()
+                                  .isNotEmpty ==
+                              true)
+                            _rows[idx]['sub_item'],
+                        ].join('\n'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 9),
+                      ),
                     );
                   },
                 ),

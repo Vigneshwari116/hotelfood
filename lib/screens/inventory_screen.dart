@@ -90,16 +90,31 @@ class _CurrentStockTabState extends State<_CurrentStockTab> {
           rows: _rows.map((r) {
             final cur = (r['current_stock'] as num).toDouble();
             final reorder = (r['reorder_level'] as num).toDouble();
-            final low = cur <= reorder;
+            final negative = cur < -0.000001;
+            final low = !negative && cur <= reorder;
+            final statusLabel = negative ? 'Negative' : low ? 'Low' : 'OK';
+            final statusColor = negative
+                ? Colors.red.shade200
+                : low
+                    ? Colors.red.shade100
+                    : Colors.green.shade100;
             return DataRow(cells: [
               DataCell(Text(r['name'])),
               DataCell(Text(r['category'] ?? '-')),
               DataCell(Text(r['unit'] ?? '-')),
-              DataCell(Text(cur.toStringAsFixed(2))),
+              DataCell(Text(
+                cur.toStringAsFixed(2),
+                style: negative
+                    ? const TextStyle(
+                        color: Colors.red,
+                        fontWeight: FontWeight.bold,
+                      )
+                    : null,
+              )),
               DataCell(Text(reorder.toStringAsFixed(2))),
               DataCell(Chip(
-                label: Text(low ? 'Low' : 'OK'),
-                backgroundColor: low ? Colors.red.shade100 : Colors.green.shade100,
+                label: Text(statusLabel),
+                backgroundColor: statusColor,
               )),
             ]);
           }).toList(),

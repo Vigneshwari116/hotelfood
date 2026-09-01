@@ -8,12 +8,14 @@ class BarcodeField extends StatelessWidget {
   final TextEditingController controller;
   final String label;
   final ValueChanged<String>? onSubmitted;
+  final bool isDense;
 
   const BarcodeField({
     super.key,
     required this.controller,
     this.label = 'Barcode',
     this.onSubmitted,
+    this.isDense = false,
   });
 
   bool get _canUseCamera =>
@@ -25,7 +27,11 @@ class BarcodeField extends StatelessWidget {
       controller: controller,
       decoration: InputDecoration(
         labelText: label,
+        isDense: isDense,
         border: const OutlineInputBorder(),
+        contentPadding: isDense
+            ? const EdgeInsets.symmetric(horizontal: 12, vertical: 10)
+            : null,
         prefixIcon: const Icon(Icons.qr_code_scanner),
         suffixIcon: _canUseCamera
             ? IconButton(

@@ -4,6 +4,10 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+base {
+    archivesName.set("ShilpaEnterprise")
+}
+
 android {
     namespace = "com.example.foodstock"
     compileSdk = 36
@@ -19,7 +23,7 @@ android {
         applicationId = "com.example.foodstock"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        minSdk = maxOf(flutter.minSdkVersion, 23)
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
@@ -42,4 +46,15 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+tasks.matching { it.name == "assembleRelease" }.configureEach {
+    doLast {
+        val dir = layout.buildDirectory.dir("outputs/apk/release").get().asFile
+        val built = dir.listFiles()?.firstOrNull { it.extension == "apk" } ?: return@doLast
+        val named = dir.resolve("ShilpaEnterprise.apk")
+        if (built.absolutePath != named.absolutePath) {
+            built.copyTo(named, overwrite = true)
+        }
+    }
 }

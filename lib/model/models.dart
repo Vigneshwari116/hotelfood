@@ -167,6 +167,8 @@ class RawMaterial {
 
   final String? barcode;
   final String name;
+  final String? subItem;
+  final double qtyNeeded;
 
   final int? categoryId;
   final int? unitId;
@@ -185,12 +187,16 @@ class RawMaterial {
 
   final String? imagePath;
 
+  final bool listed;
+
   final DateTime? createdAt;
 
   RawMaterial({
     this.id,
     this.barcode,
     required this.name,
+    this.subItem,
+    this.qtyNeeded = 1,
     this.categoryId,
     this.unitId,
     this.openingStock = 0,
@@ -202,14 +208,18 @@ class RawMaterial {
     this.costPrice,
     this.sellingPrice,
     this.imagePath,
+    this.listed = true,
     this.createdAt,
   });
 
   factory RawMaterial.fromMap(Map<String, dynamic> map) {
     return RawMaterial(
-      id: map['id'] as int?,
+      id: (map['id'] as num?)?.toInt(),
       barcode: map['barcode']?.toString(),
       name: map['name']?.toString() ?? '',
+      subItem: map['sub_item']?.toString(),
+      qtyNeeded:
+      (map['qty_needed'] as num?)?.toDouble() ?? 1,
       categoryId: map['category_id'] as int?,
       unitId: map['unit_id'] as int?,
       openingStock:
@@ -230,6 +240,7 @@ class RawMaterial {
       (map['selling_price'] as num?)?.toDouble(),
       imagePath:
       map['image_path']?.toString(),
+      listed: (map['listed'] as num?)?.toInt() != 0,
       createdAt:
       _parseDate(map['created_at']),
     );
@@ -240,6 +251,8 @@ class RawMaterial {
       'id': id,
       'barcode': barcode,
       'name': name,
+      'sub_item': subItem,
+      'qty_needed': qtyNeeded,
       'category_id': categoryId,
       'unit_id': unitId,
       'opening_stock': openingStock,
@@ -251,6 +264,7 @@ class RawMaterial {
       'cost_price': costPrice,
       'selling_price': sellingPrice,
       'image_path': imagePath,
+      'listed': listed ? 1 : 0,
       'created_at':
       createdAt?.toIso8601String() ??
           DateTime.now().toIso8601String(),
@@ -259,6 +273,12 @@ class RawMaterial {
 
   bool get isLowStock {
     return currentStock <= reorderLevel;
+  }
+
+  String? get trimmedSubItem {
+    final value = subItem?.trim();
+    if (value == null || value.isEmpty) return null;
+    return value;
   }
 }
 
@@ -307,7 +327,9 @@ class Combo {
       name: map['name']?.toString() ?? '',
       barcode: map['barcode']?.toString(),
       categoryId: map['category_id'] as int?,
-      price: (map['price'] as num?)?.toDouble() ?? 0,
+      price: (map['price'] as num?)?.toDouble() ??
+          (map['selling_price'] as num?)?.toDouble() ??
+          0,
       imagePath: map['image_path']?.toString(),
       isActive: (map['is_active'] as num?)?.toInt() == 1,
       items: const [],
@@ -468,6 +490,7 @@ class CartLine {
   final int? comboId;
 
   final String name;
+  final String? subItem;
 
   final double qty;
   final double price;
@@ -476,6 +499,7 @@ class CartLine {
     this.rawMaterialId,
     this.comboId,
     required this.name,
+    this.subItem,
     required this.qty,
     required this.price,
   });
@@ -499,6 +523,7 @@ class CartLine {
       'raw_material_id': rawMaterialId,
       'combo_id': comboId,
       'item_name': name,
+      'sub_item': subItem,
       'qty': qty,
       'price': price,
       'amount': amount,

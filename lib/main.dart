@@ -1,8 +1,17 @@
+import 'dart:io' show Platform;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:foodstock/database/database_helper.dart';
+import 'package:foodstock/database/api_config.dart';
+import 'package:foodstock/services/auth_session.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'services/item_import_service.dart';
 import 'services/repository.dart';
 
+import 'widgets/brand_logo.dart';
 import 'widgets/responsive_shell.dart';
+import 'theme/brand_theme.dart';
 
 import 'screens/dashboard_screen.dart';
 import 'screens/simple_masters_screen.dart';
@@ -10,8 +19,10 @@ import 'screens/raw_material_master_screen.dart';
 import 'screens/purchase_screen.dart';
 import 'screens/inventory_screen.dart';
 import 'screens/pos_screen.dart';
-import 'screens/customers_screen.dart';
 import 'screens/reports_screen.dart';
+import 'screens/printer_settings_screen.dart';
+import 'screens/backup_screen.dart';
+import 'screens/reset_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,37 +43,10 @@ class RestoPosApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Five Star — Order & Stock Console',
+      title: 'Shilpa Enterprise',
       debugShowCheckedModeBanner: false,
 
-      theme: ThemeData(
-        useMaterial3: true,
-
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: const Color(0xFF8B1E1E),
-          primary: const Color(0xFF8B1E1E),
-          secondary: const Color(0xFFE0A526),
-        ),
-
-        scaffoldBackgroundColor: const Color(0xFFF7EFE1),
-
-        appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF8B1E1E),
-          foregroundColor: Colors.white,
-          elevation: 0,
-        ),
-
-        inputDecorationTheme: const InputDecorationTheme(
-          filled: true,
-          fillColor: Colors.white,
-          border: OutlineInputBorder(),
-        ),
-
-        cardTheme: const CardThemeData(
-          elevation: 1,
-          margin: EdgeInsets.zero,
-        ),
-      ),
+      theme: buildBrandTheme(),
 
       home: const _StartupGate(),
     );
@@ -82,6 +66,7 @@ class _StartupGate extends StatefulWidget {
 
 class _StartupGateState extends State<_StartupGate> {
   late Future<void> _ready;
+  AuthSession? _session;
 
   @override
   void initState() {
@@ -91,34 +76,52 @@ class _StartupGateState extends State<_StartupGate> {
   }
 
   Future<void> _initializeApp() async {
-    final db = await DBHelper.instance.database;
-
-    // --------------------------------------------------------
-    // CREATE DEFAULT ADMIN IF NO USER EXISTS
-    // --------------------------------------------------------
-
-    final rows = await db.query(
-      'users',
-      limit: 1,
-    );
-
-    if (rows.isEmpty) {
-      await db.insert(
-        'users',
-        {
-          'username': 'admin',
-          'password_hash': hashPin('admin123'),
-          'role': 'admin',
-          'created_at': DateTime.now().toIso8601String(),
-        },
+    await DBHelper.instance.appDb;
+    await Repository.instance.ensureDefaultUsers();
+    await Repository.instance.ensureStandardUnits();
+    await Repository.instance.ensureDefaultCategories();
+    try {
+      const seedKey = 'menu_csv_seed';
+      const seedVersion = 7;
+      final remote = ApiConfig.enabled;
+      int seeded;
+      if (remote) {
+        final db = await DBHelper.instance.appDb;
+        final rows = await db.query(
+          'app_meta',
+          where: 'key = ?',
+          whereArgs: [seedKey],
+        );
+        seeded = rows.isEmpty
+            ? 0
+            : int.tryParse(rows.first['value']?.toString() ?? '') ?? 0;
+      } else {
+        final prefs = await SharedPreferences.getInstance();
+        seeded = prefs.getInt(seedKey) ?? 0;
+      }
+      await ItemImportService().importCsvText(
+        await rootBundle.loadString(
+          'assets/templates/menu_items_import.csv',
+        ),
+        updateExisting: seeded < seedVersion,
+        replaceCatalog: seeded < seedVersion,
       );
-    }
-
-    // --------------------------------------------------------
-    // WRITE OFF EXPIRED STOCK
-    // --------------------------------------------------------
-
+      if (seeded < seedVersion) {
+        if (remote) {
+          final db = await DBHelper.instance.appDb;
+          await db.delete('app_meta', where: 'key = ?', whereArgs: [seedKey]);
+          await db.insert('app_meta', {
+            'key': seedKey,
+            'value': '$seedVersion',
+          });
+        } else {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setInt(seedKey, seedVersion);
+        }
+      }
+    } catch (_) {}
     await Repository.instance.writeOffExpiredStock();
+    _session = await AuthSession.load();
   }
 
   @override
@@ -182,6 +185,14 @@ class _StartupGateState extends State<_StartupGate> {
           );
         }
 
+        final session = _session;
+        if (session != null) {
+          return MainShell(
+            username: session.username,
+            role: session.role,
+          );
+        }
+
         return const LoginScreen();
       },
     );
@@ -200,10 +211,7 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _user = TextEditingController(
-    text: 'admin',
-  );
-
+  final _user = TextEditingController();
   final _pass = TextEditingController();
 
   String? _error;
@@ -235,7 +243,7 @@ class _LoginScreenState extends State<LoginScreen> {
     });
 
     try {
-      final db = await DBHelper.instance.database;
+      final db = await DBHelper.instance.appDb;
 
       final rows = await db.query(
         'users',
@@ -253,11 +261,18 @@ class _LoginScreenState extends State<LoginScreen> {
         return;
       }
 
+      final role = (rows.first['role'] ?? 'staff').toString();
+
+      await AuthSession.save(username: username, role: role);
+
       if (!mounted) return;
 
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => const MainShell(),
+          builder: (_) => MainShell(
+            username: username,
+            role: role,
+          ),
         ),
       );
     } catch (e) {
@@ -286,35 +301,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // LOGO
-                    const Icon(
-                      Icons.storefront,
-                      size: 60,
-                      color: Color(0xFF8B1E1E),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    const Text(
-                      'FIVE STAR',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 26,
-                        fontWeight: FontWeight.bold,
-                        color: Color(0xFF8B1E1E),
-                      ),
-                    ),
-
-                    const SizedBox(height: 4),
-
-                    Text(
-                      'Order & Stock Console',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey.shade600,
-                      ),
-                    ),
+                    const BrandLogo(height: 168),
 
                     const SizedBox(height: 28),
 
@@ -379,16 +366,6 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                       ),
                     ),
-
-                    const SizedBox(height: 14),
-
-                    Text(
-                      'Default: admin / admin123',
-                      style: TextStyle(
-                        color: Colors.grey.shade500,
-                        fontSize: 12,
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -404,100 +381,116 @@ class _LoginScreenState extends State<LoginScreen> {
 // MAIN SHELL
 // ============================================================
 
-class MainShell extends StatelessWidget {
-  const MainShell({super.key});
+class MainShell extends StatefulWidget {
+  final String username;
+  final String role;
+
+  const MainShell({
+    super.key,
+    required this.username,
+    required this.role,
+  });
+
+  @override
+  State<MainShell> createState() => _MainShellState();
+}
+
+class _MainShellState extends State<MainShell> {
+  int _shellGeneration = 0;
+
+  bool get _isAdmin => widget.role.toLowerCase() == 'admin';
+
+  void _handleSessionReset() {
+    setState(() {
+      _shellGeneration++;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final salesItem = NavItem(
+      icon: Icons.point_of_sale,
+      label: 'Sales / POS',
+      page: const PosScreen(),
+    );
+
+    final items = _isAdmin
+        ? <NavEntry>[
+            NavItem(
+              icon: Icons.dashboard_outlined,
+              label: 'Dashboard',
+              page: const DashboardScreen(),
+            ),
+            salesItem,
+            NavItem(
+              icon: Icons.inventory_2_outlined,
+              label: 'Inventory',
+              page: const InventoryScreen(),
+            ),
+            NavItem(
+              icon: Icons.shopping_cart_outlined,
+              label: 'Purchase',
+              page: const PurchaseScreen(),
+            ),
+            NavItem(
+              icon: Icons.warehouse_outlined,
+              label: 'Menu Items',
+              page: const RawMaterialMasterScreen(),
+            ),
+            NavItem(
+              icon: Icons.category_outlined,
+              label: 'Masters',
+              page: const SimpleMastersScreen(),
+            ),
+            NavItem(
+              icon: Icons.bar_chart_outlined,
+              label: 'Reports',
+              page: const ReportsScreen(),
+            ),
+            NavItem(
+              icon: Icons.print_outlined,
+              label: 'Printers',
+              page: const PrinterSettingsScreen(),
+            ),
+            NavGroup(
+              icon: Icons.settings_outlined,
+              label: 'Settings',
+              children: [
+                NavItem(
+                  icon: Icons.backup_outlined,
+                  label: 'Backup',
+                  page: const BackupScreen(),
+                ),
+                NavItem(
+                  icon: Icons.restart_alt,
+                  label: 'Reset',
+                  page: ResetScreen(
+                    onSessionReset: _handleSessionReset,
+                  ),
+                ),
+              ],
+            ),
+          ]
+        : <NavEntry>[salesItem];
+
     return ResponsiveShell(
-      title: 'RestoPOS',
-
-      items: [
-        // ----------------------------------------------------
-        // DASHBOARD
-        // ----------------------------------------------------
-
-        NavItem(
-          icon: Icons.dashboard_outlined,
-          label: 'Dashboard',
-          page: const DashboardScreen(),
-        ),
-
-        // ----------------------------------------------------
-        // SALES
-        // ----------------------------------------------------
-
-        NavItem(
-          icon: Icons.point_of_sale,
-          label: 'Sales / POS',
-          page: const PosScreen(),
-        ),
-
-        // ----------------------------------------------------
-        // INVENTORY
-        // ----------------------------------------------------
-
-        NavItem(
-          icon: Icons.inventory_2_outlined,
-          label: 'Inventory',
-          page: const InventoryScreen(),
-        ),
-
-        // ----------------------------------------------------
-        // PURCHASE
-        // ----------------------------------------------------
-
-        NavItem(
-          icon: Icons.shopping_cart_outlined,
-          label: 'Purchase',
-          page: const PurchaseScreen(),
-        ),
-
-        // ----------------------------------------------------
-        // MENU / RECIPE / COMBO
-        // ----------------------------------------------------
-
-
-        // ----------------------------------------------------
-        // RAW MATERIALS
-        // ----------------------------------------------------
-
-        NavItem(
-          icon: Icons.warehouse_outlined,
-          label: 'Raw Materials',
-          page: const RawMaterialMasterScreen(),
-        ),
-
-        // ----------------------------------------------------
-        // CUSTOMERS
-        // ----------------------------------------------------
-
-        NavItem(
-          icon: Icons.people_outline,
-          label: 'Customers',
-          page: const CustomersScreen(),
-        ),
-
-        // ----------------------------------------------------
-        // MASTERS
-        // ----------------------------------------------------
-
-        NavItem(
-          icon: Icons.category_outlined,
-          label: 'Masters',
-          page: const SimpleMastersScreen(),
-        ),
-
-        // ----------------------------------------------------
-        // REPORTS
-        // ----------------------------------------------------
-
-        NavItem(
-          icon: Icons.bar_chart_outlined,
-          label: 'Reports',
-          page: const ReportsScreen(),
-        ),
-      ],
+      key: ValueKey(_shellGeneration),
+      title: 'Shilpa Enterprise',
+      userLabel: widget.username,
+      items: items,
+      onLogout: () async {
+        await AuthSession.clear();
+        if (Platform.isAndroid || Platform.isIOS) {
+          await SystemNavigator.pop();
+          return;
+        }
+        if (!context.mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => const LoginScreen(),
+          ),
+        );
+      },
     );
   }
 }

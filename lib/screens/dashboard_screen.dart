@@ -11,9 +11,8 @@ class DashboardScreen extends StatefulWidget {
 
 class _DashboardScreenState extends State<DashboardScreen> {
   int _materials = 0;
-  int _menuItems = 0;
-  int _customers = 0;
   int _lowStock = 0;
+  int _negativeStock = 0;
 
   double _todaySales = 0;
 
@@ -30,7 +29,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final repo = Repository.instance;
 
       final materials = await repo.rawMaterials();
-      final customers = await repo.customers();
       final stock = await repo.currentStockReport();
       final sales = await repo.salesReport();
 
@@ -51,15 +49,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
         final current = (r['current_stock'] as num).toDouble();
         final reorder = (r['reorder_level'] as num).toDouble();
 
-        return current <= reorder;
+        return current >= 0 && current <= reorder;
+      }).length;
+
+      final negativeStock = stock.where((r) {
+        final current = (r['current_stock'] as num).toDouble();
+        return current < -0.000001;
       }).length;
 
       if (!mounted) return;
 
       setState(() {
         _materials = materials.length;
-        _customers = customers.length;
         _lowStock = lowStock;
+        _negativeStock = negativeStock;
         _todaySales = todayTotal;
         _loading = false;
       });
@@ -89,19 +92,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 8),
-
-                  // Dashboard heading only
-                  const Text(
-                    'Dashboard',
-                    style: TextStyle(
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
                   if (_loading)
                     const Center(
                       child: Padding(
@@ -117,35 +107,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           'Today\'s Sales',
                           '₹${_todaySales.toStringAsFixed(2)}',
                           Icons.point_of_sale,
-                          Colors.green,
                         ),
-
-                        _statCard(
-                          'Raw Materials',
-                          '$_materials',
-                          Icons.inventory_2,
-                          Colors.blue,
-                        ),
-
                         _statCard(
                           'Menu Items',
-                          '$_menuItems',
-                          Icons.restaurant_menu,
-                          Colors.orange,
+                          '$_materials',
+                          Icons.inventory_2,
                         ),
-
-                        _statCard(
-                          'Customers',
-                          '$_customers',
-                          Icons.people,
-                          Colors.purple,
-                        ),
-
                         _statCard(
                           'Low Stock Alerts',
-                          '$_lowStock',
+                          _negativeStock > 0
+                              ? '$_lowStock low, $_negativeStock negative'
+                              : '$_lowStock',
                           Icons.warning_amber,
-                          Colors.red,
                         ),
                       ],
                     ),
@@ -162,8 +135,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
       String label,
       String value,
       IconData icon,
-      Color color,
       ) {
+    final color = Theme.of(context).colorScheme.primary;
     return Card(
       elevation: 2,
       clipBehavior: Clip.antiAlias,
