@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -9,7 +11,18 @@ void main() {
     databaseFactory = databaseFactoryFfi;
   });
 
-  test('item sales combo query is valid with grouped sub_item', () async {
+  // ---------------------------------------------------------------------------
+  // SQLite in-memory check
+  // ---------------------------------------------------------------------------
+  //
+  // NOTE: SQLite does not enforce PostgreSQL's strict GROUP BY rule
+  // (error 42803: selected columns must appear in GROUP BY or an aggregate).
+  // The original production bug — selecting `si.sub_item` while grouping only
+  // by `si.combo_id` and `COALESCE(si.sub_item, '')` — crashed on Postgres but
+  // would still pass this SQLite execution test. Use the source-shape test below
+  // as the real regression guard for that bug.
+  //
+  test('item sales combo query aggregates correctly in SQLite', () async {
     final db = await openDatabase(
       inMemoryDatabasePath,
       version: 1,
@@ -71,4 +84,30 @@ void main() {
 
     await db.close();
   });
+
+  test(
+    'itemSalesReport combo section uses Postgres-safe MAX(si.sub_item)',
+    () {
+      final source = File('lib/services/repository.dart').readAsStringSync();
+
+      // Fixed query shape required on Postgres (GROUP BY si.combo_id, si.item_name).
+      expect(
+        source,
+        contains('MAX(si.sub_item) AS sub_item'),
+        reason:
+            'combo rows must aggregate sub_item; bare si.sub_item breaks Postgres',
+      );
+
+      // Guard against reverting to the broken query that caused error 42803.
+      expect(
+        source,
+        isNot(
+          contains(
+            "si.sub_item AS sub_item,\n        SUM(si.qty) AS sold_qty",
+          ),
+        ),
+        reason: 'bare si.sub_item in grouped combo SELECT is not Postgres-safe',
+      );
+    },
+  );
 }
