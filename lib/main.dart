@@ -122,6 +122,12 @@ class _StartupGateState extends State<_StartupGate> {
     } catch (_) {}
     await Repository.instance.writeOffExpiredStock();
     _session = await AuthSession.load();
+    if (_session != null) {
+      Repository.instance.bindSession(
+        role: _session!.role,
+        locationId: _session!.locationId,
+      );
+    }
   }
 
   @override
@@ -190,6 +196,7 @@ class _StartupGateState extends State<_StartupGate> {
           return MainShell(
             username: session.username,
             role: session.role,
+            locationName: session.locationName,
           );
         }
 
@@ -262,8 +269,32 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       final role = (rows.first['role'] ?? 'staff').toString();
+      final locationId = rows.first['location_id'] as int?;
+      String? locationName;
 
-      await AuthSession.save(username: username, role: role);
+      if (locationId != null) {
+        final locationRows = await db.query(
+          'locations',
+          where: 'id = ?',
+          whereArgs: [locationId],
+          limit: 1,
+        );
+        if (locationRows.isNotEmpty) {
+          locationName = locationRows.first['name']?.toString();
+        }
+      }
+
+      await AuthSession.save(
+        username: username,
+        role: role,
+        locationId: locationId,
+        locationName: locationName,
+      );
+
+      Repository.instance.bindSession(
+        role: role,
+        locationId: locationId,
+      );
 
       if (!mounted) return;
 
@@ -272,6 +303,7 @@ class _LoginScreenState extends State<LoginScreen> {
           builder: (_) => MainShell(
             username: username,
             role: role,
+            locationName: locationName,
           ),
         ),
       );
@@ -384,11 +416,13 @@ class _LoginScreenState extends State<LoginScreen> {
 class MainShell extends StatefulWidget {
   final String username;
   final String role;
+  final String? locationName;
 
   const MainShell({
     super.key,
     required this.username,
     required this.role,
+    this.locationName,
   });
 
   @override
@@ -419,7 +453,7 @@ class _MainShellState extends State<MainShell> {
             NavItem(
               icon: Icons.dashboard_outlined,
               label: 'Dashboard',
-              page: const DashboardScreen(),
+              page: DashboardScreen(isAdmin: _isAdmin),
             ),
             salesItem,
             NavItem(
@@ -476,10 +510,11 @@ class _MainShellState extends State<MainShell> {
     return ResponsiveShell(
       key: ValueKey(_shellGeneration),
       title: 'Shilpa Enterprise',
-      userLabel: widget.username,
+      userLabel: widget.locationName ?? widget.username,
       items: items,
       onLogout: () async {
         await AuthSession.clear();
+        Repository.instance.clearSession();
         if (Platform.isAndroid || Platform.isIOS) {
           await SystemNavigator.pop();
           return;
