@@ -90,7 +90,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 17,
+      version: 18,
 
       onConfigure: (db) async {
         await db.execute(
@@ -271,6 +271,28 @@ class DBHelper {
       )
     ''');
 
+    batch.execute('''
+      CREATE TABLE location_stock (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        location_id INTEGER NOT NULL,
+        raw_material_id INTEGER NOT NULL,
+        current_stock REAL NOT NULL DEFAULT 0,
+        opening_stock REAL NOT NULL DEFAULT 0,
+        reorder_level REAL NOT NULL DEFAULT 0,
+        UNIQUE(location_id, raw_material_id),
+        FOREIGN KEY (location_id)
+          REFERENCES locations (id),
+        FOREIGN KEY (raw_material_id)
+          REFERENCES raw_materials (id)
+          ON DELETE CASCADE
+      )
+    ''');
+
+    batch.execute('''
+      CREATE INDEX idx_location_stock_lookup
+      ON location_stock (location_id, raw_material_id)
+    ''');
+
     // ==========================================================
     // STOCK BATCHES
     // ==========================================================
@@ -293,11 +315,16 @@ class DBHelper {
 
         purchase_item_id INTEGER,
 
+        location_id INTEGER,
+
         created_at TEXT NOT NULL,
 
         FOREIGN KEY (raw_material_id)
           REFERENCES raw_materials (id)
-          ON DELETE CASCADE
+          ON DELETE CASCADE,
+
+        FOREIGN KEY (location_id)
+          REFERENCES locations (id)
       )
     ''');
 
@@ -327,8 +354,13 @@ class DBHelper {
 
         notes TEXT,
 
+        location_id INTEGER,
+
         FOREIGN KEY (supplier_id)
-          REFERENCES suppliers (id)
+          REFERENCES suppliers (id),
+
+        FOREIGN KEY (location_id)
+          REFERENCES locations (id)
       )
     ''');
 
@@ -377,8 +409,13 @@ class DBHelper {
 
         reason TEXT,
 
+        location_id INTEGER,
+
         FOREIGN KEY (raw_material_id)
-          REFERENCES raw_materials (id)
+          REFERENCES raw_materials (id),
+
+        FOREIGN KEY (location_id)
+          REFERENCES locations (id)
       )
     ''');
 
@@ -406,8 +443,13 @@ class DBHelper {
 
         balance_after REAL NOT NULL,
 
+        location_id INTEGER,
+
         FOREIGN KEY (raw_material_id)
-          REFERENCES raw_materials (id)
+          REFERENCES raw_materials (id),
+
+        FOREIGN KEY (location_id)
+          REFERENCES locations (id)
       )
     ''');
 
@@ -1347,6 +1389,121 @@ class DBHelper {
         CREATE INDEX IF NOT EXISTS idx_sales_location
         ON sales(location_id)
       ''');
+    }
+
+    if (oldVersion < 18) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS location_stock (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          location_id INTEGER NOT NULL,
+          raw_material_id INTEGER NOT NULL,
+          current_stock REAL NOT NULL DEFAULT 0,
+          opening_stock REAL NOT NULL DEFAULT 0,
+          reorder_level REAL NOT NULL DEFAULT 0,
+          UNIQUE(location_id, raw_material_id),
+          FOREIGN KEY (location_id)
+            REFERENCES locations (id),
+          FOREIGN KEY (raw_material_id)
+            REFERENCES raw_materials (id)
+            ON DELETE CASCADE
+        )
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_location_stock_lookup
+        ON location_stock (location_id, raw_material_id)
+      ''');
+
+      Future<void> addLocationColumn(String table) async {
+        final columns = await db.rawQuery('PRAGMA table_info($table)');
+        final names = columns.map((c) => c['name'] as String).toSet();
+        if (!names.contains('location_id')) {
+          await db.execute(
+            'ALTER TABLE $table ADD COLUMN location_id INTEGER',
+          );
+        }
+      }
+
+      await addLocationColumn('purchases');
+      await addLocationColumn('stock_batches');
+      await addLocationColumn('stock_adjustments');
+      await addLocationColumn('stock_ledger');
+
+      final firstLocationRows = await db.query(
+        'locations',
+        orderBy: 'id ASC',
+        limit: 1,
+      );
+      final firstLocationId = firstLocationRows.isEmpty
+          ? null
+          : firstLocationRows.first['id'] as int;
+
+      if (firstLocationId != null) {
+        await db.execute('''
+          INSERT INTO location_stock (
+            location_id, raw_material_id, current_stock,
+            opening_stock, reorder_level
+          )
+          SELECT
+            ?,
+            rm.id,
+            rm.current_stock,
+            rm.opening_stock,
+            rm.reorder_level
+          FROM raw_materials rm
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM location_stock ls
+            WHERE ls.location_id = ?
+              AND ls.raw_material_id = rm.id
+          )
+        ''', [firstLocationId, firstLocationId]);
+
+        await db.execute(
+          'UPDATE stock_batches SET location_id = ? WHERE location_id IS NULL',
+          [firstLocationId],
+        );
+        await db.execute(
+          'UPDATE stock_ledger SET location_id = ? WHERE location_id IS NULL',
+          [firstLocationId],
+        );
+        await db.execute(
+          'UPDATE stock_adjustments SET location_id = ? WHERE location_id IS NULL',
+          [firstLocationId],
+        );
+        await db.execute(
+          'UPDATE purchases SET location_id = ? WHERE location_id IS NULL',
+          [firstLocationId],
+        );
+
+        final otherLocations = await db.query(
+          'locations',
+          where: 'id != ?',
+          whereArgs: [firstLocationId],
+        );
+        for (final location in otherLocations) {
+          final locationId = location['id'] as int;
+          await db.execute('''
+            INSERT INTO location_stock (
+              location_id, raw_material_id, current_stock,
+              opening_stock, reorder_level
+            )
+            SELECT
+              ?,
+              rm.id,
+              0,
+              0,
+              rm.reorder_level
+            FROM raw_materials rm
+            WHERE NOT EXISTS (
+              SELECT 1
+              FROM location_stock ls
+              WHERE ls.location_id = ?
+                AND ls.raw_material_id = rm.id
+            )
+          ''', [locationId, locationId]);
+        }
+      }
     }
   }
 

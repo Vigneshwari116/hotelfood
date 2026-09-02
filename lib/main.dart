@@ -434,6 +434,25 @@ class _MainShellState extends State<MainShell> {
 
   bool get _isAdmin => widget.role.toLowerCase() == 'admin';
 
+  bool get _hasFullAppAccess =>
+      _isAdmin || Repository.instance.hasFullAppAccess;
+
+  @override
+  void initState() {
+    super.initState();
+    if (_isAdmin) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (Repository.instance.adminSaleLocationId != null) return;
+        final locations = await Repository.instance.locations();
+        if (locations.isNotEmpty) {
+          Repository.instance.setAdminSaleLocation(
+            locations.first['id'] as int,
+          );
+        }
+      });
+    }
+  }
+
   void _handleSessionReset() {
     setState(() {
       _shellGeneration++;
@@ -448,7 +467,7 @@ class _MainShellState extends State<MainShell> {
       page: const PosScreen(),
     );
 
-    final items = _isAdmin
+    final items = _hasFullAppAccess
         ? <NavEntry>[
             NavItem(
               icon: Icons.dashboard_outlined,
