@@ -295,7 +295,7 @@ class Repository {
             const defaults = [
                   'Starters',
                   'Fried Items',
-                  'Buns',
+                  'Burger',
                   'Fillings',
                   'Gravy',
                   'Tandoor',
@@ -306,6 +306,8 @@ class Repository {
                   'Meals',
                   'Desserts',
                   'Beverages',
+                  'snacks',
+                  'Rolls',
             ];
 
             for (final name in defaults) {
