@@ -1792,7 +1792,7 @@ class _PosScreenState extends State<PosScreen> {
             DropdownButtonFormField<int>(
               value: _adminLocationId,
               decoration: const InputDecoration(
-                labelText: 'Sale location',
+                labelText: 'Active location',
                 border: OutlineInputBorder(),
                 isDense: true,
                 prefixIcon: Icon(Icons.storefront_outlined),

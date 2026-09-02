@@ -91,6 +91,74 @@ class Repository {
       int? get _effectiveSaleLocationId =>
           _sessionLocationId ?? _adminSaleLocationId;
 
+      bool get hasFullAppAccess => isAdmin || _sessionLocationId != null;
+
+      int? get _stockLocationId => _effectiveSaleLocationId;
+
+      void _requireStockLocation() {
+            if (_stockLocationId == null) {
+                  throw InvalidInventoryException(
+                        'Select a location before stock or purchase actions.',
+                  );
+            }
+      }
+
+      Map<String, Object?> _locationFields() {
+            final locationId = _stockLocationId;
+            if (locationId == null) {
+                  return {};
+            }
+            return {'location_id': locationId};
+      }
+
+      Future<void> _ensureLocationStockRow(
+            AppDb txn,
+            int locationId,
+            int rawMaterialId, {
+            double reorderLevel = 0,
+      }) async {
+            final rows = await txn.query(
+                  'location_stock',
+                  where: 'location_id = ? AND raw_material_id = ?',
+                  whereArgs: [locationId, rawMaterialId],
+                  limit: 1,
+            );
+            if (rows.isNotEmpty) return;
+
+            await txn.insert(
+                  'location_stock',
+                  {
+                        'location_id': locationId,
+                        'raw_material_id': rawMaterialId,
+                        'current_stock': 0,
+                        'opening_stock': 0,
+                        'reorder_level': reorderLevel,
+                  },
+            );
+      }
+
+      Future<void> _syncRawMaterialAggregateStock(
+            AppDb txn,
+            int rawMaterialId,
+      ) async {
+            final rows = await txn.rawQuery(
+                  '''
+      SELECT COALESCE(SUM(current_stock), 0) AS total
+      FROM location_stock
+      WHERE raw_material_id = ?
+      ''',
+                  [rawMaterialId],
+            );
+            final total =
+                (rows.first['total'] as num?)?.toDouble() ?? 0.0;
+            await txn.update(
+                  'raw_materials',
+                  {'current_stock': total},
+                  where: 'id = ?',
+                  whereArgs: [rawMaterialId],
+            );
+      }
+
       void _appendLocationFilter(
             List<String> where,
             List<dynamic> args, {
@@ -99,6 +167,43 @@ class Repository {
             if (!isAdmin && _sessionLocationId != null) {
                   where.add('$column = ?');
                   args.add(_sessionLocationId);
+            }
+      }
+
+      String _salesLocationJoinFilter() {
+            if (!isAdmin && _sessionLocationId != null) {
+                  return ' AND s.location_id = ${_sessionLocationId!}';
+            }
+            return '';
+      }
+
+      Future<void> ensureLocationStockRows() async {
+            final db = await _db;
+            final locationRows = await db.query(
+                  'locations',
+                  orderBy: 'id ASC',
+            );
+            if (locationRows.isEmpty) return;
+
+            final materialRows = await db.query(
+                  'raw_materials',
+                  columns: ['id', 'reorder_level'],
+            );
+
+            for (final location in locationRows) {
+                  final locationId = location['id'] as int;
+                  for (final material in materialRows) {
+                        final rawMaterialId = material['id'] as int;
+                        final reorderLevel =
+                            (material['reorder_level'] as num?)?.toDouble() ??
+                                0.0;
+                        await _ensureLocationStockRow(
+                              db,
+                              locationId,
+                              rawMaterialId,
+                              reorderLevel: reorderLevel,
+                        );
+                  }
             }
       }
 
@@ -401,6 +506,7 @@ class Repository {
                   password: 'staff123',
                   role: 'staff',
             );
+            await ensureLocationStockRows();
       }
 
       Future<List<Map<String, dynamic>>> locations() async {
@@ -584,6 +690,7 @@ class Repository {
             if (rm.id == null) {
                   return db.transaction((txn) async {
                         final double openingStock = rm.openingStock;
+                        final locationId = _stockLocationId;
 
                         map['current_stock'] = openingStock;
 
@@ -592,7 +699,29 @@ class Repository {
                               map,
                         );
 
-                        if (openingStock > 0.0) {
+                        final locations = await txn.query(
+                              'locations',
+                              orderBy: 'id ASC',
+                        );
+                        for (final location in locations) {
+                              final locId = location['id'] as int;
+                              final stockForLocation =
+                                  locationId != null && locId == locationId
+                                      ? openingStock
+                                      : 0.0;
+                              await txn.insert(
+                                    'location_stock',
+                                    {
+                                          'location_id': locId,
+                                          'raw_material_id': id,
+                                          'current_stock': stockForLocation,
+                                          'opening_stock': stockForLocation,
+                                          'reorder_level': rm.reorderLevel,
+                                    },
+                              );
+                        }
+
+                        if (openingStock > 0.0 && locationId != null) {
                               await txn.insert(
                                     'stock_batches',
                                     {
@@ -601,7 +730,31 @@ class Repository {
                                           'rate': rm.costPrice,
                                           'expiry_date': null,
                                           'purchase_item_id': null,
-                                          'created_at': DateTime.now().toIso8601String(),
+                                          'location_id': locationId,
+                                          'created_at':
+                                              DateTime.now().toIso8601String(),
+                                    },
+                              );
+
+                              await _writeLedger(
+                                    txn: txn,
+                                    rawMaterialId: id,
+                                    refType: 'opening',
+                                    qtyIn: openingStock,
+                                    unitCost: rm.costPrice,
+                                    balanceAfter: openingStock,
+                              );
+                        } else if (openingStock > 0.0 && locationId == null) {
+                              await txn.insert(
+                                    'stock_batches',
+                                    {
+                                          'raw_material_id': id,
+                                          'qty_remaining': openingStock,
+                                          'rate': rm.costPrice,
+                                          'expiry_date': null,
+                                          'purchase_item_id': null,
+                                          'created_at':
+                                              DateTime.now().toIso8601String(),
                                     },
                               );
 
@@ -615,6 +768,7 @@ class Repository {
                               );
                         }
 
+                        await _syncRawMaterialAggregateStock(txn, id);
                         return id;
                   });
             }
@@ -624,6 +778,9 @@ class Repository {
             // ----------------------------------------------------------
 
             return db.transaction((txn) async {
+                  _requireStockLocation();
+                  final locationId = _stockLocationId!;
+
                   final existingRows = await txn.query(
                         'raw_materials',
                         where: 'id = ?',
@@ -638,8 +795,23 @@ class Repository {
                   }
 
                   final existing = existingRows.first;
-                  final double oldStock =
-                      (existing['current_stock'] as num).toDouble();
+                  await _ensureLocationStockRow(
+                        txn,
+                        locationId,
+                        rm.id!,
+                        reorderLevel: rm.reorderLevel,
+                  );
+
+                  final locationRows = await txn.query(
+                        'location_stock',
+                        where: 'location_id = ? AND raw_material_id = ?',
+                        whereArgs: [locationId, rm.id],
+                        limit: 1,
+                  );
+
+                  final double oldStock = locationRows.isEmpty
+                      ? 0.0
+                      : (locationRows.first['current_stock'] as num).toDouble();
                   final double newStock = rm.currentStock;
                   final double delta = newStock - oldStock;
 
@@ -668,6 +840,7 @@ class Repository {
                                         DateTime.now().toIso8601String(),
                                     'qty': delta,
                                     'reason': 'Manual stock update from item editor',
+                                    ..._locationFields(),
                               },
                         );
 
@@ -682,6 +855,7 @@ class Repository {
                                           'purchase_item_id': null,
                                           'created_at':
                                               DateTime.now().toIso8601String(),
+                                          ..._locationFields(),
                                     },
                               );
 
@@ -712,6 +886,7 @@ class Repository {
                         }
                   }
 
+                  await _syncRawMaterialAggregateStock(txn, rm.id!);
                   return rm.id!;
             });
       }
@@ -761,16 +936,17 @@ class Repository {
             bool includeHidden = false,
       }) async {
             final db = await _db;
+            final locationId = _stockLocationId;
 
             final cleanSearch = search?.trim();
             final filters = <String>[];
             final args = <Object>[];
             if (!includeHidden) {
-                  filters.add('(listed IS NULL OR listed = 1)');
+                  filters.add('(rm.listed IS NULL OR rm.listed = 1)');
             }
             if (cleanSearch != null && cleanSearch.isNotEmpty) {
                   filters.add(
-                    '(name LIKE ? OR sub_item LIKE ? OR barcode LIKE ? OR barcode = ?)',
+                    '(rm.name LIKE ? OR rm.sub_item LIKE ? OR rm.barcode LIKE ? OR rm.barcode = ?)',
                   );
                   args.addAll([
                     '%$cleanSearch%',
@@ -780,9 +956,39 @@ class Repository {
                   ]);
             }
 
+            if (locationId != null) {
+                  final rows = await db.rawQuery(
+                        '''
+      SELECT
+        rm.*,
+        COALESCE(ls.current_stock, 0) AS current_stock,
+        COALESCE(ls.opening_stock, rm.opening_stock) AS opening_stock,
+        COALESCE(ls.reorder_level, rm.reorder_level) AS reorder_level
+      FROM raw_materials rm
+      LEFT JOIN location_stock ls
+        ON ls.raw_material_id = rm.id
+        AND ls.location_id = ?
+      ${filters.isEmpty ? '' : 'WHERE ${filters.join(' AND ')}'}
+      ORDER BY rm.name ASC
+      ''',
+                        [locationId, ...args],
+                  );
+                  return rows.map(RawMaterial.fromMap).toList();
+            }
+
+            final legacyFilters = <String>[];
+            if (!includeHidden) {
+                  legacyFilters.add('(listed IS NULL OR listed = 1)');
+            }
+            if (cleanSearch != null && cleanSearch.isNotEmpty) {
+                  legacyFilters.add(
+                    '(name LIKE ? OR sub_item LIKE ? OR barcode LIKE ? OR barcode = ?)',
+                  );
+            }
+
             final rows = await db.query(
                   'raw_materials',
-                  where: filters.isEmpty ? null : filters.join(' AND '),
+                  where: legacyFilters.isEmpty ? null : legacyFilters.join(' AND '),
                   whereArgs: args.isEmpty ? null : args,
                   orderBy: 'name ASC',
             );
@@ -794,6 +1000,28 @@ class Repository {
           int id,
           ) async {
             final db = await _db;
+            final locationId = _stockLocationId;
+
+            if (locationId != null) {
+                  final rows = await db.rawQuery(
+                        '''
+      SELECT
+        rm.*,
+        COALESCE(ls.current_stock, 0) AS current_stock,
+        COALESCE(ls.opening_stock, rm.opening_stock) AS opening_stock,
+        COALESCE(ls.reorder_level, rm.reorder_level) AS reorder_level
+      FROM raw_materials rm
+      LEFT JOIN location_stock ls
+        ON ls.raw_material_id = rm.id
+        AND ls.location_id = ?
+      WHERE rm.id = ?
+      LIMIT 1
+      ''',
+                        [locationId, id],
+                  );
+                  if (rows.isEmpty) return null;
+                  return RawMaterial.fromMap(rows.first);
+            }
 
             final rows = await db.query(
                   'raw_materials',
@@ -1382,6 +1610,8 @@ class Repository {
                   // PURCHASE HEADER
                   // ----------------------------------------------------------
 
+                  _requireStockLocation();
+
                   final purchaseId = await txn.insert(
                         'purchases',
                         {
@@ -1390,6 +1620,7 @@ class Repository {
                               'purchase_date': date.toIso8601String(),
                               'total_amount': total,
                               'notes': notes,
+                              ..._locationFields(),
                         },
                   );
 
@@ -1438,6 +1669,7 @@ class Repository {
                                         : null,
                                     'purchase_item_id': purchaseItemId,
                                     'created_at': DateTime.now().toIso8601String(),
+                                    ..._locationFields(),
                               },
                         );
 
@@ -1519,9 +1751,11 @@ class Repository {
             }
 
             return db.transaction((txn) async {
+                  _requireStockLocation();
+
                   final rows = await txn.query(
                         'raw_materials',
-                        columns: ['name', 'current_stock'],
+                        columns: ['name'],
                         where: 'id = ?',
                         whereArgs: [rawMaterialId],
                         limit: 1,
@@ -1533,8 +1767,10 @@ class Repository {
                         );
                   }
 
-                  final double currentStock =
-                  (rows.first['current_stock'] as num).toDouble();
+                  final double currentStock = await _getCurrentStock(
+                        txn,
+                        rawMaterialId,
+                  );
 
                   if (qtyDelta < 0.0) {
                         final double requested = -qtyDelta;
@@ -1555,6 +1791,7 @@ class Repository {
                               'adjust_date': DateTime.now().toIso8601String(),
                               'qty': qtyDelta,
                               'reason': reason.trim(),
+                              ..._locationFields(),
                         },
                   );
 
@@ -1576,6 +1813,7 @@ class Repository {
                                     'expiry_date': null,
                                     'purchase_item_id': null,
                                     'created_at': DateTime.now().toIso8601String(),
+                                    ..._locationFields(),
                               },
                         );
 
@@ -1611,6 +1849,7 @@ class Repository {
           }) async {
             final permitNegative =
                 allowNegative ?? refType == 'sale_deduction';
+            final locationId = _stockLocationId;
 
             if (qtyNeeded <= 0.0) {
                   return _getCurrentStock(
@@ -1621,7 +1860,7 @@ class Repository {
 
             final materialRows = await txn.query(
                   'raw_materials',
-                  columns: ['name', 'current_stock'],
+                  columns: ['name'],
                   where: 'id = ?',
                   whereArgs: [rawMaterialId],
                   limit: 1,
@@ -1633,8 +1872,10 @@ class Repository {
                   );
             }
 
-            final double currentStock =
-            (materialRows.first['current_stock'] as num).toDouble();
+            final double currentStock = await _getCurrentStock(
+                  txn,
+                  rawMaterialId,
+            );
 
             if (!permitNegative &&
                 currentStock + 1e-9 < qtyNeeded) {
@@ -1647,8 +1888,12 @@ class Repository {
 
             final batches = await txn.query(
                   'stock_batches',
-                  where: 'raw_material_id = ? AND qty_remaining > 0',
-                  whereArgs: [rawMaterialId],
+                  where: locationId != null
+                      ? 'raw_material_id = ? AND qty_remaining > 0 AND (location_id = ? OR location_id IS NULL)'
+                      : 'raw_material_id = ? AND qty_remaining > 0',
+                  whereArgs: locationId != null
+                      ? [rawMaterialId, locationId]
+                      : [rawMaterialId],
                   orderBy:
                   'CASE WHEN expiry_date IS NULL THEN 1 ELSE 0 END, '
                       'expiry_date ASC, id ASC',
@@ -1731,6 +1976,20 @@ class Repository {
           AppDb txn,
           int rawMaterialId,
           ) async {
+            final locationId = _stockLocationId;
+            if (locationId != null) {
+                  await _ensureLocationStockRow(txn, locationId, rawMaterialId);
+                  final rows = await txn.query(
+                        'location_stock',
+                        columns: ['current_stock'],
+                        where: 'location_id = ? AND raw_material_id = ?',
+                        whereArgs: [locationId, rawMaterialId],
+                        limit: 1,
+                  );
+                  if (rows.isEmpty) return 0.0;
+                  return (rows.first['current_stock'] as num).toDouble();
+            }
+
             final rows = await txn.query(
                   'raw_materials',
                   columns: ['current_stock'],
@@ -1745,10 +2004,7 @@ class Repository {
                   );
             }
 
-            final double stock =
-            (rows.first['current_stock'] as num).toDouble();
-
-            return stock;
+            return (rows.first['current_stock'] as num).toDouble();
       }
 
       Future<double> _bumpStock(
@@ -1756,6 +2012,38 @@ class Repository {
           int rawMaterialId,
           double delta,
           ) async {
+            final locationId = _stockLocationId;
+            if (locationId != null) {
+                  await _ensureLocationStockRow(txn, locationId, rawMaterialId);
+                  final rows = await txn.query(
+                        'location_stock',
+                        columns: ['current_stock'],
+                        where: 'location_id = ? AND raw_material_id = ?',
+                        whereArgs: [locationId, rawMaterialId],
+                        limit: 1,
+                  );
+                  if (rows.isEmpty) {
+                        throw InvalidInventoryException(
+                              'Raw material does not exist.',
+                        );
+                  }
+
+                  final double current =
+                      (rows.first['current_stock'] as num).toDouble();
+                  final double next = current + delta;
+                  final double safeNext =
+                      next.abs() < 0.000001 ? 0.0 : next;
+
+                  await txn.update(
+                        'location_stock',
+                        {'current_stock': safeNext},
+                        where: 'location_id = ? AND raw_material_id = ?',
+                        whereArgs: [locationId, rawMaterialId],
+                  );
+                  await _syncRawMaterialAggregateStock(txn, rawMaterialId);
+                  return safeNext;
+            }
+
             final rows = await txn.query(
                   'raw_materials',
                   columns: ['current_stock'],
@@ -1817,6 +2105,7 @@ class Repository {
                         'qty_out': qtyOut,
                         'unit_cost': unitCost,
                         'balance_after': balanceAfter,
+                        ..._locationFields(),
                   },
             );
       }
@@ -1825,11 +2114,14 @@ class Repository {
           int rawMaterialId,
           ) async {
             final db = await _db;
+            final where = <String>['raw_material_id = ?'];
+            final args = <dynamic>[rawMaterialId];
+            _appendLocationFilter(where, args);
 
             return db.query(
                   'stock_ledger',
-                  where: 'raw_material_id = ?',
-                  whereArgs: [rawMaterialId],
+                  where: where.join(' AND '),
+                  whereArgs: args,
                   orderBy: 'entry_date DESC, id DESC',
             );
       }
@@ -1841,6 +2133,36 @@ class Repository {
       Future<List<Map<String, dynamic>>>
       currentStockReport() async {
             final db = await _db;
+            final locationId = _stockLocationId;
+
+            if (locationId != null) {
+                  return db.rawQuery(
+                        '''
+      SELECT
+        rm.id,
+        rm.name,
+        rm.sub_item,
+        rm.barcode,
+        COALESCE(ls.current_stock, 0) AS current_stock,
+        COALESCE(ls.reorder_level, rm.reorder_level) AS reorder_level,
+        rm.cost_price,
+        rm.selling_price,
+        rm.image_path,
+        u.short_code AS unit,
+        c.name AS category
+      FROM raw_materials rm
+      LEFT JOIN location_stock ls
+        ON ls.raw_material_id = rm.id
+        AND ls.location_id = ?
+      LEFT JOIN units u
+        ON u.id = rm.unit_id
+      LEFT JOIN categories c
+        ON c.id = rm.category_id
+      ORDER BY rm.name ASC
+      ''',
+                        [locationId],
+                  );
+            }
 
             return db.rawQuery(
                   '''
@@ -2887,6 +3209,7 @@ class Repository {
             int limit = 10,
       }) async {
             final db = await _db;
+            final salesFilter = _salesLocationJoinFilter();
 
             if (limit <= 0) {
                   limit = 10;
@@ -2902,7 +3225,7 @@ class Repository {
       FROM sale_items si
       JOIN sales s
         ON s.id = si.sale_id
-      WHERE s.is_voided = 0
+      WHERE s.is_voided = 0$salesFilter
       GROUP BY si.item_name, si.sub_item
       ORDER BY total_qty DESC
       LIMIT ?
@@ -2913,9 +3236,10 @@ class Repository {
 
       Future<List<Map<String, dynamic>>> itemSalesReport() async {
             final db = await _db;
+            final salesFilter = _salesLocationJoinFilter();
 
             final countRows = await db.rawQuery(
-                  'SELECT COUNT(*) AS cnt FROM sales WHERE is_voided = 0',
+                  'SELECT COUNT(*) AS cnt FROM sales s WHERE s.is_voided = 0$salesFilter',
             );
             final saleCount =
                 (countRows.isEmpty
@@ -2941,7 +3265,7 @@ class Repository {
           ON crm.combo_id = si.combo_id
         JOIN raw_materials rm
           ON rm.id = crm.raw_material_id
-        WHERE s.is_voided = 0
+        WHERE s.is_voided = 0$salesFilter
           AND si.combo_id IS NOT NULL
         GROUP BY crm.raw_material_id
       ),
@@ -2953,7 +3277,7 @@ class Repository {
         FROM sale_items si
         JOIN sales s
           ON s.id = si.sale_id
-        WHERE s.is_voided = 0
+        WHERE s.is_voided = 0$salesFilter
           AND si.raw_material_id IS NOT NULL
         GROUP BY si.raw_material_id
       )
@@ -2983,7 +3307,7 @@ class Repository {
       FROM sale_items si
       JOIN sales s
         ON s.id = si.sale_id
-      WHERE s.is_voided = 0
+      WHERE s.is_voided = 0$salesFilter
         AND si.combo_id IS NOT NULL
       GROUP BY
         si.combo_id,
@@ -3004,6 +3328,11 @@ class Repository {
       Future<List<Map<String, dynamic>>>
       purchaseReport() async {
             final db = await _db;
+            final where = <String>[];
+            final args = <dynamic>[];
+            _appendLocationFilter(where, args, column: 'p.location_id');
+            final locationSql =
+                where.isEmpty ? '' : 'WHERE ${where.join(' AND ')}';
 
             return db.rawQuery(
                   '''
@@ -3020,10 +3349,12 @@ class Repository {
         ON rm.id = pi.raw_material_id
       LEFT JOIN suppliers s
         ON s.id = p.supplier_id
+      $locationSql
       ORDER BY
         p.purchase_date DESC,
         pi.id DESC
       ''',
+                  args.isEmpty ? null : args,
             );
       }
 
