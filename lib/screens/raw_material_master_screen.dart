@@ -385,12 +385,15 @@ class _RawMaterialMasterScreenState
   }) async {
     if (!mounted) return;
 
+    // Combo picker must list every menu item, not the Items-tab search filter.
+    final allItems = await Repository.instance.rawMaterials();
+
     final saved = await showDialog<bool>(
       context: context,
       builder: (_) {
         return ComboEditorDialog(
           existing: existing,
-          rawMaterials: _items,
+          rawMaterials: allItems,
           unitName: _unitName,
           onPickImage: () {
             return _pickAndSaveImage(
