@@ -77,8 +77,10 @@ class _CurrentStockTabState extends State<_CurrentStockTab> {
       child: _rows.isEmpty
           ? const Center(child: Text('No stock data yet'))
           : SingleChildScrollView(
-        scrollDirection: isMobile ? Axis.horizontal : Axis.vertical,
-        child: DataTable(
+        scrollDirection: Axis.vertical,
+        child: SingleChildScrollView(
+          scrollDirection: isMobile ? Axis.horizontal : Axis.vertical,
+          child: DataTable(
           columns: const [
             DataColumn(label: Text('Item')),
             DataColumn(label: Text('Category')),
@@ -118,6 +120,7 @@ class _CurrentStockTabState extends State<_CurrentStockTab> {
               )),
             ]);
           }).toList(),
+        ),
         ),
       ),
     );
