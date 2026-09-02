@@ -109,7 +109,30 @@ class DbStore {
 
   Future<void> _ensureDefaults() async {
     await _withAutocommit((db) async {
-      Future<void> user(String username, String password, String role) async {
+      final now = DateTime.now().toIso8601String();
+
+      Future<int> ensureLocation(String name) async {
+        final rows = await db.query(
+          'locations',
+          where: 'name = ?',
+          whereArgs: [name],
+          limit: 1,
+        );
+        if (rows.isNotEmpty) {
+          return rows.first['id'] as int;
+        }
+        return db.insert('locations', {
+          'name': name,
+          'created_at': now,
+        });
+      }
+
+      Future<void> user(
+        String username,
+        String password,
+        String role, {
+        int? locationId,
+      }) async {
         final rows = await db.query(
           'users',
           where: 'username = ?',
@@ -121,12 +144,34 @@ class DbStore {
           'username': username,
           'password_hash': sha256.convert(utf8.encode(password)).toString(),
           'role': role,
-          'created_at': DateTime.now().toIso8601String(),
+          'location_id': locationId,
+          'created_at': now,
         });
       }
 
-      // Must match Flutter hashPin (utf8.encode then sha256).
+      final gtWorldMall = await ensureLocation('Gt world mall');
+      final magadiRoad = await ensureLocation('Magadi road');
+      final subbannaGarden = await ensureLocation('Subbanna garden');
+
       await user('admin', 'admin123', 'admin');
+      await user(
+        'Gt mall five star',
+        'Shilpa@0902',
+        'staff',
+        locationId: gtWorldMall,
+      );
+      await user(
+        'Magadi road five star',
+        'Shilpa@0902',
+        'staff',
+        locationId: magadiRoad,
+      );
+      await user(
+        'Subbanna garden five star',
+        'Shilpa@0902',
+        'staff',
+        locationId: subbannaGarden,
+      );
       await user('staff', 'staff123', 'staff');
     });
   }

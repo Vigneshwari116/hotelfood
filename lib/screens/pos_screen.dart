@@ -41,6 +41,8 @@ class _PosScreenState extends State<PosScreen> {
   List<RawMaterial> _materials = [];
   List<Combo> _combos = [];
   List<Category> _categories = [];
+  List<Map<String, dynamic>> _locations = [];
+  int? _adminLocationId;
   int? _categoryId;
 
   final List<CartLine> _cart = [];
@@ -106,6 +108,15 @@ class _PosScreenState extends State<PosScreen> {
       final materials = await _repo.rawMaterials();
       final combos = await _repo.combosWithItems(activeOnly: true);
       final categories = await _repo.categories(type: 'raw_material');
+      List<Map<String, dynamic>> locations = [];
+
+      if (_repo.isAdmin) {
+        locations = await _repo.locations();
+        if (locations.isNotEmpty) {
+          _adminLocationId ??= locations.first['id'] as int;
+          _repo.setAdminSaleLocation(_adminLocationId);
+        }
+      }
 
       if (!mounted) return;
 
@@ -113,6 +124,7 @@ class _PosScreenState extends State<PosScreen> {
         _materials = materials;
         _combos = combos;
         _categories = categories;
+        _locations = locations;
         _loading = false;
         if (_categoryId != null &&
             !_categoryIdsWithItems.contains(_categoryId)) {
@@ -1776,6 +1788,32 @@ class _PosScreenState extends State<PosScreen> {
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       child: Column(
         children: [
+          if (_repo.isAdmin && _locations.isNotEmpty) ...[
+            DropdownButtonFormField<int>(
+              value: _adminLocationId,
+              decoration: const InputDecoration(
+                labelText: 'Sale location',
+                border: OutlineInputBorder(),
+                isDense: true,
+                prefixIcon: Icon(Icons.storefront_outlined),
+              ),
+              items: _locations.map((location) {
+                final id = location['id'] as int;
+                final name = location['name']?.toString() ?? 'Location';
+                return DropdownMenuItem<int>(
+                  value: id,
+                  child: Text(name),
+                );
+              }).toList(),
+              onChanged: (value) {
+                setState(() {
+                  _adminLocationId = value;
+                });
+                _repo.setAdminSaleLocation(value);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
           TextField(
             controller: _searchController,
             textInputAction: TextInputAction.search,

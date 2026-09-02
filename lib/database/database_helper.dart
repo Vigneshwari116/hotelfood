@@ -90,7 +90,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 16,
+      version: 17,
 
       onConfigure: (db) async {
         await db.execute(
@@ -114,6 +114,18 @@ class DBHelper {
     final batch = db.batch();
 
     // ==========================================================
+    // LOCATIONS
+    // ==========================================================
+
+    batch.execute('''
+      CREATE TABLE locations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        created_at TEXT NOT NULL
+      )
+    ''');
+
+    // ==========================================================
     // USERS
     // ==========================================================
 
@@ -123,7 +135,10 @@ class DBHelper {
         username TEXT NOT NULL UNIQUE,
         password_hash TEXT NOT NULL,
         role TEXT NOT NULL DEFAULT 'admin',
-        created_at TEXT NOT NULL
+        location_id INTEGER,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY (location_id)
+          REFERENCES locations (id)
       )
     ''');
 
@@ -428,8 +443,13 @@ class DBHelper {
 
         voided_at TEXT,
 
+        location_id INTEGER,
+
         FOREIGN KEY (customer_id)
-          REFERENCES customers (id)
+          REFERENCES customers (id),
+
+        FOREIGN KEY (location_id)
+          REFERENCES locations (id)
       )
     ''');
 
@@ -1289,6 +1309,43 @@ class DBHelper {
           WHERE crm.combo_id = ci.combo_id
             AND crm.raw_material_id = ci.raw_material_id
         )
+      ''');
+    }
+
+    if (oldVersion < 17) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS locations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL UNIQUE,
+          created_at TEXT NOT NULL
+        )
+      ''');
+
+      final userColumns = await db.rawQuery(
+        'PRAGMA table_info(users)',
+      );
+      final userNames =
+          userColumns.map((c) => c['name'] as String).toSet();
+      if (!userNames.contains('location_id')) {
+        await db.execute(
+          'ALTER TABLE users ADD COLUMN location_id INTEGER',
+        );
+      }
+
+      final salesColumns = await db.rawQuery(
+        'PRAGMA table_info(sales)',
+      );
+      final salesNames =
+          salesColumns.map((c) => c['name'] as String).toSet();
+      if (!salesNames.contains('location_id')) {
+        await db.execute(
+          'ALTER TABLE sales ADD COLUMN location_id INTEGER',
+        );
+      }
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_sales_location
+        ON sales(location_id)
       ''');
     }
   }

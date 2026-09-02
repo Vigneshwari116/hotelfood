@@ -57,6 +57,51 @@ class Repository {
 
       static final Repository instance = Repository._();
 
+      String? _sessionRole;
+      int? _sessionLocationId;
+      int? _adminSaleLocationId;
+
+      bool get isAdmin => _sessionRole?.toLowerCase() == 'admin';
+
+      int? get sessionLocationId => _sessionLocationId;
+
+      int? get adminSaleLocationId => _adminSaleLocationId;
+
+      void bindSession({
+            required String role,
+            int? locationId,
+      }) {
+            _sessionRole = role;
+            _sessionLocationId = locationId;
+            if (locationId != null) {
+                  _adminSaleLocationId = null;
+            }
+      }
+
+      void setAdminSaleLocation(int? locationId) {
+            _adminSaleLocationId = locationId;
+      }
+
+      void clearSession() {
+            _sessionRole = null;
+            _sessionLocationId = null;
+            _adminSaleLocationId = null;
+      }
+
+      int? get _effectiveSaleLocationId =>
+          _sessionLocationId ?? _adminSaleLocationId;
+
+      void _appendLocationFilter(
+            List<String> where,
+            List<dynamic> args, {
+            String column = 'location_id',
+      }) {
+            if (!isAdmin && _sessionLocationId != null) {
+                  where.add('$column = ?');
+                  args.add(_sessionLocationId);
+            }
+      }
+
       Future<AppDb> get _db async {
             return DBHelper.instance.appDb;
       }
@@ -279,10 +324,30 @@ class Repository {
             final db = await _db;
             final now = DateTime.now().toIso8601String();
 
+            Future<int> ensureLocation(String name) async {
+                  final rows = await db.query(
+                        'locations',
+                        where: 'name = ?',
+                        whereArgs: [name],
+                        limit: 1,
+                  );
+                  if (rows.isNotEmpty) {
+                        return rows.first['id'] as int;
+                  }
+                  return db.insert(
+                        'locations',
+                        {
+                              'name': name,
+                              'created_at': now,
+                        },
+                  );
+            }
+
             Future<void> insertIfMissing({
                   required String username,
                   required String password,
                   required String role,
+                  int? locationId,
             }) async {
                   final rows = await db.query(
                         'users',
@@ -298,10 +363,15 @@ class Repository {
                               'username': username,
                               'password_hash': hashPin(password),
                               'role': role,
+                              'location_id': locationId,
                               'created_at': now,
                         },
                   );
             }
+
+            final gtWorldMall = await ensureLocation('Gt world mall');
+            final magadiRoad = await ensureLocation('Magadi road');
+            final subbannaGarden = await ensureLocation('Subbanna garden');
 
             await insertIfMissing(
                   username: 'admin',
@@ -309,9 +379,70 @@ class Repository {
                   role: 'admin',
             );
             await insertIfMissing(
+                  username: 'Gt mall five star',
+                  password: 'Shilpa@0902',
+                  role: 'staff',
+                  locationId: gtWorldMall,
+            );
+            await insertIfMissing(
+                  username: 'Magadi road five star',
+                  password: 'Shilpa@0902',
+                  role: 'staff',
+                  locationId: magadiRoad,
+            );
+            await insertIfMissing(
+                  username: 'Subbanna garden five star',
+                  password: 'Shilpa@0902',
+                  role: 'staff',
+                  locationId: subbannaGarden,
+            );
+            await insertIfMissing(
                   username: 'staff',
                   password: 'staff123',
                   role: 'staff',
+            );
+      }
+
+      Future<List<Map<String, dynamic>>> locations() async {
+            final db = await _db;
+            return db.query(
+                  'locations',
+                  orderBy: 'name ASC',
+            );
+      }
+
+      Future<List<Map<String, dynamic>>> dailySalesByLocation(
+            DateTime date,
+      ) async {
+            final db = await _db;
+
+            final start = DateTime(
+                  date.year,
+                  date.month,
+                  date.day,
+            );
+            final end = start.add(const Duration(days: 1));
+
+            return db.rawQuery(
+                  '''
+      SELECT
+        l.id AS location_id,
+        l.name AS location_name,
+        COALESCE(SUM(s.total), 0) AS total,
+        COUNT(s.id) AS sale_count
+      FROM locations l
+      LEFT JOIN sales s
+        ON s.location_id = l.id
+        AND s.sale_date >= ?
+        AND s.sale_date < ?
+        AND s.is_voided = 0
+      GROUP BY l.id, l.name
+      ORDER BY l.name ASC
+      ''',
+                  [
+                        start.toIso8601String(),
+                        end.toIso8601String(),
+                  ],
             );
       }
 
@@ -2084,6 +2215,14 @@ class Repository {
                   // CREATE SALE
                   // ----------------------------------------------------------
 
+                  final locationId = _effectiveSaleLocationId;
+                  if (locationId == null) {
+                        throw InvalidInventoryException(
+                              'No location is assigned for this sale. '
+                                  'Select a location and try again.',
+                        );
+                  }
+
                   final saleId = await txn.insert(
                         'sales',
                         {
@@ -2096,6 +2235,7 @@ class Repository {
                               'total': total,
                               'payment_type': paymentType.trim(),
                               'is_voided': 0,
+                              'location_id': locationId,
                         },
                   );
 
@@ -2633,6 +2773,8 @@ class Repository {
                   );
             }
 
+            _appendLocationFilter(where, args);
+
             return db.query(
                   'sales',
                   where: where.isEmpty
@@ -2669,6 +2811,13 @@ class Repository {
             final endIso =
             end.toIso8601String();
 
+            final locationFilter = !isAdmin && _sessionLocationId != null
+                ? ' AND location_id = ?'
+                : '';
+            final locationArgs = !isAdmin && _sessionLocationId != null
+                ? <Object>[_sessionLocationId!]
+                : <Object>[];
+
             final byPayment = await db.rawQuery(
                   '''
       SELECT
@@ -2678,13 +2827,14 @@ class Repository {
       FROM sales
       WHERE sale_date >= ?
         AND sale_date < ?
-        AND is_voided = 0
+        AND is_voided = 0$locationFilter
       GROUP BY payment_type
       ORDER BY payment_type
       ''',
                   [
                         startIso,
                         endIso,
+                        ...locationArgs,
                   ],
             );
 
@@ -2696,11 +2846,12 @@ class Repository {
       FROM sales
       WHERE sale_date >= ?
         AND sale_date < ?
-        AND is_voided = 1
+        AND is_voided = 1$locationFilter
       ''',
                   [
                         startIso,
                         endIso,
+                        ...locationArgs,
                   ],
             );
 
