@@ -82,7 +82,7 @@ class _StartupGateState extends State<_StartupGate> {
     await Repository.instance.ensureDefaultCategories();
     try {
       const seedKey = 'menu_csv_seed';
-      const seedVersion = 7;
+      const seedVersion = 8;
       final remote = ApiConfig.enabled;
       int seeded;
       if (remote) {
