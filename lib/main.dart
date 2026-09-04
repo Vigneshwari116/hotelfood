@@ -126,6 +126,7 @@ class _StartupGateState extends State<_StartupGate> {
       Repository.instance.bindSession(
         role: _session!.role,
         locationId: _session!.locationId,
+        locationName: _session!.locationName,
       );
     }
   }
@@ -294,6 +295,7 @@ class _LoginScreenState extends State<LoginScreen> {
       Repository.instance.bindSession(
         role: role,
         locationId: locationId,
+        locationName: locationName,
       );
 
       if (!mounted) return;
@@ -485,11 +487,12 @@ class _MainShellState extends State<MainShell> {
               label: 'Purchase',
               page: const PurchaseScreen(),
             ),
-            NavItem(
-              icon: Icons.warehouse_outlined,
-              label: 'Menu Items',
-              page: const RawMaterialMasterScreen(),
-            ),
+            if (!_isAdmin)
+              NavItem(
+                icon: Icons.warehouse_outlined,
+                label: 'Menu Items',
+                page: const RawMaterialMasterScreen(),
+              ),
             NavItem(
               icon: Icons.category_outlined,
               label: 'Masters',

@@ -1,5 +1,13 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
 import '../services/repository.dart';
+import '../services/sales_export_service.dart';
 import '../widgets/responsive_shell.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -21,6 +29,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   double _todaySales = 0;
   List<Map<String, dynamic>> _locationSales = [];
+  List<Map<String, dynamic>> _locations = [];
+
+  DateTime _exportFrom = DateTime.now();
+  DateTime _exportTo = DateTime.now();
+  int? _exportLocationId;
+  bool _exporting = false;
 
   bool _loading = true;
 
@@ -40,9 +54,11 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       double todayTotal = 0;
       List<Map<String, dynamic>> locationSales = [];
+      List<Map<String, dynamic>> locations = [];
 
       if (widget.isAdmin) {
         locationSales = await repo.dailySalesByLocation(today);
+        locations = await repo.locations();
         todayTotal = locationSales.fold<double>(
           0,
           (sum, row) => sum + ((row['total'] as num?)?.toDouble() ?? 0),
@@ -80,6 +96,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _negativeStock = negativeStock;
         _todaySales = todayTotal;
         _locationSales = locationSales;
+        _locations = locations;
         _loading = false;
       });
     } catch (e) {
@@ -94,6 +111,109 @@ class _DashboardScreenState extends State<DashboardScreen> {
           content: Text('Failed to load dashboard: $e'),
         ),
       );
+    }
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _pickExportDate({
+    required bool isFrom,
+  }) async {
+    final initial = isFrom ? _exportFrom : _exportTo;
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime.now().subtract(const Duration(days: 730)),
+      lastDate: DateTime.now(),
+    );
+    if (picked == null) return;
+
+    setState(() {
+      if (isFrom) {
+        _exportFrom = picked;
+        if (_exportTo.isBefore(_exportFrom)) {
+          _exportTo = _exportFrom;
+        }
+      } else {
+        _exportTo = picked;
+        if (_exportFrom.isAfter(_exportTo)) {
+          _exportFrom = _exportTo;
+        }
+      }
+    });
+  }
+
+  Future<void> _exportSales({required bool asCsv}) async {
+    if (_exporting) return;
+
+    setState(() {
+      _exporting = true;
+    });
+
+    try {
+      final rows = await Repository.instance.salesExportReport(
+        from: _exportFrom,
+        to: _exportTo,
+        locationId: _exportLocationId,
+      );
+
+      final locationLabel = _exportLocationId == null
+          ? 'all_locations'
+          : _locations
+              .firstWhere(
+                (row) => row['id'] == _exportLocationId,
+                orElse: () => {'name': 'location'},
+              )['name']
+              .toString()
+              .replaceAll(' ', '_');
+      final extension = asCsv ? 'csv' : 'xlsx';
+      final fileName =
+          'sales_${_formatDate(_exportFrom)}_to_${_formatDate(_exportTo)}_$locationLabel.$extension';
+
+      String? path;
+      if (!kIsWeb &&
+          (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+        path = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save sales export',
+          fileName: fileName,
+          type: FileType.custom,
+          allowedExtensions: [extension],
+        );
+      }
+      path ??= p.join(
+        (await getApplicationDocumentsDirectory()).path,
+        fileName,
+      );
+
+      if (asCsv) {
+        await File(path).writeAsString(SalesExportService.buildCsv(rows));
+      } else {
+        await File(path).writeAsBytes(SalesExportService.buildXlsx(rows));
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            rows.isEmpty
+                ? 'No sales found for the selected filters. Empty file saved to $path'
+                : 'Exported ${rows.length} sale(s) to $path',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Export failed: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _exporting = false;
+        });
+      }
     }
   }
 
@@ -159,36 +279,133 @@ class _DashboardScreenState extends State<DashboardScreen> {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 24),
+                        _adminExportSection(context),
                       ],
-                      ResponsiveGrid(
-                        tileWidth: 220,
-                        children: [
-                          _statCard(
-                            'Today\'s Sales',
-                            '₹${_todaySales.toStringAsFixed(2)}',
-                            Icons.point_of_sale,
-                          ),
-                          _statCard(
-                            'Menu Items',
-                            '$_materials',
-                            Icons.inventory_2,
-                          ),
-                          _statCard(
-                            'Low Stock Alerts',
-                            _negativeStock > 0
-                                ? '$_lowStock low, $_negativeStock negative'
-                                : '$_lowStock',
-                            Icons.warning_amber,
-                          ),
-                        ],
-                      ),
+                      if (!widget.isAdmin)
+                        ResponsiveGrid(
+                          tileWidth: 220,
+                          children: [
+                            _statCard(
+                              'Today\'s Sales',
+                              '₹${_todaySales.toStringAsFixed(2)}',
+                              Icons.point_of_sale,
+                            ),
+                            _statCard(
+                              'Menu Items',
+                              '$_materials',
+                              Icons.inventory_2,
+                            ),
+                            _statCard(
+                              'Low Stock Alerts',
+                              _negativeStock > 0
+                                  ? '$_lowStock low, $_negativeStock negative'
+                                  : '$_lowStock',
+                              Icons.warning_amber,
+                            ),
+                          ],
+                        ),
                     ],
                   ],
                 ),
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _adminExportSection(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Export Sales',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.bold,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.calendar_today, size: 16),
+                  label: Text('From ${_formatDate(_exportFrom)}'),
+                  onPressed: () => _pickExportDate(isFrom: true),
+                ),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.calendar_today, size: 16),
+                  label: Text('To ${_formatDate(_exportTo)}'),
+                  onPressed: () => _pickExportDate(isFrom: false),
+                ),
+                SizedBox(
+                  width: 220,
+                  child: DropdownButtonFormField<int?>(
+                    value: _exportLocationId,
+                    decoration: const InputDecoration(
+                      labelText: 'Location',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('All locations'),
+                      ),
+                      ..._locations.map((location) {
+                        return DropdownMenuItem<int?>(
+                          value: location['id'] as int,
+                          child: Text(location['name']?.toString() ?? 'Location'),
+                        );
+                      }),
+                    ],
+                    onChanged: (value) {
+                      setState(() {
+                        _exportLocationId = value;
+                      });
+                    },
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              children: [
+                FilledButton.icon(
+                  onPressed: _exporting ? null : () => _exportSales(asCsv: false),
+                  icon: _exporting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.download_outlined),
+                  label: const Text('Export Excel'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _exporting ? null : () => _exportSales(asCsv: true),
+                  icon: const Icon(Icons.table_rows_outlined),
+                  label: const Text('Export CSV'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Includes full customer name and mobile for every sale in the selected range.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ],
         ),
       ),
     );

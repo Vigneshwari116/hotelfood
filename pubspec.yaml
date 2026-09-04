@@ -100,6 +100,7 @@ flutter:
     - assets/branding/thank_you_hands.png
     - assets/templates/menu_items_import.csv
     - assets/templates/menu_items_import.xlsx
+    - assets/templates/locations/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

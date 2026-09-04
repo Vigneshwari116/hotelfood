@@ -59,20 +59,25 @@ class Repository {
 
       String? _sessionRole;
       int? _sessionLocationId;
+      String? _sessionLocationName;
       int? _adminSaleLocationId;
 
       bool get isAdmin => _sessionRole?.toLowerCase() == 'admin';
 
       int? get sessionLocationId => _sessionLocationId;
 
+      String? get sessionLocationName => _sessionLocationName;
+
       int? get adminSaleLocationId => _adminSaleLocationId;
 
       void bindSession({
             required String role,
             int? locationId,
+            String? locationName,
       }) {
             _sessionRole = role;
             _sessionLocationId = locationId;
+            _sessionLocationName = locationName;
             if (locationId != null) {
                   _adminSaleLocationId = null;
             }
@@ -85,6 +90,7 @@ class Repository {
       void clearSession() {
             _sessionRole = null;
             _sessionLocationId = null;
+            _sessionLocationName = null;
             _adminSaleLocationId = null;
       }
 
@@ -2416,6 +2422,8 @@ class Repository {
             required double tax,
             required double discount,
             required String paymentType,
+            String? customerName,
+            String? customerPhone,
       }) async {
             final db = await _db;
 
@@ -2551,6 +2559,12 @@ class Repository {
                         'sales',
                         {
                               'customer_id': customerId,
+                              'customer_name': customerName?.trim().isEmpty == true
+                                  ? null
+                                  : customerName?.trim(),
+                              'customer_phone': customerPhone?.trim().isEmpty == true
+                                  ? null
+                                  : customerPhone?.trim(),
                               'sale_date':
                               DateTime.now().toIso8601String(),
                               'subtotal': subtotal,
@@ -3106,6 +3120,91 @@ class Repository {
                       : where.join(' AND '),
                   whereArgs: args.isEmpty ? null : args,
                   orderBy: 'sale_date DESC, id DESC',
+            );
+      }
+
+      Future<List<Map<String, dynamic>>> salesExportReport({
+            required DateTime from,
+            required DateTime to,
+            int? locationId,
+      }) async {
+            if (!isAdmin) {
+                  throw InvalidInventoryException(
+                        'Only admin can export sales data.',
+                  );
+            }
+
+            final db = await _db;
+            final start = DateTime(from.year, from.month, from.day);
+            final end = DateTime(
+                  to.year,
+                  to.month,
+                  to.day,
+            ).add(const Duration(days: 1));
+
+            final where = <String>[
+                  's.sale_date >= ?',
+                  's.sale_date < ?',
+            ];
+            final args = <Object>[
+                  start.toIso8601String(),
+                  end.toIso8601String(),
+            ];
+
+            if (locationId != null) {
+                  where.add('s.location_id = ?');
+                  args.add(locationId);
+            }
+
+            return db.rawQuery(
+                  '''
+      SELECT
+        s.id,
+        s.sale_date,
+        s.customer_name,
+        s.customer_phone,
+        s.subtotal,
+        s.tax,
+        s.discount,
+        s.total,
+        s.payment_type,
+        s.is_voided,
+        l.name AS location_name
+      FROM sales s
+      LEFT JOIN locations l ON l.id = s.location_id
+      WHERE ${where.join(' AND ')}
+      ORDER BY s.sale_date ASC, s.id ASC
+      ''',
+                  args,
+            );
+      }
+
+      Future<List<Map<String, dynamic>>> menuExportRows(int locationId) async {
+            final db = await _db;
+            return db.rawQuery(
+                  '''
+      SELECT
+        COALESCE(c.name, '') AS category,
+        rm.name AS item_name,
+        COALESCE(rm.sub_item, '') AS sub_item,
+        COALESCE(rm.barcode, '') AS barcode,
+        rm.qty_needed AS qty_per_sale,
+        '' AS packets,
+        rm.units_per_packet AS units_per_packet,
+        COALESCE(u.short_code, '') AS unit,
+        COALESCE(ls.opening_stock, 0) AS opening_stock,
+        rm.cost_price AS cost_price,
+        rm.selling_price AS selling_price
+      FROM raw_materials rm
+      LEFT JOIN categories c ON c.id = rm.category_id
+      LEFT JOIN units u ON u.id = rm.unit_id
+      LEFT JOIN location_stock ls
+        ON ls.raw_material_id = rm.id
+        AND ls.location_id = ?
+      WHERE rm.listed IS NULL OR rm.listed = 1
+      ORDER BY c.name ASC, rm.name ASC, rm.sub_item ASC
+      ''',
+                  [locationId],
             );
       }
 

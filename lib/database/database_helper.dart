@@ -90,7 +90,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 18,
+      version: 19,
 
       onConfigure: (db) async {
         await db.execute(
@@ -486,6 +486,10 @@ class DBHelper {
         voided_at TEXT,
 
         location_id INTEGER,
+
+        customer_name TEXT,
+
+        customer_phone TEXT,
 
         FOREIGN KEY (customer_id)
           REFERENCES customers (id),
@@ -1503,6 +1507,24 @@ class DBHelper {
             )
           ''', [locationId, locationId]);
         }
+      }
+    }
+
+    if (oldVersion < 19) {
+      final salesColumns = await db.rawQuery(
+        'PRAGMA table_info(sales)',
+      );
+      final salesNames =
+          salesColumns.map((c) => c['name'] as String).toSet();
+      if (!salesNames.contains('customer_name')) {
+        await db.execute(
+          'ALTER TABLE sales ADD COLUMN customer_name TEXT',
+        );
+      }
+      if (!salesNames.contains('customer_phone')) {
+        await db.execute(
+          'ALTER TABLE sales ADD COLUMN customer_phone TEXT',
+        );
       }
     }
   }

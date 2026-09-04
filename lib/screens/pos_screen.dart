@@ -697,6 +697,9 @@ class _PosScreenState extends State<PosScreen> {
     final grandTotal = _total;
 
     try {
+      final customerName = _customerNameController.text.trim();
+      final customerPhone = _customerPhoneController.text.trim();
+
       final saleId =
       await _repo.recordSale(
         customerId: null,
@@ -705,6 +708,10 @@ class _PosScreenState extends State<PosScreen> {
         discount: discount,
         paymentType:
         _paymentType,
+        customerName:
+            customerName.isEmpty ? null : customerName,
+        customerPhone:
+            customerPhone.isEmpty ? null : customerPhone,
       );
 
       if (!mounted) return;
@@ -719,9 +726,6 @@ class _PosScreenState extends State<PosScreen> {
 
       _discountController.text =
       '0';
-
-      final customerName = _customerNameController.text.trim();
-      final customerPhone = _customerPhoneController.text.trim();
 
       _customerNameController.clear();
       _customerPhoneController.clear();
