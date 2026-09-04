@@ -36,6 +36,8 @@ class _RawMaterialMasterScreenState
 
   bool _loading = false;
 
+  bool get _readOnly => Repository.instance.isAdmin;
+
   @override
   void initState() {
     super.initState();
@@ -580,6 +582,18 @@ class _RawMaterialMasterScreenState
       ) {
     return Column(
       children: [
+        if (_readOnly)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: MaterialBanner(
+              content: const Text(
+                'View only. Stock, prices, and menu edits are managed at each location.',
+              ),
+              leading: const Icon(Icons.visibility_outlined),
+              backgroundColor: Colors.blue.shade50,
+              actions: const [SizedBox.shrink()],
+            ),
+          ),
         // ------------------------------------------------------
         // SEARCH + ADD
         // ------------------------------------------------------
@@ -605,35 +619,37 @@ class _RawMaterialMasterScreenState
               ),
             ),
 
-            const SizedBox(width: 8),
+            if (!_readOnly) ...[
+              const SizedBox(width: 8),
 
-            IconButton(
-              tooltip: 'Save Excel/CSV template',
-              onPressed: _saveImportTemplate,
-              icon: const Icon(Icons.download_outlined),
-            ),
-
-            OutlinedButton.icon(
-              onPressed: _importItemsFile,
-              icon: const Icon(Icons.upload_file),
-              label: Text(isMobile ? 'Import' : 'Import CSV / Excel'),
-            ),
-
-            const SizedBox(width: 8),
-
-            FilledButton.icon(
-              onPressed: () {
-                _openRawMaterialEditor();
-              },
-              icon: const Icon(
-                Icons.add,
+              IconButton(
+                tooltip: 'Save Excel/CSV template',
+                onPressed: _saveImportTemplate,
+                icon: const Icon(Icons.download_outlined),
               ),
-              label: Text(
-                isMobile
-                    ? 'Add'
-                    : 'Add Item',
+
+              OutlinedButton.icon(
+                onPressed: _importItemsFile,
+                icon: const Icon(Icons.upload_file),
+                label: Text(isMobile ? 'Import' : 'Import CSV / Excel'),
               ),
-            ),
+
+              const SizedBox(width: 8),
+
+              FilledButton.icon(
+                onPressed: () {
+                  _openRawMaterialEditor();
+                },
+                icon: const Icon(
+                  Icons.add,
+                ),
+                label: Text(
+                  isMobile
+                      ? 'Add'
+                      : 'Add Item',
+                ),
+              ),
+            ],
           ],
         ),
 
@@ -788,11 +804,13 @@ class _RawMaterialMasterScreenState
             item.reorderLevel;
 
     return InkWell(
-      onTap: () {
-        _openRawMaterialEditor(
-          existing: item,
-        );
-      },
+      onTap: _readOnly
+          ? null
+          : () {
+              _openRawMaterialEditor(
+                existing: item,
+              );
+            },
       child: Padding(
         padding:
         const EdgeInsets.all(12),
@@ -963,46 +981,43 @@ class _RawMaterialMasterScreenState
 
             const SizedBox(width: 8),
 
-            // --------------------------------------------------
-            // MENU
-            // --------------------------------------------------
+            if (!_readOnly)
+              PopupMenuButton<String>(
+                onSelected: (value) {
+                  if (value == 'edit') {
+                    _openRawMaterialEditor(
+                      existing: item,
+                    );
+                  }
 
-            PopupMenuButton<String>(
-              onSelected: (value) {
-                if (value == 'edit') {
-                  _openRawMaterialEditor(
-                    existing: item,
-                  );
-                }
-
-                if (value == 'delete') {
-                  _deleteRawMaterial(
-                    item,
-                  );
-                }
-              },
-              itemBuilder: (_) => const [
-                PopupMenuItem(
-                  value: 'edit',
-                  child: ListTile(
-                    leading:
-                    Icon(Icons.edit),
-                    title:
-                    Text('Edit'),
-                  ),
-                ),
-                PopupMenuItem(
-                  value: 'delete',
-                  child: ListTile(
-                    leading: Icon(
-                      Icons.delete_outline,
+                  if (value == 'delete') {
+                    _deleteRawMaterial(
+                      item,
+                    );
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'edit',
+                    child: ListTile(
+                      leading:
+                      Icon(Icons.edit),
+                      title:
+                      Text('Edit'),
                     ),
-                    title:
-                    Text('Delete'),
                   ),
-                ),
-              ],
-            ),
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: ListTile(
+                      leading: Icon(
+                        Icons.delete_outline,
+                      ),
+                      title:
+                      Text('Delete'),
+                    ),
+                  ),
+                ],
+              ),
           ],
         ),
       ),
@@ -1037,19 +1052,20 @@ class _RawMaterialMasterScreenState
               ),
             ),
 
-            FilledButton.icon(
-              onPressed: () {
-                _openComboEditor();
-              },
-              icon: const Icon(
-                Icons.add,
+            if (!_readOnly)
+              FilledButton.icon(
+                onPressed: () {
+                  _openComboEditor();
+                },
+                icon: const Icon(
+                  Icons.add,
+                ),
+                label: Text(
+                  isMobile
+                      ? 'Add'
+                      : 'Add Combo',
+                ),
               ),
-              label: Text(
-                isMobile
-                    ? 'Add'
-                    : 'Add Combo',
-              ),
-            ),
           ],
         ),
 
@@ -1116,11 +1132,13 @@ class _RawMaterialMasterScreenState
       clipBehavior:
       Clip.antiAlias,
       child: InkWell(
-        onTap: () {
-          _openComboEditor(
-            existing: combo,
-          );
-        },
+        onTap: _readOnly
+            ? null
+            : () {
+                _openComboEditor(
+                  existing: combo,
+                );
+              },
         child: Padding(
           padding:
           const EdgeInsets.all(12),
@@ -1231,50 +1249,51 @@ class _RawMaterialMasterScreenState
               // MENU
               // ------------------------------------------------
 
-              PopupMenuButton<String>(
-                onSelected:
-                    (value) {
-                  if (value ==
-                      'edit') {
-                    _openComboEditor(
-                      existing:
-                      combo,
-                    );
-                  }
+              if (!_readOnly)
+                PopupMenuButton<String>(
+                  onSelected:
+                      (value) {
+                    if (value ==
+                        'edit') {
+                      _openComboEditor(
+                        existing:
+                        combo,
+                      );
+                    }
 
-                  if (value ==
-                      'delete') {
-                    _deleteCombo(
-                      combo,
-                    );
-                  }
-                },
-                itemBuilder:
-                    (_) => const [
-                  PopupMenuItem(
-                    value: 'edit',
-                    child: ListTile(
-                      leading: Icon(
-                        Icons.edit,
+                    if (value ==
+                        'delete') {
+                      _deleteCombo(
+                        combo,
+                      );
+                    }
+                  },
+                  itemBuilder:
+                      (_) => const [
+                    PopupMenuItem(
+                      value: 'edit',
+                      child: ListTile(
+                        leading: Icon(
+                          Icons.edit,
+                        ),
+                        title:
+                        Text('Edit'),
                       ),
-                      title:
-                      Text('Edit'),
                     ),
-                  ),
-                  PopupMenuItem(
-                    value: 'delete',
-                    child: ListTile(
-                      leading:
-                      Icon(
-                        Icons
-                            .delete_outline,
+                    PopupMenuItem(
+                      value: 'delete',
+                      child: ListTile(
+                        leading:
+                        Icon(
+                          Icons
+                              .delete_outline,
+                        ),
+                        title:
+                        Text('Delete'),
                       ),
-                      title:
-                      Text('Delete'),
                     ),
-                  ),
-                ],
-              ),
+                  ],
+                ),
             ],
           ),
         ),
