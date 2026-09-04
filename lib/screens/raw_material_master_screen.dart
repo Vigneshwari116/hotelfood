@@ -140,28 +140,41 @@ class _RawMaterialMasterScreenState
   }
 
   Future<void> _saveImportTemplate() async {
-    final csv = await ItemImportService().exportCsv();
+    final repo = Repository.instance;
+    final locationId = repo.sessionLocationId;
+    final locationName = repo.sessionLocationName;
+    if (locationId == null || locationName == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Menu export is only available for location accounts.'),
+        ),
+      );
+      return;
+    }
+
+    final service = ItemImportService();
+    final bytes = await service.exportXlsxForLocation(locationId);
+    final fileName = '$locationName.xlsx';
+
     String? path;
     if (!kIsWeb &&
         (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
       path = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save menu Excel/CSV',
-        fileName: 'Shilpa_Enterprise_menu_items.csv',
+        dialogTitle: 'Save menu Excel',
+        fileName: fileName,
         type: FileType.custom,
-        allowedExtensions: const ['csv', 'xlsx'],
+        allowedExtensions: const ['xlsx'],
       );
     }
     path ??= p.join(
       (await getApplicationDocumentsDirectory()).path,
-      'Shilpa_Enterprise_menu_items.csv',
+      fileName,
     );
-    if (path.toLowerCase().endsWith('.xlsx')) {
-      path = '${path.substring(0, path.length - 5)}.csv';
+    if (!path.toLowerCase().endsWith('.xlsx')) {
+      path = '$path.xlsx';
     }
-    if (!path.toLowerCase().endsWith('.csv')) {
-      path = '$path.csv';
-    }
-    await File(path).writeAsString(csv);
+    await File(path).writeAsBytes(bytes);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Menu file saved to $path')),
@@ -169,6 +182,18 @@ class _RawMaterialMasterScreenState
   }
 
   Future<void> _importItemsFile() async {
+    final repo = Repository.instance;
+    final locationName = repo.sessionLocationName;
+    if (locationName == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Menu import is only available for location accounts.'),
+        ),
+      );
+      return;
+    }
+
     final picked = await FilePicker.platform.pickFiles(
       type: FileType.custom,
       allowedExtensions: const ['csv', 'xlsx', 'xls'],
@@ -198,6 +223,7 @@ class _RawMaterialMasterScreenState
     try {
       final result = await ItemImportService().importFile(
         picked.files.first.path!,
+        expectedLocationName: locationName,
       );
       if (!mounted) return;
       Navigator.of(context).pop();

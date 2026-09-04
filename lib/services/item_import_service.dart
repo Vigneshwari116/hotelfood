@@ -6,6 +6,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter/services.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/repository.dart';
+import 'package:foodstock/services/spreadsheet_export.dart';
 import 'package:path/path.dart' as p;
 
 class ItemImportResult {
@@ -16,7 +17,78 @@ class ItemImportResult {
 }
 
 class ItemImportService {
-  Future<ItemImportResult> importFile(String path) async {
+  static const menuHeaders = [
+    'category',
+    'item_name',
+    'sub_item',
+    'barcode',
+    'qty_per_sale',
+    'packets',
+    'units_per_packet',
+    'unit',
+    'opening stock',
+    'cost_price',
+    'selling_price',
+  ];
+
+  void validateImportFilename(String filePath, String expectedLocationName) {
+    final baseName = p.basenameWithoutExtension(filePath);
+    if (baseName != expectedLocationName) {
+      throw InvalidInventoryException(
+        'This file is for a different location',
+      );
+    }
+  }
+
+  Future<Uint8List> exportXlsxForLocation(int locationId) async {
+    final rows = await _menuRowsForLocation(locationId);
+    return SpreadsheetExport.buildXlsx(menuHeaders, rows);
+  }
+
+  Future<String> exportCsvForLocation(int locationId) async {
+    final rows = await _menuRowsForLocation(locationId);
+    return SpreadsheetExport.buildCsv(menuHeaders, rows);
+  }
+
+  Future<List<List<String>>> _menuRowsForLocation(int locationId) async {
+    final data = await Repository.instance.menuExportRows(locationId);
+    return data.map((row) {
+      String cell(Object? value) {
+        if (value == null) return '';
+        if (value is num) {
+          final number = value.toDouble();
+          if (number % 1 == 0) return number.toStringAsFixed(0);
+          return number.toString();
+        }
+        return value.toString();
+      }
+
+      return [
+        cell(row['category']),
+        cell(row['item_name']),
+        cell(row['sub_item']),
+        cell(row['barcode']),
+        cell(row['qty_per_sale']),
+        cell(row['packets']),
+        cell(row['units_per_packet']),
+        cell(row['unit']),
+        cell(row['opening_stock']),
+        cell(row['cost_price']),
+        cell(row['selling_price']),
+      ];
+    }).toList();
+  }
+
+  Future<ItemImportResult> importFile(
+    String path, {
+    String? expectedLocationName,
+    bool replaceCatalog = true,
+  }) async {
+    if (expectedLocationName != null) {
+      validateImportFilename(path, expectedLocationName);
+      replaceCatalog = false;
+    }
+
     final ext = p.extension(path).toLowerCase();
     final bytes = await File(path).readAsBytes();
     if (ext == '.xls') {
@@ -28,7 +100,11 @@ class ItemImportService {
         ? _parseXlsx(bytes)
         : _parseCsv(utf8.decode(bytes, allowMalformed: true));
 
-    return _importRows(rows, updateExisting: true, replaceCatalog: true);
+    return _importRows(
+      rows,
+      updateExisting: true,
+      replaceCatalog: replaceCatalog,
+    );
   }
 
   Future<ItemImportResult> importCsvText(
