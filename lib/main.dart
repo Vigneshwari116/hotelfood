@@ -487,12 +487,11 @@ class _MainShellState extends State<MainShell> {
               label: 'Purchase',
               page: const PurchaseScreen(),
             ),
-            if (!_isAdmin)
-              NavItem(
-                icon: Icons.warehouse_outlined,
-                label: 'Menu Items',
-                page: const RawMaterialMasterScreen(),
-              ),
+            NavItem(
+              icon: Icons.warehouse_outlined,
+              label: 'Menu Items',
+              page: const RawMaterialMasterScreen(),
+            ),
             NavItem(
               icon: Icons.category_outlined,
               label: 'Masters',
