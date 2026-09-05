@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../services/repository.dart';
 import '../services/sales_export_service.dart';
@@ -145,7 +146,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
     });
   }
 
-  Future<void> _exportSales({required bool asCsv}) async {
+  Future<void> _exportSales() async {
     if (_exporting) return;
 
     setState(() {
@@ -168,38 +169,53 @@ class _DashboardScreenState extends State<DashboardScreen> {
               )['name']
               .toString()
               .replaceAll(' ', '_');
-      final extension = asCsv ? 'csv' : 'xlsx';
       final fileName =
-          'sales_${_formatDate(_exportFrom)}_to_${_formatDate(_exportTo)}_$locationLabel.$extension';
+          'sales_${_formatDate(_exportFrom)}_to_${_formatDate(_exportTo)}_$locationLabel.xlsx';
 
-      String? path;
-      if (!kIsWeb &&
-          (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
-        path = await FilePicker.platform.saveFile(
+      final isDesktop = !kIsWeb &&
+          (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
+
+      String path;
+      if (isDesktop) {
+        final picked = await FilePicker.platform.saveFile(
           dialogTitle: 'Save sales export',
           fileName: fileName,
           type: FileType.custom,
-          allowedExtensions: [extension],
+          allowedExtensions: const ['xlsx'],
+        );
+        path = picked ??
+            p.join(
+              (await getApplicationDocumentsDirectory()).path,
+              fileName,
+            );
+      } else {
+        path = p.join(
+          (await getApplicationDocumentsDirectory()).path,
+          fileName,
         );
       }
-      path ??= p.join(
-        (await getApplicationDocumentsDirectory()).path,
-        fileName,
-      );
 
-      if (asCsv) {
-        await File(path).writeAsString(SalesExportService.buildCsv(rows));
-      } else {
-        await File(path).writeAsBytes(SalesExportService.buildXlsx(rows));
-      }
+      final bytes = SalesExportService.buildXlsx(rows);
+      await File(path).writeAsBytes(bytes);
 
       if (!mounted) return;
+
+      if (!isDesktop) {
+        await Share.shareXFiles(
+          [XFile(path)],
+          subject: 'Sales export',
+          text: 'Sales export for ${_formatDate(_exportFrom)} to ${_formatDate(_exportTo)}',
+        );
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             rows.isEmpty
-                ? 'No sales found for the selected filters. Empty file saved to $path'
-                : 'Exported ${rows.length} sale(s) to $path',
+                ? 'No sales found for the selected filters. Empty Excel file saved.'
+                : isDesktop
+                    ? 'Exported ${rows.length} sale(s) to $path'
+                    : 'Exported ${rows.length} sale(s). Share sheet opened.',
           ),
         ),
       );
@@ -380,7 +396,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               spacing: 8,
               children: [
                 FilledButton.icon(
-                  onPressed: _exporting ? null : () => _exportSales(asCsv: false),
+                  onPressed: _exporting ? null : _exportSales,
                   icon: _exporting
                       ? const SizedBox(
                           width: 16,
@@ -389,11 +405,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         )
                       : const Icon(Icons.download_outlined),
                   label: const Text('Export Excel'),
-                ),
-                OutlinedButton.icon(
-                  onPressed: _exporting ? null : () => _exportSales(asCsv: true),
-                  icon: const Icon(Icons.table_rows_outlined),
-                  label: const Text('Export CSV'),
                 ),
               ],
             ),

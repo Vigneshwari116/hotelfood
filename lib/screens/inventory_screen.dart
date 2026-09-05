@@ -58,6 +58,7 @@ class _CurrentStockTab extends StatefulWidget {
 
 class _CurrentStockTabState extends State<_CurrentStockTab> {
   List<Map<String, dynamic>> _rows = [];
+  final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
@@ -65,31 +66,69 @@ class _CurrentStockTabState extends State<_CurrentStockTab> {
     _load();
   }
 
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
   Future<void> _load() async {
     final r = await Repository.instance.currentStockReport();
     setState(() => _rows = r);
   }
 
+  List<Map<String, dynamic>> get _filteredRows {
+    final query = _searchController.text.trim().toLowerCase();
+    if (query.isEmpty) return _rows;
+    return _rows.where((row) {
+      final haystack = [
+        row['name']?.toString() ?? '',
+        row['category']?.toString() ?? '',
+        row['unit']?.toString() ?? '',
+      ].join(' ').toLowerCase();
+      return haystack.contains(query);
+    }).toList();
+  }
+
   @override
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.of(context).size.width < Breakpoints.mobile;
+    final rows = _filteredRows;
     return ResponsivePage(
-      child: _rows.isEmpty
-          ? const Center(child: Text('No stock data yet'))
-          : SingleChildScrollView(
-        scrollDirection: Axis.vertical,
-        child: SingleChildScrollView(
-          scrollDirection: isMobile ? Axis.horizontal : Axis.vertical,
-          child: DataTable(
-          columns: const [
-            DataColumn(label: Text('Item')),
-            DataColumn(label: Text('Category')),
-            DataColumn(label: Text('Unit')),
-            DataColumn(label: Text('Current Stock')),
-            DataColumn(label: Text('Reorder Level')),
-            DataColumn(label: Text('Status')),
-          ],
-          rows: _rows.map((r) {
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(0, 0, 0, 12),
+            child: TextField(
+              controller: _searchController,
+              decoration: const InputDecoration(
+                labelText: 'Search items',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
+                isDense: true,
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+          ),
+          Expanded(
+            child: rows.isEmpty
+                ? const Center(child: Text('No matching stock items'))
+                : SingleChildScrollView(
+                    scrollDirection: Axis.vertical,
+                    child: SingleChildScrollView(
+                      scrollDirection:
+                          isMobile ? Axis.horizontal : Axis.vertical,
+                      child: DataTable(
+                        columns: const [
+                          DataColumn(label: Text('Item')),
+                          DataColumn(label: Text('Category')),
+                          DataColumn(label: Text('Unit')),
+                          DataColumn(label: Text('Current Stock')),
+                          DataColumn(label: Text('Reorder Level')),
+                          DataColumn(label: Text('Status')),
+                        ],
+                        rows: rows.map((r) {
             final cur = (r['current_stock'] as num).toDouble();
             final reorder = (r['reorder_level'] as num).toDouble();
             final negative = cur < -0.000001;
@@ -120,8 +159,11 @@ class _CurrentStockTabState extends State<_CurrentStockTab> {
               )),
             ]);
           }).toList(),
-        ),
-        ),
+                      ),
+                    ),
+                  ),
+          ),
+        ],
       ),
     );
   }

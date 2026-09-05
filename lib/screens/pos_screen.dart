@@ -52,6 +52,10 @@ class _PosScreenState extends State<PosScreen> {
   bool _loading = true;
   bool _saving = false;
   bool _cartSheetOpen = false;
+  String? _phoneError;
+
+  bool get _adminViewOnly => _repo.isAdmin;
+
   void Function(VoidCallback)? _sheetSetState;
 
   void _refreshUi() {
@@ -182,8 +186,12 @@ class _PosScreenState extends State<PosScreen> {
 
   List<RawMaterial> get _allMaterials => _materials;
 
-  List<Combo> get _activeCombos =>
-      _combos.where((combo) => combo.isActive && combo.id != null).toList();
+  List<Combo> get _activeCombos => _combos
+      .where(
+        (combo) =>
+            combo.isActive && combo.id != null && combo.items.isNotEmpty,
+      )
+      .toList();
 
   Set<int?> get _categoryIdsWithItems {
     final ids = {for (final material in _allMaterials) material.categoryId};
@@ -259,8 +267,16 @@ class _PosScreenState extends State<PosScreen> {
   bool _comboMatchesSearch(Combo combo) {
     final name = combo.name.toLowerCase();
     final barcode = combo.barcode?.toLowerCase() ?? '';
-    return name.contains(_search) || barcode.contains(_search);
+    final components = combo.items
+        .map((item) => item.materialName?.toLowerCase() ?? '')
+        .join(' ');
+    return name.contains(_search) ||
+        barcode.contains(_search) ||
+        components.contains(_search);
   }
+
+  bool _isValidCustomerPhone(String phone) =>
+      Repository.isValidCustomerPhone(phone);
 
   List<({String title, List<RawMaterial> materials, List<Combo> combos})>
       get _productSections {
@@ -516,6 +532,13 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
+    if (combo.items.isEmpty) {
+      _showError(
+        'This combo has no component items yet.',
+      );
+      return;
+    }
+
     final index = _cartIndexForCombo(combo.id!);
 
     if (index == -1) {
@@ -652,12 +675,32 @@ class _PosScreenState extends State<PosScreen> {
   // ============================================================
 
   Future<void> _checkout() async {
+    if (_adminViewOnly) {
+      _showError(
+        'Admin accounts are view-only for sales.',
+      );
+      return;
+    }
+
     if (_cart.isEmpty) {
       _showError(
         'Cart is empty.',
       );
       return;
     }
+
+    final customerPhone = _customerPhoneController.text.trim();
+    if (!_isValidCustomerPhone(customerPhone)) {
+      setState(() {
+        _phoneError = 'Mobile number is required';
+      });
+      _showError('Enter a valid mobile number before completing the sale.');
+      return;
+    }
+
+    setState(() {
+      _phoneError = null;
+    });
 
     final tax = _tax;
     final discount =
@@ -698,7 +741,6 @@ class _PosScreenState extends State<PosScreen> {
 
     try {
       final customerName = _customerNameController.text.trim();
-      final customerPhone = _customerPhoneController.text.trim();
 
       final saleId =
       await _repo.recordSale(
@@ -710,8 +752,7 @@ class _PosScreenState extends State<PosScreen> {
         _paymentType,
         customerName:
             customerName.isEmpty ? null : customerName,
-        customerPhone:
-            customerPhone.isEmpty ? null : customerPhone,
+        customerPhone: customerPhone,
       );
 
       if (!mounted) return;
@@ -729,6 +770,7 @@ class _PosScreenState extends State<PosScreen> {
 
       _customerNameController.clear();
       _customerPhoneController.clear();
+      _phoneError = null;
 
       await _refreshStock();
 
@@ -1391,6 +1433,23 @@ class _PosScreenState extends State<PosScreen> {
         CrossAxisAlignment
             .stretch,
         children: [
+          if (_adminViewOnly) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                border: Border.all(color: Colors.orange.shade200),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text(
+                'Admin accounts are view-only for sales. Switch to a location '
+                'staff account to complete a sale.',
+                style: TextStyle(fontSize: 12),
+              ),
+            ),
+          ],
           TextField(
             controller: _customerNameController,
             textCapitalization: TextCapitalization.words,
@@ -1408,13 +1467,21 @@ class _PosScreenState extends State<PosScreen> {
           TextField(
             controller: _customerPhoneController,
             keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
-              labelText: 'Mobile number (optional)',
-              border: OutlineInputBorder(),
+            decoration: InputDecoration(
+              labelText: 'Mobile number',
+              border: const OutlineInputBorder(),
               isDense: true,
-              prefixIcon: Icon(Icons.phone_outlined),
+              prefixIcon: const Icon(Icons.phone_outlined),
+              errorText: _phoneError,
             ),
-            onChanged: (_) => _refreshUi(),
+            onChanged: (_) {
+              setState(() {
+                if (_isValidCustomerPhone(_customerPhoneController.text)) {
+                  _phoneError = null;
+                }
+              });
+              _refreshUi();
+            },
           ),
 
           const SizedBox(height: 8),
@@ -1614,8 +1681,8 @@ class _PosScreenState extends State<PosScreen> {
                 .icon(
               onPressed:
               _saving ||
-                  _cart
-                      .isEmpty
+                  _cart.isEmpty ||
+                  _adminViewOnly
                   ? null
                   : _checkout,
               icon: _saving
@@ -1636,9 +1703,11 @@ class _PosScreenState extends State<PosScreen> {
               ),
               label:
               Text(
-                _saving
-                    ? 'Processing...'
-                    : 'Complete Sale',
+                _adminViewOnly
+                    ? 'View Only'
+                    : _saving
+                        ? 'Processing...'
+                        : 'Complete Sale',
               ),
             ),
           ),

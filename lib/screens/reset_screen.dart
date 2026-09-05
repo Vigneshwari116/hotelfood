@@ -35,10 +35,11 @@ class _ResetScreenState extends State<ResetScreen> {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Reset demo data?'),
+        title: const Text('Reset data?'),
         content: const Text(
-          'This deletes all sales and purchase records for this demo '
-          'and resets stock to its starting value. Menu items are not affected.',
+          'This will delete all sales and purchases and restore stock to the '
+          'values from your originally imported menu Excel file. '
+          'This cannot be undone.',
         ),
         actions: [
           TextButton(
@@ -67,7 +68,7 @@ class _ResetScreenState extends State<ResetScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Sales and purchases cleared. Stock reset to starting values.',
+            'Sales and purchases cleared. Stock restored to imported values.',
           ),
           backgroundColor: Colors.green,
         ),
@@ -108,7 +109,7 @@ class _ResetScreenState extends State<ResetScreen> {
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'Reset demo data',
+                      'Reset sales and stock',
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                             fontWeight: FontWeight.bold,
                           ),
@@ -116,9 +117,10 @@ class _ResetScreenState extends State<ResetScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Deletes all sales and purchase records for this demo '
-                      'and resets stock to its starting value. Menu items, '
-                      'categories, units, and customers are not affected.',
+                      'Deletes all sales and purchase records, then restores '
+                      'each location\'s stock to the values from the imported '
+                      'menu Excel file. Menu items, categories, units, and '
+                      'customers are not affected.',
                       style: TextStyle(
                         color: Colors.grey.shade700,
                         height: 1.35,

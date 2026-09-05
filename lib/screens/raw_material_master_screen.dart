@@ -34,6 +34,9 @@ class _RawMaterialMasterScreenState
   final TextEditingController _searchController =
   TextEditingController();
 
+  final TextEditingController _comboSearchController =
+  TextEditingController();
+
   bool _loading = false;
 
   bool get _readOnly => Repository.instance.isAdmin;
@@ -58,6 +61,7 @@ class _RawMaterialMasterScreenState
   void dispose() {
     _tabController.dispose();
     _searchController.dispose();
+    _comboSearchController.dispose();
     super.dispose();
   }
 
@@ -139,6 +143,19 @@ class _RawMaterialMasterScreenState
     }
 
     return '-';
+  }
+
+  List<Combo> get _filteredCombos {
+    final query = _comboSearchController.text.trim().toLowerCase();
+    if (query.isEmpty) return _combos;
+    return _combos.where((combo) {
+      final haystack = [
+        combo.name,
+        combo.barcode ?? '',
+        ...combo.items.map((item) => item.materialName ?? ''),
+      ].join(' ').toLowerCase();
+      return haystack.contains(query);
+    }).toList();
   }
 
   Future<void> _saveImportTemplate() async {
@@ -1084,12 +1101,25 @@ class _RawMaterialMasterScreenState
 
         const SizedBox(height: 16),
 
+        TextField(
+          controller: _comboSearchController,
+          decoration: const InputDecoration(
+            labelText: 'Search combos',
+            prefixIcon: Icon(Icons.search),
+            border: OutlineInputBorder(),
+            isDense: true,
+          ),
+          onChanged: (_) => setState(() {}),
+        ),
+
+        const SizedBox(height: 16),
+
         // ------------------------------------------------------
         // COMBOS LIST
         // ------------------------------------------------------
 
         Expanded(
-          child: _combos.isEmpty
+          child: _filteredCombos.isEmpty
               ? _emptyCombos()
               : RefreshIndicator(
             onRefresh: _loadAll,
@@ -1097,7 +1127,7 @@ class _RawMaterialMasterScreenState
               physics:
               const AlwaysScrollableScrollPhysics(),
               itemCount:
-              _combos.length,
+              _filteredCombos.length,
               separatorBuilder:
                   (_, __) =>
               const SizedBox(
@@ -1106,7 +1136,7 @@ class _RawMaterialMasterScreenState
               itemBuilder:
                   (context, index) {
                 final combo =
-                _combos[index];
+                _filteredCombos[index];
 
                 return _buildComboCard(
                   combo,

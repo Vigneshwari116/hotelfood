@@ -27,8 +27,8 @@ class SessionResetService {
     }
   }
 
-  /// Deletes sales and purchases, resets stock to opening values, and
-  /// clears printer/receipt screen preferences. Menu and masters are kept.
+  /// Deletes sales/purchases and restores imported stock values for the
+  /// current location (or all locations for admin). Clears printer prefs.
   static Future<void> resetDemoData() async {
     await Repository.instance.resetDemoTransactionData();
     await clearSessionData();

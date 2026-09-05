@@ -331,7 +331,7 @@ class Combo {
           (map['selling_price'] as num?)?.toDouble() ??
           0,
       imagePath: map['image_path']?.toString(),
-      isActive: (map['is_active'] as num?)?.toInt() == 1,
+      isActive: ((map['is_active'] as num?)?.toInt() ?? 1) != 0,
       items: const [],
       createdAt: _parseDate(map['created_at']),
     );
