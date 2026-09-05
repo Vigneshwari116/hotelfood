@@ -17,6 +17,40 @@ class ItemImportResult {
 }
 
 class ItemImportService {
+  static const menuCategoryAliases = {
+    'burger': 'Burgers',
+    'burgers': 'Burgers',
+    'bun': 'Burgers',
+    'buns': 'Burgers',
+    'snacks': 'Snacks',
+    'sauces': 'Sauces',
+    'frieditems': 'Fried Items',
+    'fried items': 'Fried Items',
+    'rolls': 'Rolls',
+    'roll': 'Rolls',
+  };
+
+  static String? canonicalMenuCategory(String? name) {
+    final trimmed = name?.trim() ?? '';
+    if (trimmed.isEmpty) return null;
+    final key = trimmed.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), ' ');
+    final collapsed = key.replaceAll(RegExp(r'\s+'), ' ').trim();
+    final aliasKey = collapsed.replaceAll(' ', '');
+    return menuCategoryAliases[collapsed] ??
+        menuCategoryAliases[aliasKey] ??
+        trimmed;
+  }
+
+  static String? normalizeBarcode(String? value) {
+    final trimmed = value?.trim() ?? '';
+    if (trimmed.isEmpty) return null;
+    final numeric = double.tryParse(trimmed.replaceAll(',', ''));
+    if (numeric != null && numeric.isFinite && numeric == numeric.roundToDouble()) {
+      return numeric.toInt().toString();
+    }
+    return trimmed;
+  }
+
   static const menuHeaders = [
     'category',
     'item_name',
@@ -238,7 +272,9 @@ class ItemImportService {
       }
 
       try {
-        final categoryName = _first(map, const ['category', 'cat']);
+        final categoryName = canonicalMenuCategory(
+          _first(map, const ['category', 'cat']),
+        ) ?? '';
         int? categoryId;
         if (categoryName.isNotEmpty) {
           categoryId = await _ensureCategory(categoryName, categories);
@@ -284,7 +320,9 @@ class ItemImportService {
 
         final saved = RawMaterial(
             id: existingItem?.id,
-            barcode: _emptyToNull(_first(map, const ['barcode', 'code'])),
+            barcode: normalizeBarcode(
+              _first(map, const ['barcode', 'code', 'barcodeno']),
+            ),
             name: name,
             subItem: subItem.isEmpty ? null : subItem,
             qtyNeeded: qtyNeeded,

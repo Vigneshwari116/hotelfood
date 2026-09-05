@@ -7,6 +7,7 @@ import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/item_import_service.dart';
 
 // ============================================================
 // PIN / PASSWORD
@@ -404,20 +405,10 @@ class Repository {
                   .toSet();
 
             const defaults = [
-                  'Starters',
-                  'Fried Items',
-                  'Burger',
-                  'Fillings',
-                  'Gravy',
-                  'Tandoor',
-                  'Rice',
-                  'Breads',
                   'Sauces',
-                  'Chinese',
-                  'Meals',
-                  'Desserts',
-                  'Beverages',
-                  'snacks',
+                  'Snacks',
+                  'Fried Items',
+                  'Burgers',
                   'Rolls',
             ];
 
@@ -431,6 +422,131 @@ class Repository {
                   );
                   names.add(name.toLowerCase());
             }
+      }
+
+      /// Moves legacy menu groups (Burger, Bun, snacks, etc.) into the five
+      /// standard categories and removes empty legacy category rows.
+      Future<void> consolidateMenuCategories() async {
+            final db = await _db;
+            await ensureDefaultCategories();
+
+            final categories = await this.categories(type: 'raw_material');
+            final primaryIdByCanonical = <String, int>{};
+
+            for (final category in categories) {
+                  if (category.id == null) continue;
+                  final canonical = ItemImportService.canonicalMenuCategory(
+                        category.name,
+                      ) ??
+                      category.name.trim();
+                  final key = canonical.toLowerCase();
+                  final existing = primaryIdByCanonical[key];
+                  if (existing == null ||
+                      category.name.trim().toLowerCase() == key) {
+                        primaryIdByCanonical[key] = category.id!;
+                  }
+            }
+
+            for (final category in categories) {
+                  if (category.id == null) continue;
+                  final canonical = ItemImportService.canonicalMenuCategory(
+                        category.name,
+                      ) ??
+                      category.name.trim();
+                  final targetId = primaryIdByCanonical[canonical.toLowerCase()];
+                  if (targetId == null || targetId == category.id) continue;
+
+                  await db.update(
+                        'raw_materials',
+                        {'category_id': targetId},
+                        where: 'category_id = ?',
+                        whereArgs: [category.id],
+                  );
+                  await db.update(
+                        'combos',
+                        {'category_id': targetId},
+                        where: 'category_id = ?',
+                        whereArgs: [category.id],
+                  );
+            }
+
+            final refreshed = await this.categories(type: 'raw_material');
+            for (final category in refreshed) {
+                  if (category.id == null) continue;
+                  final canonical = ItemImportService.canonicalMenuCategory(
+                        category.name,
+                      ) ??
+                      category.name.trim();
+                  final primaryId =
+                      primaryIdByCanonical[canonical.toLowerCase()];
+                  if (primaryId != null && primaryId != category.id) {
+                        continue;
+                  }
+
+                  final usage = await db.rawQuery(
+                        '''
+      SELECT
+        (SELECT COUNT(*) FROM raw_materials WHERE category_id = ?) +
+        (SELECT COUNT(*) FROM combos WHERE category_id = ?) AS cnt
+      ''',
+                        [category.id, category.id],
+                  );
+                  final count = (usage.first['cnt'] as num?)?.toInt() ?? 0;
+                  if (count == 0) {
+                        await db.delete(
+                              'categories',
+                              where: 'id = ?',
+                              whereArgs: [category.id],
+                        );
+                  }
+            }
+
+            for (final category in refreshed) {
+                  if (category.id == null) continue;
+                  final canonical = ItemImportService.canonicalMenuCategory(
+                        category.name,
+                      ) ??
+                      category.name.trim();
+                  final primaryId =
+                      primaryIdByCanonical[canonical.toLowerCase()];
+                  if (primaryId == null || primaryId == category.id) continue;
+
+                  final usage = await db.rawQuery(
+                        '''
+      SELECT
+        (SELECT COUNT(*) FROM raw_materials WHERE category_id = ?) +
+        (SELECT COUNT(*) FROM combos WHERE category_id = ?) AS cnt
+      ''',
+                        [category.id, category.id],
+                  );
+                  final count = (usage.first['cnt'] as num?)?.toInt() ?? 0;
+                  if (count == 0) {
+                        await db.delete(
+                              'categories',
+                              where: 'id = ?',
+                              whereArgs: [category.id],
+                        );
+                  }
+            }
+      }
+
+      static String? normalizeBarcodeValue(String? value) =>
+          ItemImportService.normalizeBarcode(value);
+
+      static List<String> barcodeLookupCandidates(String barcode) {
+            final normalized = normalizeBarcodeValue(barcode) ?? barcode.trim();
+            if (normalized.isEmpty) return const [];
+
+            final candidates = <String>{normalized, barcode.trim()};
+            final numeric = double.tryParse(normalized.replaceAll(',', ''));
+            if (numeric != null && numeric.isFinite) {
+                  candidates.add(numeric.toInt().toString());
+                  candidates.add(numeric.toString());
+                  if (normalized.contains('.')) {
+                        candidates.add(normalized.split('.').first);
+                  }
+            }
+            return candidates.toList();
       }
 
       Future<void> ensureDefaultUsers() async {
@@ -684,6 +800,7 @@ class Repository {
             }
 
             final map = rm.toMap()..remove('id');
+            map['barcode'] = normalizeBarcodeValue(rm.barcode);
 
             if (pin != null && pin.trim().isNotEmpty) {
                   map['entry_password_hash'] = hashPin(
@@ -1050,24 +1167,26 @@ class Repository {
           ) async {
             final db = await _db;
 
-            final cleanBarcode = barcode.trim();
-
-            if (cleanBarcode.isEmpty) {
+            final candidates = barcodeLookupCandidates(barcode);
+            if (candidates.isEmpty) {
                   return null;
             }
 
-            final rows = await db.query(
-                  'raw_materials',
-                  where: 'barcode = ?',
-                  whereArgs: [cleanBarcode],
-                  limit: 1,
-            );
+            for (final candidate in candidates) {
+                  final rows = await db.query(
+                        'raw_materials',
+                        where:
+                            'barcode = ? AND (listed IS NULL OR listed = 1)',
+                        whereArgs: [candidate],
+                        limit: 1,
+                  );
 
-            if (rows.isEmpty) {
-                  return null;
+                  if (rows.isNotEmpty) {
+                        return RawMaterial.fromMap(rows.first);
+                  }
             }
 
-            return RawMaterial.fromMap(rows.first);
+            return null;
       }
 
       Future<void> deleteRawMaterial(
@@ -1382,24 +1501,25 @@ class Repository {
           ) async {
             final db = await _db;
 
-            final cleanBarcode = barcode.trim();
-
-            if (cleanBarcode.isEmpty) {
+            final candidates = barcodeLookupCandidates(barcode);
+            if (candidates.isEmpty) {
                   return null;
             }
 
-            final rows = await db.query(
-                  'combos',
-                  where: 'barcode = ?',
-                  whereArgs: [cleanBarcode],
-                  limit: 1,
-            );
+            for (final candidate in candidates) {
+                  final rows = await db.query(
+                        'combos',
+                        where: 'barcode = ?',
+                        whereArgs: [candidate],
+                        limit: 1,
+                  );
 
-            if (rows.isEmpty) {
-                  return null;
+                  if (rows.isNotEmpty) {
+                        return Combo.fromMap(rows.first);
+                  }
             }
 
-            return Combo.fromMap(rows.first);
+            return null;
       }
 
       Future<List<ComboItem>> comboItems(
