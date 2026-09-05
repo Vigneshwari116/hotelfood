@@ -80,9 +80,10 @@ class _StartupGateState extends State<_StartupGate> {
     await Repository.instance.ensureDefaultUsers();
     await Repository.instance.ensureStandardUnits();
     await Repository.instance.ensureDefaultCategories();
+    await Repository.instance.consolidateMenuCategories();
     try {
       const seedKey = 'menu_csv_seed';
-      const seedVersion = 8;
+      const seedVersion = 9;
       final remote = ApiConfig.enabled;
       int seeded;
       if (remote) {

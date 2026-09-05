@@ -257,7 +257,7 @@ class _CategoryTabState extends State<_CategoryTab> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Starter, Fried Items, Gravy and other menu groups are already listed. Type a new name below to add more.',
+              'Sauces, Snacks, Fried Items, Burgers, and Rolls are the standard menu groups. Type a new name below to add more.',
               style: TextStyle(
                 color: Colors.grey.shade700,
                 fontSize: 13,
