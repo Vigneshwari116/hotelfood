@@ -349,7 +349,10 @@ class ItemImportService {
             listed: true,
             createdAt: existingItem?.createdAt,
           );
-        final id = await Repository.instance.saveRawMaterial(saved);
+        final id = await Repository.instance.saveRawMaterial(
+          saved,
+          fromMenuImport: true,
+        );
 
         existingByKey[key] = RawMaterial(
           id: id,

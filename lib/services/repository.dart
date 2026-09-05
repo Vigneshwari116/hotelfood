@@ -533,6 +533,12 @@ class Repository {
       static String? normalizeBarcodeValue(String? value) =>
           ItemImportService.normalizeBarcode(value);
 
+      static bool isValidCustomerPhone(String? phone) {
+            final trimmed = phone?.trim() ?? '';
+            if (trimmed.isEmpty) return false;
+            return !RegExp(r'^0+$').hasMatch(trimmed);
+      }
+
       static List<String> barcodeLookupCandidates(String barcode) {
             final normalized = normalizeBarcodeValue(barcode) ?? barcode.trim();
             if (normalized.isEmpty) return const [];
@@ -766,6 +772,7 @@ class Repository {
       Future<int> saveRawMaterial(
           RawMaterial rm, {
                 String? pin,
+                bool fromMenuImport = false,
           }) async {
             final db = await _db;
 
@@ -903,8 +910,7 @@ class Repository {
             // ----------------------------------------------------------
 
             return db.transaction((txn) async {
-                  _requireStockLocation();
-                  final locationId = _stockLocationId!;
+                  final locationId = _stockLocationId;
 
                   final existingRows = await txn.query(
                         'raw_materials',
@@ -920,9 +926,52 @@ class Repository {
                   }
 
                   final existing = existingRows.first;
+
+                  if (fromMenuImport) {
+                        final updateMap = Map<String, Object?>.from(map)
+                              ..remove('created_at');
+
+                        if (locationId != null) {
+                              await _ensureLocationStockRow(
+                                    txn,
+                                    locationId,
+                                    rm.id!,
+                                    reorderLevel: rm.reorderLevel,
+                              );
+                              await txn.update(
+                                    'location_stock',
+                                    {
+                                          'opening_stock': rm.openingStock,
+                                          'current_stock': rm.openingStock,
+                                          'reorder_level': rm.reorderLevel,
+                                    },
+                                    where:
+                                        'location_id = ? AND raw_material_id = ?',
+                                    whereArgs: [locationId, rm.id],
+                              );
+                              await _syncRawMaterialAggregateStock(txn, rm.id!);
+                        } else {
+                              await txn.update(
+                                    'raw_materials',
+                                    {
+                                          ...updateMap,
+                                          'opening_stock': rm.openingStock,
+                                          'current_stock': rm.openingStock,
+                                    },
+                                    where: 'id = ?',
+                                    whereArgs: [rm.id],
+                              );
+                        }
+
+                        return rm.id!;
+                  }
+
+                  _requireStockLocation();
+                  final stockLocationId = locationId!;
+
                   await _ensureLocationStockRow(
                         txn,
-                        locationId,
+                        stockLocationId,
                         rm.id!,
                         reorderLevel: rm.reorderLevel,
                   );
@@ -930,7 +979,7 @@ class Repository {
                   final locationRows = await txn.query(
                         'location_stock',
                         where: 'location_id = ? AND raw_material_id = ?',
-                        whereArgs: [locationId, rm.id],
+                        whereArgs: [stockLocationId, rm.id],
                         limit: 1,
                   );
 
@@ -1509,7 +1558,7 @@ class Repository {
             for (final candidate in candidates) {
                   final rows = await db.query(
                         'combos',
-                        where: 'barcode = ?',
+                        where: 'barcode = ? AND is_active = 1',
                         whereArgs: [candidate],
                         limit: 1,
                   );
@@ -2219,6 +2268,7 @@ class Repository {
             double qtyOut = 0.0,
             double? unitCost,
             required double balanceAfter,
+            int? locationId,
       }) async {
             final executor = txn ?? await _db;
 
@@ -2233,7 +2283,10 @@ class Repository {
                         'qty_out': qtyOut,
                         'unit_cost': unitCost,
                         'balance_after': balanceAfter,
-                        ..._locationFields(),
+                        if (locationId != null)
+                              'location_id': locationId
+                        else
+                              ..._locationFields(),
                   },
             );
       }
@@ -3659,23 +3712,103 @@ class Repository {
       // ============================================================
 
       /// Deletes sales and purchases, clears stock movement history, and
-      /// restores each menu item's stock to its opening_stock. Keeps menu
-      /// items, categories, units, customers, combos, and suppliers.
-      Future<void> resetDemoTransactionData() async {
+      /// restores stock to the values from the last menu import for each
+      /// location. Keeps menu items, categories, units, customers, combos,
+      /// and suppliers.
+      Future<void> resetDemoTransactionData({int? locationId}) async {
             final db = await _db;
+            final targetLocationId = locationId ?? _sessionLocationId;
+            final locationIds = <int>[];
+
+            if (targetLocationId != null) {
+                  locationIds.add(targetLocationId);
+            } else {
+                  final rows = await db.query('locations', orderBy: 'id ASC');
+                  locationIds.addAll(
+                    rows
+                        .map((row) => row['id'] as int)
+                        .whereType<int>(),
+                  );
+            }
 
             await db.transaction((txn) async {
-                  await txn.delete('customer_ledger');
-                  await txn.delete('sale_items');
-                  await txn.delete('sales');
-                  await txn.delete('purchase_items');
-                  await txn.delete('purchases');
-                  await txn.delete('stock_ledger');
-                  await txn.delete('stock_adjustments');
-                  await txn.delete('stock_batches');
+                  for (final locId in locationIds) {
+                        final saleIds = await txn.query(
+                              'sales',
+                              columns: ['id'],
+                              where: 'location_id = ?',
+                              whereArgs: [locId],
+                        );
+                        for (final sale in saleIds) {
+                              final saleId = sale['id'] as int;
+                              await txn.delete(
+                                    'sale_items',
+                                    where: 'sale_id = ?',
+                                    whereArgs: [saleId],
+                              );
+                        }
+                        await txn.delete(
+                              'sales',
+                              where: 'location_id = ?',
+                              whereArgs: [locId],
+                        );
+
+                        final purchaseIds = await txn.query(
+                              'purchases',
+                              columns: ['id'],
+                              where: 'location_id = ?',
+                              whereArgs: [locId],
+                        );
+                        for (final purchase in purchaseIds) {
+                              final purchaseId = purchase['id'] as int;
+                              await txn.delete(
+                                    'purchase_items',
+                                    where: 'purchase_id = ?',
+                                    whereArgs: [purchaseId],
+                              );
+                        }
+                        await txn.delete(
+                              'purchases',
+                              where: 'location_id = ?',
+                              whereArgs: [locId],
+                        );
+
+                        await txn.delete(
+                              'stock_ledger',
+                              where: 'location_id = ?',
+                              whereArgs: [locId],
+                        );
+                        await txn.delete(
+                              'stock_adjustments',
+                              where: 'location_id = ?',
+                              whereArgs: [locId],
+                        );
+                        await txn.delete(
+                              'stock_batches',
+                              where: 'location_id = ?',
+                              whereArgs: [locId],
+                        );
+                  }
+
+                  if (locationIds.isEmpty) {
+                        await txn.delete('customer_ledger');
+                        await txn.delete('sale_items');
+                        await txn.delete('sales');
+                        await txn.delete('purchase_items');
+                        await txn.delete('purchases');
+                        await txn.delete('stock_ledger');
+                        await txn.delete('stock_adjustments');
+                        await txn.delete('stock_batches');
+                  }
             });
 
-            await resetAllStockToOpening();
+            if (locationIds.isEmpty) {
+                  await resetAllStockToImported();
+            } else {
+                  for (final locId in locationIds) {
+                        await resetLocationStockToImported(locId);
+                  }
+            }
 
             if (!ApiConfig.enabled) {
                   final sqlite = await DBHelper.instance.database;
@@ -3698,6 +3831,88 @@ class Repository {
                         ],
                   );
             }
+      }
+
+      /// Restores one location's stock to its imported opening values.
+      Future<void> resetLocationStockToImported(int locationId) async {
+            final db = await _db;
+            final now = DateTime.now().toIso8601String();
+
+            await db.transaction((txn) async {
+                  final stockRows = await txn.query(
+                        'location_stock',
+                        where: 'location_id = ?',
+                        whereArgs: [locationId],
+                  );
+
+                  for (final row in stockRows) {
+                        final rawMaterialId = (row['raw_material_id'] as num).toInt();
+                        final opening =
+                            (row['opening_stock'] as num?)?.toDouble() ?? 0.0;
+
+                        await txn.update(
+                              'location_stock',
+                              {'current_stock': opening},
+                              where:
+                                  'location_id = ? AND raw_material_id = ?',
+                              whereArgs: [locationId, rawMaterialId],
+                        );
+
+                        if (opening > 0.0) {
+                              final costRows = await txn.query(
+                                    'raw_materials',
+                                    columns: ['cost_price'],
+                                    where: 'id = ?',
+                                    whereArgs: [rawMaterialId],
+                                    limit: 1,
+                              );
+                              final cost = costRows.isEmpty
+                                  ? null
+                                  : (costRows.first['cost_price'] as num?)
+                                      ?.toDouble();
+
+                              await txn.insert(
+                                    'stock_batches',
+                                    {
+                                          'raw_material_id': rawMaterialId,
+                                          'qty_remaining': opening,
+                                          'rate': cost,
+                                          'expiry_date': null,
+                                          'purchase_item_id': null,
+                                          'location_id': locationId,
+                                          'created_at': now,
+                                    },
+                              );
+
+                              await _writeLedger(
+                                    txn: txn,
+                                    rawMaterialId: rawMaterialId,
+                                    refType: 'opening',
+                                    qtyIn: opening,
+                                    unitCost: cost,
+                                    balanceAfter: opening,
+                                    locationId: locationId,
+                              );
+                        }
+
+                        await _syncRawMaterialAggregateStock(txn, rawMaterialId);
+                  }
+            });
+      }
+
+      /// Sets every item's stock to its imported opening values and rebuilds
+      /// batches when no per-location stock rows exist yet.
+      Future<void> resetAllStockToImported() async {
+            final db = await _db;
+            final locations = await db.query('locations', orderBy: 'id ASC');
+            if (locations.isNotEmpty) {
+                  for (final location in locations) {
+                        await resetLocationStockToImported(location['id'] as int);
+                  }
+                  return;
+            }
+
+            await resetAllStockToOpening();
       }
 
       /// Sets every item's stock to its opening_stock and rebuilds batches.
