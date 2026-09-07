@@ -2,7 +2,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/repository.dart';
-import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -28,6 +27,21 @@ void main() {
       expect(ItemImportService.canonicalMenuCategory('rolls'), 'Rolls');
       expect(ItemImportService.canonicalMenuCategory('BEVARGES'), 'Beverages');
     });
+  });
+
+  test('hiddenByDefaultNames has no duplicate entries', () {
+    const names = ItemImportService.hiddenByDefaultNames;
+    expect(names.length, names.toSet().length);
+  });
+
+  test('groupingTags has no duplicate entries', () {
+    const tags = ItemImportService.groupingTags;
+    expect(tags.length, tags.toSet().length);
+  });
+
+  test('hiddenGroupingTags has no duplicate entries', () {
+    const tags = ItemImportService.hiddenGroupingTags;
+    expect(tags.length, tags.toSet().length);
   });
 
   group('barcode normalization', () {

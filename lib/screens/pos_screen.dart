@@ -181,7 +181,8 @@ class _PosScreenState extends State<PosScreen> {
   String get _search =>
       _searchController.text.trim().toLowerCase();
 
-  String? _categoryName(int categoryId) {
+  String? _categoryName(int? categoryId) {
+    if (categoryId == null) return null;
     for (final category in _categories) {
       if (category.id == categoryId) {
         return category.name;
