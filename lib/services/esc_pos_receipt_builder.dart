@@ -89,17 +89,16 @@ class EscPosReceiptBuilder {
       styles: const PosStyles(bold: true),
     );
 
-    for (final line in document.lines) {
+    for (final line in expandReceiptLines(document.lines)) {
       final printed = ReceiptLayout.itemLines(
-        name: line.displayLabel,
+        name: line.label,
         qty: ReceiptLayout.qtyText(line.qty),
-        rate: ReceiptLayout.money(line.amount),
+        rate: line.amount == null
+            ? ''
+            : ReceiptLayout.money(line.amount!),
       );
       for (final row in printed) {
         bytes += generator.text(row);
-      }
-      if (ReceiptLayout.extraDetail(line.displayLabel, line.subItem)) {
-        bytes += generator.text('  ${line.subItem!.trim()}');
       }
     }
 

@@ -44,6 +44,7 @@ class ItemImportService {
     'fried items',
     'snacks',
     'sauce/dry stock',
+    'sauce dry stock',
     'sauces',
     'bevarges',
     'beverages',
@@ -51,6 +52,7 @@ class ItemImportService {
     'burger',
     'rolls',
     'roll',
+    'stock',
   };
 
   static const hiddenGroupingTags = {
@@ -77,6 +79,35 @@ class ItemImportService {
     final normalized = collapsed.replaceAll(RegExp(r'\s+'), ' ').trim();
     return groupingTags.contains(normalized) ||
         groupingTags.contains(normalized.replaceAll(' ', ''));
+  }
+
+  /// PDF menu uses category-style labels in the barcode column (BEVARGES, COMBO, etc.).
+  static String canonicalGroupingBarcode(String value) {
+    final normalized = value
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+        .replaceAll(RegExp(r'\s+'), ' ')
+        .trim();
+    switch (normalized) {
+      case 'bevarges':
+      case 'beverages':
+        return 'BEVARGES';
+      case 'combo':
+        return 'COMBO';
+      case 'fried item':
+      case 'fried items':
+        return 'FRIED ITEM';
+      case 'snacks':
+        return 'SNACKS';
+      case 'sauce dry stock':
+      case 'sauces':
+        return 'SAUCE/DRY STOCK';
+      case 'stock':
+        return 'STOCK';
+      default:
+        return value.trim();
+    }
   }
 
   static bool shouldHideFromSales({
@@ -400,10 +431,17 @@ class ItemImportService {
         stock ??= 0;
 
         final barcodeRaw = _first(map, const ['barcode', 'code', 'barcodeno', 'grouping']);
-        final groupingTag = isGroupingTag(barcodeRaw) ? barcodeRaw : null;
-        final barcode = groupingTag == null
-            ? normalizeBarcode(barcodeRaw)
-            : null;
+        final trimmedBarcode = barcodeRaw?.trim() ?? '';
+        final groupingTag =
+            isGroupingTag(trimmedBarcode) ? trimmedBarcode : null;
+        final String? barcode;
+        if (trimmedBarcode.isEmpty) {
+          barcode = null;
+        } else if (groupingTag != null) {
+          barcode = canonicalGroupingBarcode(trimmedBarcode);
+        } else {
+          barcode = normalizeBarcode(trimmedBarcode);
+        }
 
         final listed = !shouldHideFromSales(
           groupingTag: groupingTag,

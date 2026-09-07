@@ -3,6 +3,7 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/database/database_helper.dart';
@@ -57,6 +58,14 @@ class Repository {
       Repository._();
 
       static final Repository instance = Repository._();
+
+      AppDb? _testAppDb;
+
+      /// Allows integration tests to run against an in-memory database.
+      @visibleForTesting
+      void setAppDbForTesting(AppDb? db) {
+            _testAppDb = db;
+      }
 
       String? _sessionRole;
       int? _sessionLocationId;
@@ -227,6 +236,9 @@ class Repository {
       }
 
       Future<AppDb> get _db async {
+            if (_testAppDb != null) {
+                  return _testAppDb!;
+            }
             return DBHelper.instance.appDb;
       }
 
@@ -942,7 +954,16 @@ class Repository {
 
                   if (fromMenuImport) {
                         final updateMap = Map<String, Object?>.from(map)
-                              ..remove('created_at');
+                              ..remove('created_at')
+                              ..remove('opening_stock')
+                              ..remove('current_stock');
+
+                        await txn.update(
+                              'raw_materials',
+                              updateMap,
+                              where: 'id = ?',
+                              whereArgs: [rm.id],
+                        );
 
                         if (locationId != null) {
                               await _ensureLocationStockRow(
@@ -967,7 +988,6 @@ class Repository {
                               await txn.update(
                                     'raw_materials',
                                     {
-                                          ...updateMap,
                                           'opening_stock': rm.openingStock,
                                           'current_stock': rm.openingStock,
                                     },
@@ -2776,6 +2796,13 @@ class Repository {
       // SALES / POS
       // ============================================================
 
+      Future<List<CartLine>> normalizeCheckoutLines(
+            List<CartLine> lines,
+            ) async {
+            final db = await _db;
+            return _normalizeSaleLinesForCheckout(db, lines);
+      }
+
       Future<int> recordSale({
             int? customerId,
             required List<CartLine> lines,
@@ -2812,6 +2839,9 @@ class Repository {
             }
 
             return db.transaction((txn) async {
+                  final checkoutLines =
+                      await _normalizeSaleLinesForCheckout(txn, lines);
+
                   // ----------------------------------------------------------
                   // CUSTOMER
                   // ----------------------------------------------------------
@@ -2836,7 +2866,7 @@ class Repository {
                   // VALIDATE CART LINES
                   // ----------------------------------------------------------
 
-                  for (final line in lines) {
+                  for (final line in checkoutLines) {
                         if (line.qty <= 0.0) {
                               throw InvalidInventoryException(
                                     'Sale quantity must be greater than zero.',
@@ -2878,7 +2908,7 @@ class Repository {
                   // TOTAL
                   // ----------------------------------------------------------
 
-                  final double subtotal = lines.fold<double>(
+                  final double subtotal = checkoutLines.fold<double>(
                         0.0,
                             (double sum, line) =>
                         sum + line.amount,
@@ -2900,7 +2930,7 @@ class Repository {
                   final totalNeeded =
                   await _expandCartToRawMaterialNeeds(
                         txn,
-                        lines,
+                        checkoutLines,
                   );
 
                   // ----------------------------------------------------------
@@ -2941,7 +2971,7 @@ class Repository {
                   // SALE LINES
                   // ----------------------------------------------------------
 
-                  for (final line in lines) {
+                  for (final line in checkoutLines) {
                         await txn.insert(
                               'sale_items',
                               {
@@ -3004,6 +3034,80 @@ class Repository {
 
                   return saleId;
             });
+      }
+
+      // ============================================================
+      // CHECKOUT LINE NORMALIZATION
+      // ============================================================
+
+      Future<List<CartLine>> _normalizeSaleLinesForCheckout(
+          AppDb txn,
+          List<CartLine> lines,
+          ) async {
+            final normalized = <CartLine>[];
+
+            for (final line in lines) {
+                  if (line.comboId == null) {
+                        normalized.add(line);
+                        continue;
+                  }
+
+                  final comboRows = await txn.query(
+                        'combos',
+                        columns: [
+                              'id',
+                              'name',
+                              'price',
+                              'is_active',
+                        ],
+                        where: 'id = ?',
+                        whereArgs: [line.comboId],
+                        limit: 1,
+                  );
+
+                  if (comboRows.isEmpty) {
+                        throw InvalidInventoryException(
+                              'Combo does not exist.',
+                        );
+                  }
+
+                  final comboRow = comboRows.first;
+                  final bool isActive =
+                      (comboRow['is_active'] as num?)?.toInt() != 0;
+
+                  if (!isActive) {
+                        throw InvalidInventoryException(
+                              'Combo "${comboRow['name']}" is inactive.',
+                        );
+                  }
+
+                  final double comboPrice =
+                      (comboRow['price'] as num?)?.toDouble() ?? 0.0;
+
+                  final comboName =
+                      comboRow['name']?.toString().trim() ?? line.name;
+
+                  var labels = line.componentLabels;
+                  if (labels.isEmpty) {
+                        final items = await comboItems(line.comboId!);
+                        labels = items
+                            .map((item) => item.staffLabel)
+                            .where((label) => label.isNotEmpty)
+                            .toList();
+                  }
+
+                  normalized.add(
+                        CartLine(
+                              comboId: line.comboId,
+                              name: comboName,
+                              componentLabels: labels,
+                              qty: line.qty,
+                              price: comboPrice,
+                        ),
+                  );
+            }
+
+            return normalized;
       }
 
       // ============================================================
@@ -3561,7 +3665,6 @@ class Repository {
       LEFT JOIN location_stock ls
         ON ls.raw_material_id = rm.id
         AND ls.location_id = ?
-      WHERE rm.listed IS NULL OR rm.listed = 1
       ORDER BY c.name ASC, rm.name ASC, rm.sub_item ASC
       ''',
                   [locationId],

@@ -58,6 +58,7 @@ void main() {
     test('does not treat numeric barcode as grouping tag', () {
       expect(ItemImportService.isGroupingTag('10'), isFalse);
       expect(ItemImportService.isGroupingTag('SNACKS'), isTrue);
+      expect(ItemImportService.isGroupingTag('SAUCE/DRY STOCK'), isTrue);
     });
   });
 

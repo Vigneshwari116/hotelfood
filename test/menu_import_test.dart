@@ -56,6 +56,19 @@ void main() {
       expect(candidates, contains('10'));
       expect(candidates, contains('10.0'));
     });
+
+    test('canonical grouping barcodes match PDF menu labels', () {
+      expect(ItemImportService.canonicalGroupingBarcode('bevarges'), 'BEVARGES');
+      expect(ItemImportService.canonicalGroupingBarcode('BEVERAGES'), 'BEVARGES');
+      expect(ItemImportService.canonicalGroupingBarcode('combo'), 'COMBO');
+      expect(ItemImportService.canonicalGroupingBarcode('FRIED ITEMS'), 'FRIED ITEM');
+      expect(ItemImportService.canonicalGroupingBarcode('SNACKS'), 'SNACKS');
+      expect(
+        ItemImportService.canonicalGroupingBarcode('SAUCE/DRY STOCK'),
+        'SAUCE/DRY STOCK',
+      );
+      expect(ItemImportService.canonicalGroupingBarcode('STOCK'), 'STOCK');
+    });
   });
 
   test('static location menu templates exist for manual first import', () async {

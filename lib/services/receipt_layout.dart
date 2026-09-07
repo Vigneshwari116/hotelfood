@@ -1,4 +1,55 @@
+import 'package:foodstock/model/models.dart';
 import 'package:intl/intl.dart';
+
+/// One printed receipt row (combo sales may include kitchen-only detail lines).
+class ReceiptDisplayLine {
+  final String label;
+  final double qty;
+  final double? amount;
+
+  const ReceiptDisplayLine({
+    required this.label,
+    required this.qty,
+    this.amount,
+  });
+}
+
+List<ReceiptDisplayLine> expandReceiptLines(List<CartLine> lines) {
+  final output = <ReceiptDisplayLine>[];
+
+  for (final line in lines) {
+    if (line.isCombo) {
+      output.add(
+        ReceiptDisplayLine(
+          label: line.name.trim(),
+          qty: line.qty,
+          amount: line.amount,
+        ),
+      );
+      for (final component in line.componentLabels) {
+        final trimmed = component.trim();
+        if (trimmed.isEmpty) continue;
+        output.add(
+          ReceiptDisplayLine(
+            label: '  $trimmed',
+            qty: line.qty,
+          ),
+        );
+      }
+      continue;
+    }
+
+    output.add(
+      ReceiptDisplayLine(
+        label: line.displayLabel,
+        qty: line.qty,
+        amount: line.amount,
+      ),
+    );
+  }
+
+  return output;
+}
 
 /// 58mm Font A is 32 characters wide on POSiFLOW / ESC-POS printers.
 class ReceiptLayout {
