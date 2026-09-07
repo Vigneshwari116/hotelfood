@@ -3645,7 +3645,6 @@ class Repository {
       LEFT JOIN location_stock ls
         ON ls.raw_material_id = rm.id
         AND ls.location_id = ?
-      WHERE rm.listed IS NULL OR rm.listed = 1
       ORDER BY c.name ASC, rm.name ASC, rm.sub_item ASC
       ''',
                   [locationId],
