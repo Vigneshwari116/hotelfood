@@ -857,12 +857,14 @@ class _PosScreenState extends State<PosScreen> {
       _saving = true;
     });
 
-    final soldLines =
-        List<CartLine>.from(_cart);
-    final subtotal = _subtotal;
-    final grandTotal = _total;
-
     try {
+      final soldLines = await _repo.normalizeCheckoutLines(_cart);
+      final subtotal = soldLines.fold<double>(
+        0,
+        (sum, line) => sum + line.amount,
+      );
+      final grandTotal = subtotal + tax - discount;
+
       final customerName = _customerNameController.text.trim();
 
       final saleId =
@@ -1295,7 +1297,9 @@ class _PosScreenState extends State<PosScreen> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Current Sale',
+                        _activePendingId == null
+                            ? 'Current Sale'
+                            : 'Token ${_pendingTokenLabel()} · Current Sale',
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
@@ -1391,7 +1395,7 @@ class _PosScreenState extends State<PosScreen> {
                   .start,
               children: [
                 Text(
-                  line.displayLabel,
+                  line.isCombo ? line.name : line.displayLabel,
                   maxLines: 2,
                   overflow:
                   TextOverflow
@@ -1404,7 +1408,7 @@ class _PosScreenState extends State<PosScreen> {
                     fontSize: 13,
                   ),
                 ),
-                if (line.isCombo && line.componentLabels.length > 1)
+                if (line.isCombo && line.componentLabels.isNotEmpty)
                   Text(
                     line.componentLabels.join(' • '),
                     maxLines: 2,
@@ -2065,24 +2069,28 @@ class _PosScreenState extends State<PosScreen> {
           ),
           if (!_adminViewOnly) ...[
             const SizedBox(height: 8),
-            Row(
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _showPendingTokensSheet,
-                  icon: const Icon(Icons.receipt_long_outlined, size: 18),
-                  label: Text(
-                    _activePendingId == null
-                        ? 'Tokens (${_pendingOrders.length})'
-                        : 'Token ${_pendingTokenLabel()}',
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _showPendingTokensSheet,
+                    icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                    label: Text(
+                      _activePendingId == null
+                          ? 'Tokens (${_pendingOrders.length})'
+                          : 'Token ${_pendingTokenLabel()}',
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                if (_activePendingId != null)
-                  TextButton(
-                    onPressed: _createNewToken,
-                    child: const Text('New Token'),
-                  ),
-              ],
+                  const SizedBox(width: 8),
+                  if (_activePendingId != null)
+                    OutlinedButton.icon(
+                      onPressed: _createNewToken,
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('New Token'),
+                    ),
+                ],
+              ),
             ),
           ],
         ],

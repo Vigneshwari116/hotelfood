@@ -2776,6 +2776,13 @@ class Repository {
       // SALES / POS
       // ============================================================
 
+      Future<List<CartLine>> normalizeCheckoutLines(
+            List<CartLine> lines,
+            ) async {
+            final db = await _db;
+            return _normalizeSaleLinesForCheckout(db, lines);
+      }
+
       Future<int> recordSale({
             int? customerId,
             required List<CartLine> lines,
@@ -2812,6 +2819,9 @@ class Repository {
             }
 
             return db.transaction((txn) async {
+                  final checkoutLines =
+                      await _normalizeSaleLinesForCheckout(txn, lines);
+
                   // ----------------------------------------------------------
                   // CUSTOMER
                   // ----------------------------------------------------------
@@ -2836,7 +2846,7 @@ class Repository {
                   // VALIDATE CART LINES
                   // ----------------------------------------------------------
 
-                  for (final line in lines) {
+                  for (final line in checkoutLines) {
                         if (line.qty <= 0.0) {
                               throw InvalidInventoryException(
                                     'Sale quantity must be greater than zero.',
@@ -2878,7 +2888,7 @@ class Repository {
                   // TOTAL
                   // ----------------------------------------------------------
 
-                  final double subtotal = lines.fold<double>(
+                  final double subtotal = checkoutLines.fold<double>(
                         0.0,
                             (double sum, line) =>
                         sum + line.amount,
@@ -2900,7 +2910,7 @@ class Repository {
                   final totalNeeded =
                   await _expandCartToRawMaterialNeeds(
                         txn,
-                        lines,
+                        checkoutLines,
                   );
 
                   // ----------------------------------------------------------
@@ -2941,7 +2951,7 @@ class Repository {
                   // SALE LINES
                   // ----------------------------------------------------------
 
-                  for (final line in lines) {
+                  for (final line in checkoutLines) {
                         await txn.insert(
                               'sale_items',
                               {
@@ -3004,6 +3014,80 @@ class Repository {
 
                   return saleId;
             });
+      }
+
+      // ============================================================
+      // CHECKOUT LINE NORMALIZATION
+      // ============================================================
+
+      Future<List<CartLine>> _normalizeSaleLinesForCheckout(
+          AppDb txn,
+          List<CartLine> lines,
+          ) async {
+            final normalized = <CartLine>[];
+
+            for (final line in lines) {
+                  if (line.comboId == null) {
+                        normalized.add(line);
+                        continue;
+                  }
+
+                  final comboRows = await txn.query(
+                        'combos',
+                        columns: [
+                              'id',
+                              'name',
+                              'price',
+                              'is_active',
+                        ],
+                        where: 'id = ?',
+                        whereArgs: [line.comboId],
+                        limit: 1,
+                  );
+
+                  if (comboRows.isEmpty) {
+                        throw InvalidInventoryException(
+                              'Combo does not exist.',
+                        );
+                  }
+
+                  final comboRow = comboRows.first;
+                  final bool isActive =
+                      (comboRow['is_active'] as num?)?.toInt() != 0;
+
+                  if (!isActive) {
+                        throw InvalidInventoryException(
+                              'Combo "${comboRow['name']}" is inactive.',
+                        );
+                  }
+
+                  final double comboPrice =
+                      (comboRow['price'] as num?)?.toDouble() ?? 0.0;
+
+                  final comboName =
+                      comboRow['name']?.toString().trim() ?? line.name;
+
+                  var labels = line.componentLabels;
+                  if (labels.isEmpty) {
+                        final items = await comboItems(line.comboId!);
+                        labels = items
+                            .map((item) => item.staffLabel)
+                            .where((label) => label.isNotEmpty)
+                            .toList();
+                  }
+
+                  normalized.add(
+                        CartLine(
+                              comboId: line.comboId,
+                              name: comboName,
+                              componentLabels: labels,
+                              qty: line.qty,
+                              price: comboPrice,
+                        ),
+                  );
+            }
+
+            return normalized;
       }
 
       // ============================================================

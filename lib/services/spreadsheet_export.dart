@@ -96,6 +96,9 @@ class SpreadsheetExport {
         '<Relationship Id="rId1" '
         'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
         'Target="worksheets/sheet1.xml"/>'
+        '<Relationship Id="rId2" '
+        'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/sharedStrings" '
+        'Target="sharedStrings.xml"/>'
         '</Relationships>';
 
     final rootRels =
@@ -119,13 +122,20 @@ class SpreadsheetExport {
         'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"/>'
         '</Types>';
 
+    final contentTypesBytes = utf8.encode(contentTypes);
+    final rootRelsBytes = utf8.encode(rootRels);
+    final workbookBytes = utf8.encode(workbookXml);
+    final workbookRelsBytes = utf8.encode(workbookRels);
+    final sheetBytes = utf8.encode(sheetXml);
+    final sharedBytes = utf8.encode(sharedXml.toString());
+
     final archive = Archive()
-      ..addFile(ArchiveFile('[Content_Types].xml', contentTypes.length, utf8.encode(contentTypes)))
-      ..addFile(ArchiveFile('_rels/.rels', rootRels.length, utf8.encode(rootRels)))
-      ..addFile(ArchiveFile('xl/workbook.xml', workbookXml.length, utf8.encode(workbookXml)))
-      ..addFile(ArchiveFile('xl/_rels/workbook.xml.rels', workbookRels.length, utf8.encode(workbookRels)))
-      ..addFile(ArchiveFile('xl/worksheets/sheet1.xml', sheetXml.length, utf8.encode(sheetXml)))
-      ..addFile(ArchiveFile('xl/sharedStrings.xml', sharedXml.length, sharedXml.toString().codeUnits));
+      ..addFile(ArchiveFile('[Content_Types].xml', contentTypesBytes.length, contentTypesBytes))
+      ..addFile(ArchiveFile('_rels/.rels', rootRelsBytes.length, rootRelsBytes))
+      ..addFile(ArchiveFile('xl/workbook.xml', workbookBytes.length, workbookBytes))
+      ..addFile(ArchiveFile('xl/_rels/workbook.xml.rels', workbookRelsBytes.length, workbookRelsBytes))
+      ..addFile(ArchiveFile('xl/worksheets/sheet1.xml', sheetBytes.length, sheetBytes))
+      ..addFile(ArchiveFile('xl/sharedStrings.xml', sharedBytes.length, sharedBytes));
 
     return Uint8List.fromList(ZipEncoder().encode(archive)!);
   }

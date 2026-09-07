@@ -423,7 +423,7 @@ class _ReceiptScreenState
 
               _itemHeaderRow(),
 
-              ...widget.lines.map(_itemRow),
+              ...expandReceiptLines(widget.lines).map(_itemRow),
 
               pw.Divider(height: 1, borderStyle: pw.BorderStyle.dashed),
 
@@ -501,8 +501,9 @@ class _ReceiptScreenState
     );
   }
 
-  pw.Widget _itemRow(CartLine line) {
+  pw.Widget _itemRow(ReceiptDisplayLine line) {
     final qty = ReceiptLayout.qtyText(line.qty);
+    final amount = line.amount;
 
     return pw.Padding(
       padding: pw.EdgeInsets.symmetric(
@@ -512,30 +513,19 @@ class _ReceiptScreenState
         crossAxisAlignment: pw.CrossAxisAlignment.start,
         children: [
           pw.Expanded(
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                pw.Text(
-                  '${line.displayLabel} x $qty',
-                  maxLines: 2,
-                  style: pw.TextStyle(fontSize: _bodySize),
-                ),
-                if (ReceiptLayout.extraDetail(line.displayLabel, line.subItem))
-                  pw.Text(
-                    line.subItem!.trim(),
-                    maxLines: 1,
-                    style: pw.TextStyle(
-                      fontSize: _bodySize - 0.5,
-                    ),
-                  ),
-              ],
+            child: pw.Text(
+              '${line.label} x $qty',
+              maxLines: 2,
+              style: pw.TextStyle(fontSize: _bodySize),
             ),
           ),
-          pw.SizedBox(width: 6),
-          pw.Text(
-            ReceiptLayout.money(line.amount),
-            style: pw.TextStyle(fontSize: _bodySize),
-          ),
+          if (amount != null) ...[
+            pw.SizedBox(width: 6),
+            pw.Text(
+              ReceiptLayout.money(amount),
+              style: pw.TextStyle(fontSize: _bodySize),
+            ),
+          ],
         ],
       ),
     );
