@@ -82,7 +82,12 @@ class _CurrentStockTabState extends State<_CurrentStockTab> {
     if (query.isEmpty) return _rows;
     return _rows.where((row) {
       final haystack = [
+        RawMaterial.staffLabelFor(
+          row['name']?.toString() ?? '',
+          row['sub_item']?.toString(),
+        ),
         row['name']?.toString() ?? '',
+        row['sub_item']?.toString() ?? '',
         row['category']?.toString() ?? '',
         row['unit']?.toString() ?? '',
       ].join(' ').toLowerCase();
@@ -140,7 +145,12 @@ class _CurrentStockTabState extends State<_CurrentStockTab> {
                     ? Colors.red.shade100
                     : Colors.green.shade100;
             return DataRow(cells: [
-              DataCell(Text(r['name'])),
+              DataCell(Text(
+                RawMaterial.staffLabelFor(
+                  r['name']?.toString() ?? '',
+                  r['sub_item']?.toString(),
+                ),
+              )),
               DataCell(Text(r['category'] ?? '-')),
               DataCell(Text(r['unit'] ?? '-')),
               DataCell(Text(
@@ -209,7 +219,7 @@ class _StockLedgerTabState extends State<_StockLedgerTab> {
           DropdownButtonFormField<RawMaterial>(
             value: _selected,
             decoration: const InputDecoration(labelText: 'Select item', border: OutlineInputBorder()),
-            items: _materials.map((m) => DropdownMenuItem(value: m, child: Text(m.name))).toList(),
+            items: _materials.map((m) => DropdownMenuItem(value: m, child: Text(m.staffLabel))).toList(),
             onChanged: (v) {
               setState(() => _selected = v);
               _loadLedger();
@@ -297,7 +307,7 @@ class _StockAdjustmentTabState extends State<_StockAdjustmentTab> {
           DropdownButtonFormField<RawMaterial>(
             value: _selected,
             decoration: const InputDecoration(labelText: 'Item', border: OutlineInputBorder()),
-            items: _materials.map((m) => DropdownMenuItem(value: m, child: Text(m.name))).toList(),
+            items: _materials.map((m) => DropdownMenuItem(value: m, child: Text(m.staffLabel))).toList(),
             onChanged: (v) => setState(() => _selected = v),
           ),
           const SizedBox(height: 12),
@@ -392,7 +402,12 @@ class _ExpiryTabState extends State<_ExpiryTab> {
                   leading: Icon(
                       expired ? Icons.error : Icons.warning_amber,
                       color: expired ? Colors.red : Colors.orange),
-                  title: Text(r['material_name']),
+                  title: Text(
+                    RawMaterial.staffLabelFor(
+                      r['material_name']?.toString() ?? '',
+                      r['material_sub_item']?.toString(),
+                    ),
+                  ),
                   subtitle: Text('Batch #${r['id']} · Qty remaining: ${r['qty_remaining']}'
                       '${rate != null ? ' · Cost/unit: ${rate.toStringAsFixed(2)}' : ''}'),
                   trailing: Text(

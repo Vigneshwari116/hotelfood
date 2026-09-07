@@ -280,6 +280,15 @@ class RawMaterial {
     if (value == null || value.isEmpty) return null;
     return value;
   }
+
+  /// Label shown to staff in POS, purchase, stock, and reports.
+  String get staffLabel => RawMaterial.staffLabelFor(name, subItem);
+
+  static String staffLabelFor(String name, String? subItem) {
+    final trimmed = subItem?.trim();
+    if (trimmed != null && trimmed.isNotEmpty) return trimmed;
+    return name.trim();
+  }
 }
 
 
@@ -425,6 +434,7 @@ class ComboItem {
   final double qty;
 
   final String? materialName;
+  final String? materialSubItem;
   final double? currentStock;
   final String? unit;
 
@@ -434,9 +444,13 @@ class ComboItem {
     required this.rawMaterialId,
     required this.qty,
     this.materialName,
+    this.materialSubItem,
     this.currentStock,
     this.unit,
   });
+
+  String get staffLabel =>
+      RawMaterial.staffLabelFor(materialName ?? '', materialSubItem);
 
   factory ComboItem.fromMap(
       Map<String, dynamic> map,
@@ -451,6 +465,8 @@ class ComboItem {
       (map['qty'] as num?)?.toDouble() ?? 0,
       materialName:
       map['material_name']?.toString(),
+      materialSubItem:
+      map['material_sub_item']?.toString(),
       currentStock:
       (map['current_stock'] as num?)?.toDouble(),
       unit:
@@ -465,6 +481,7 @@ class ComboItem {
       'raw_material_id': rawMaterialId,
       'qty': qty,
       'material_name': materialName,
+      'material_sub_item': materialSubItem,
       'current_stock': currentStock,
       'unit': unit,
     };
@@ -492,6 +509,9 @@ class CartLine {
   final String name;
   final String? subItem;
 
+  /// Combo component labels (sub-item names) for cart display.
+  final List<String> componentLabels;
+
   final double qty;
   final double price;
 
@@ -500,9 +520,17 @@ class CartLine {
     this.comboId,
     required this.name,
     this.subItem,
+    this.componentLabels = const [],
     required this.qty,
     required this.price,
   });
+
+  String get displayLabel {
+    if (componentLabels.isNotEmpty) {
+      return componentLabels.join(', ');
+    }
+    return RawMaterial.staffLabelFor(name, subItem);
+  }
 
   double get amount {
     return qty * price;

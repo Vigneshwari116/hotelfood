@@ -177,6 +177,18 @@ class Repository {
             }
       }
 
+      void _appendEffectiveLocationFilter(
+            List<String> where,
+            List<dynamic> args, {
+            String column = 'location_id',
+      }) {
+            final locationId = _stockLocationId;
+            if (locationId != null) {
+                  where.add('$column = ?');
+                  args.add(locationId);
+            }
+      }
+
       String _salesLocationJoinFilter() {
             if (!isAdmin && _sessionLocationId != null) {
                   return ' AND s.location_id = ${_sessionLocationId!}';
@@ -410,6 +422,7 @@ class Repository {
                   'Fried Items',
                   'Burgers',
                   'Rolls',
+                  'Beverages',
             ];
 
             for (final name in defaults) {
@@ -1078,6 +1091,19 @@ class Repository {
             );
       }
 
+      Future<void> setRawMaterialListed(
+          int rawMaterialId,
+          bool listed,
+          ) async {
+            final db = await _db;
+            await db.update(
+                  'raw_materials',
+                  {'listed': listed ? 1 : 0},
+                  where: 'id = ?',
+                  whereArgs: [rawMaterialId],
+            );
+      }
+
       Future<bool> verifyRawMaterialPin(
           int rawMaterialId,
           String pin,
@@ -1584,6 +1610,7 @@ class Repository {
         crm.raw_material_id,
         crm.qty,
         rm.name AS material_name,
+        rm.sub_item AS material_sub_item,
         rm.current_stock AS current_stock,
         u.short_code AS unit
       FROM combo_raw_materials crm
@@ -2401,6 +2428,7 @@ class Repository {
       SELECT
         sb.*,
         rm.name AS material_name,
+        rm.sub_item AS material_sub_item,
         u.short_code AS unit
       FROM stock_batches sb
       JOIN raw_materials rm
@@ -2583,6 +2611,167 @@ class Repository {
             }
 
             return result;
+      }
+
+      // ============================================================
+      // PENDING ORDERS (TOKEN CARTS)
+      // ============================================================
+
+      Future<List<Map<String, dynamic>>> pendingOrders() async {
+            final db = await _db;
+            final locationId = _stockLocationId;
+            final where = <String>[];
+            final args = <Object>[];
+            _appendEffectiveLocationFilter(where, args, column: 'po.location_id');
+
+            final rows = await db.rawQuery(
+                  '''
+      SELECT
+        po.id,
+        po.token_number,
+        po.location_id,
+        po.customer_name,
+        po.customer_phone,
+        po.tax,
+        po.discount,
+        po.created_at,
+        po.updated_at,
+        COALESCE(SUM(poi.amount), 0) AS running_total
+      FROM pending_orders po
+      LEFT JOIN pending_order_items poi ON poi.pending_order_id = po.id
+      ${where.isEmpty ? '' : 'WHERE ${where.join(' AND ')}'}
+      GROUP BY po.id
+      ORDER BY po.token_number ASC
+      ''',
+                  args,
+            );
+            return rows;
+      }
+
+      Future<Map<String, dynamic>?> pendingOrderById(int id) async {
+            final db = await _db;
+            final rows = await db.query(
+                  'pending_orders',
+                  where: 'id = ?',
+                  whereArgs: [id],
+                  limit: 1,
+            );
+            if (rows.isEmpty) return null;
+            return rows.first;
+      }
+
+      Future<List<CartLine>> pendingOrderLines(int pendingOrderId) async {
+            final db = await _db;
+            final rows = await db.query(
+                  'pending_order_items',
+                  where: 'pending_order_id = ?',
+                  whereArgs: [pendingOrderId],
+                  orderBy: 'id ASC',
+            );
+            return rows.map((row) {
+                  final labelsRaw = row['component_labels']?.toString() ?? '';
+                  final labels = labelsRaw
+                      .split('|')
+                      .map((s) => s.trim())
+                      .where((s) => s.isNotEmpty)
+                      .toList();
+                  return CartLine(
+                        rawMaterialId: row['raw_material_id'] as int?,
+                        comboId: row['combo_id'] as int?,
+                        name: row['item_name']?.toString() ?? '',
+                        subItem: row['sub_item']?.toString(),
+                        componentLabels: labels,
+                        qty: (row['qty'] as num?)?.toDouble() ?? 0,
+                        price: (row['price'] as num?)?.toDouble() ?? 0,
+                  );
+            }).toList();
+      }
+
+      Future<int> createPendingOrder() async {
+            final db = await _db;
+            final locationId = _stockLocationId;
+            final now = DateTime.now().toIso8601String();
+
+            final where = <String>[];
+            final args = <Object>[];
+            _appendEffectiveLocationFilter(where, args, column: 'location_id');
+            final rows = await db.rawQuery(
+                  '''
+      SELECT COALESCE(MAX(token_number), 0) AS max_token
+      FROM pending_orders
+      ${where.isEmpty ? '' : 'WHERE ${where.join(' AND ')}'}
+      ''',
+                  args,
+            );
+            final nextToken =
+                ((rows.first['max_token'] as num?)?.toInt() ?? 0) + 1;
+
+            return db.insert('pending_orders', {
+                  'token_number': nextToken,
+                  ..._locationFields(),
+                  'customer_name': null,
+                  'customer_phone': null,
+                  'tax': 0,
+                  'discount': 0,
+                  'created_at': now,
+                  'updated_at': now,
+            });
+      }
+
+      Future<void> savePendingOrder({
+            required int pendingOrderId,
+            required List<CartLine> lines,
+            double tax = 0,
+            double discount = 0,
+            String? customerName,
+            String? customerPhone,
+      }) async {
+            final db = await _db;
+            final now = DateTime.now().toIso8601String();
+
+            await db.transaction((txn) async {
+                  await txn.delete(
+                        'pending_order_items',
+                        where: 'pending_order_id = ?',
+                        whereArgs: [pendingOrderId],
+                  );
+
+                  for (final line in lines) {
+                        await txn.insert('pending_order_items', {
+                              'pending_order_id': pendingOrderId,
+                              'raw_material_id': line.rawMaterialId,
+                              'combo_id': line.comboId,
+                              'item_name': line.name,
+                              'sub_item': line.subItem,
+                              'component_labels': line.componentLabels.join('|'),
+                              'qty': line.qty,
+                              'price': line.price,
+                              'amount': line.amount,
+                        });
+                  }
+
+                  await txn.update(
+                        'pending_orders',
+                        {
+                              'tax': tax,
+                              'discount': discount,
+                              'customer_name': customerName,
+                              'customer_phone': customerPhone,
+                              'updated_at': now,
+                        },
+                        where: 'id = ?',
+                        whereArgs: [pendingOrderId],
+                  );
+            });
+      }
+
+      Future<void> deletePendingOrder(int pendingOrderId) async {
+            final db = await _db;
+            await db.delete(
+                  'pending_orders',
+                  where: 'id = ?',
+                  whereArgs: [pendingOrderId],
+            );
       }
 
       // ============================================================
@@ -3613,6 +3802,7 @@ class Repository {
       SELECT
         pi.*,
         rm.name AS material_name,
+        rm.sub_item AS material_sub_item,
         p.purchase_date,
         p.invoice_no,
         s.name AS supplier_name

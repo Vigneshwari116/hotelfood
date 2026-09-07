@@ -100,7 +100,7 @@ flutter:
     - assets/branding/five_star_chicken.png
     - assets/branding/thank_you_hands.png
     - assets/templates/menu_items_import.csv
-    - assets/templates/menu_items_import.xlsx
+    - assets/templates/menu_items_import_v2.xlsx
     - assets/templates/locations/
 
   # An image asset can refer to one or more resolution-specific "variants", see

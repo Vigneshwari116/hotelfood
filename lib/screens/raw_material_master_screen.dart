@@ -38,6 +38,7 @@ class _RawMaterialMasterScreenState
   TextEditingController();
 
   bool _loading = false;
+  bool _editorOpen = false;
 
   bool get _readOnly => Repository.instance.isAdmin;
 
@@ -80,6 +81,7 @@ class _RawMaterialMasterScreenState
       final results = await Future.wait([
         Repository.instance.rawMaterials(
           search: _searchController.text.trim(),
+          includeHidden: true,
         ),
         Repository.instance.categories(
           type: 'raw_material',
@@ -330,33 +332,38 @@ class _RawMaterialMasterScreenState
   Future<void> _openRawMaterialEditor({
     RawMaterial? existing,
   }) async {
-    if (!mounted) return;
+    if (!mounted || _editorOpen) return;
+    _editorOpen = true;
 
-    RawMaterial? item = existing;
-    if (existing?.id != null) {
-      item =
-          await Repository.instance.rawMaterialById(existing!.id!) ??
-              existing;
-    }
+    try {
+      RawMaterial? item = existing;
+      if (existing?.id != null) {
+        item =
+            await Repository.instance.rawMaterialById(existing!.id!) ??
+                existing;
+      }
 
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (_) {
-        return RawMaterialEditorDialog(
-          existing: item,
-          categories: _categories,
-          units: _units,
-          onPickImage: () {
-            return _pickAndSaveImage(
-              folder: 'raw_materials',
-            );
-          },
-        );
-      },
-    );
+      final saved = await showDialog<bool>(
+        context: context,
+        builder: (_) {
+          return RawMaterialEditorDialog(
+            existing: item,
+            categories: _categories,
+            units: _units,
+            onPickImage: () {
+              return _pickAndSaveImage(
+                folder: 'raw_materials',
+              );
+            },
+          );
+        },
+      );
 
-    if (saved == true) {
-      await _loadAll();
+      if (saved == true) {
+        await _loadAll();
+      }
+    } finally {
+      _editorOpen = false;
     }
   }
 
@@ -431,7 +438,9 @@ class _RawMaterialMasterScreenState
     if (!mounted) return;
 
     // Combo picker must list every menu item, not the Items-tab search filter.
-    final allItems = await Repository.instance.rawMaterials();
+    final allItems = await Repository.instance.rawMaterials(
+      includeHidden: true,
+    );
 
     final saved = await showDialog<bool>(
       context: context,
@@ -856,7 +865,7 @@ class _RawMaterialMasterScreenState
                 CrossAxisAlignment.start,
                 children: [
                   Text(
-                    item.name,
+                    item.staffLabel,
                     style:
                     const TextStyle(
                       fontWeight:
@@ -865,17 +874,15 @@ class _RawMaterialMasterScreenState
                     ),
                   ),
 
-                  if (item.trimmedSubItem !=
-                      null) ...[
-                    const SizedBox(
-                      height: 2,
-                    ),
-                    Text(
-                      item.trimmedSubItem!,
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.grey.shade700,
+                  if (!item.listed) ...[
+                    const SizedBox(height: 4),
+                    Chip(
+                      label: const Text(
+                        'Hidden from Sales',
+                        style: TextStyle(fontSize: 11),
                       ),
+                      visualDensity: VisualDensity.compact,
+                      backgroundColor: Colors.orange.shade50,
                     ),
                   ],
 
@@ -1496,6 +1503,7 @@ class _RawMaterialEditorDialogState
   String? _imagePath;
 
   bool _saving = false;
+  bool _visibleInSales = true;
 
   @override
   void initState() {
@@ -1510,6 +1518,7 @@ class _RawMaterialEditorDialogState
 
       _subItemController.text =
           item.subItem ?? item.name;
+      _visibleInSales = item.listed;
 
       _qtyController.text =
           item.qtyNeeded.toString();
@@ -1750,6 +1759,7 @@ class _RawMaterialEditorDialogState
         ),
         imagePath:
         _imagePath,
+        listed: _visibleInSales,
       );
 
       await Repository.instance
@@ -1923,6 +1933,23 @@ class _RawMaterialEditorDialogState
                     prefix: Icons.subdirectory_arrow_right,
                   ),
                 ),
+              ),
+
+              const SizedBox(height: _fieldGap),
+
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Visible in Sales'),
+                subtitle: const Text(
+                  'Hidden items stay in stock and combo setup but '
+                  'won\'t appear on the POS screen.',
+                ),
+                value: _visibleInSales,
+                onChanged: (value) {
+                  setState(() {
+                    _visibleInSales = value;
+                  });
+                },
               ),
 
               const SizedBox(height: _fieldGap),
@@ -2691,9 +2718,7 @@ class _ComboEditorDialogState
                     value:
                     material.id,
                     child: Text(
-                      sub == null
-                          ? material.name
-                          : '${material.name} ($sub)',
+                      material.staffLabel,
                       overflow:
                       TextOverflow.ellipsis,
                       maxLines: 1,

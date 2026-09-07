@@ -516,11 +516,11 @@ class _ReceiptScreenState
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
                 pw.Text(
-                  '${line.name} x $qty',
+                  '${line.displayLabel} x $qty',
                   maxLines: 2,
                   style: pw.TextStyle(fontSize: _bodySize),
                 ),
-                if (ReceiptLayout.extraDetail(line.name, line.subItem))
+                if (ReceiptLayout.extraDetail(line.displayLabel, line.subItem))
                   pw.Text(
                     line.subItem!.trim(),
                     maxLines: 1,

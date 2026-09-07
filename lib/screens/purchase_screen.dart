@@ -87,7 +87,17 @@ class _PurchaseLine {
   }
 
   double get amount {
+    final packetCount = packets;
+    final perPacket = material?.unitsPerPacket;
+    if (packetCount > 0 && perPacket != null && perPacket > 0) {
+      return packetCount * rate;
+    }
     return quantity * rate;
+  }
+
+  bool get usesPacketPricing {
+    final perPacket = material?.unitsPerPacket;
+    return packets > 0 && perPacket != null && perPacket > 0;
   }
 }
 
@@ -1182,7 +1192,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
           const SizedBox(height: 10),
 
-          // QTY / RATE / AMOUNT
+          // QTY / RATE / AMOUNT — single row; packet fields above when applicable
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1210,10 +1220,12 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                   keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
                   onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     isDense: true,
-                    labelText: 'Rate (₹)',
-                    border: OutlineInputBorder(),
+                    labelText: line.usesPacketPricing
+                        ? 'Rate/packet (₹)'
+                        : 'Rate (₹)',
+                    border: const OutlineInputBorder(),
                   ),
                 ),
               ),
@@ -1433,7 +1445,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
   }
 }
 
-String _purchaseItemName(RawMaterial material) => material.name.trim();
+String _purchaseItemName(RawMaterial material) => material.staffLabel;
 
 String? _purchaseItemExtra(RawMaterial material) {
   final name = _purchaseItemName(material).toLowerCase();

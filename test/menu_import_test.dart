@@ -19,6 +19,7 @@ void main() {
       expect(ItemImportService.canonicalMenuCategory('SAUCES'), 'Sauces');
       expect(ItemImportService.canonicalMenuCategory('FRIED ITEMS'), 'Fried Items');
       expect(ItemImportService.canonicalMenuCategory('rolls'), 'Rolls');
+      expect(ItemImportService.canonicalMenuCategory('BEVARGES'), 'Beverages');
     });
   });
 
@@ -44,6 +45,6 @@ void main() {
     expect(csv, contains('Burgers,Hungery bird burger,Whole Muscle Patty'));
     expect(csv, contains('Rolls,Tandoori roll,chicken 65'));
     expect(csv, isNot(contains(',Burger,')));
-    expect(csv, isNot(contains(',rolls,')));
+    expect(csv, contains('Beverages,pepsi 300 ml,pepsi'));
   });
 }

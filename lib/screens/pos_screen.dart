@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -36,14 +37,16 @@ class _PosScreenState extends State<PosScreen> {
   final ScrollController _cartScrollController =
   ScrollController();
 
-  static const int _comboCategoryFilter = -2;
+  static const int _uncategorizedFilter = -1;
 
   List<RawMaterial> _materials = [];
   List<Combo> _combos = [];
   List<Category> _categories = [];
   List<Map<String, dynamic>> _locations = [];
+  List<Map<String, dynamic>> _pendingOrders = [];
   int? _adminLocationId;
   int? _categoryId;
+  int? _activePendingId;
 
   final List<CartLine> _cart = [];
 
@@ -53,6 +56,7 @@ class _PosScreenState extends State<PosScreen> {
   bool _saving = false;
   bool _cartSheetOpen = false;
   String? _phoneError;
+  int _lastAddTapMs = 0;
 
   bool get _adminViewOnly => _repo.isAdmin;
 
@@ -135,6 +139,8 @@ class _PosScreenState extends State<PosScreen> {
           _categoryId = null;
         }
       });
+
+      await _loadPendingOrders();
     } catch (e) {
       if (!mounted) return;
 
@@ -198,9 +204,6 @@ class _PosScreenState extends State<PosScreen> {
     for (final combo in _activeCombos) {
       ids.add(combo.categoryId);
     }
-    if (_activeCombos.isNotEmpty) {
-      ids.add(_comboCategoryFilter);
-    }
     return ids;
   }
 
@@ -210,12 +213,8 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   List<RawMaterial> get _filteredMaterials {
-    if (_categoryId == _comboCategoryFilter) {
-      return const [];
-    }
-
     var list = _allMaterials;
-    if (_categoryId == -1) {
+    if (_categoryId == _uncategorizedFilter) {
       list = list.where((material) => material.categoryId == null).toList();
     } else if (_categoryId != null) {
       list = list
@@ -237,24 +236,15 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   List<Combo> get _filteredCombos {
-    if (_categoryId != null &&
-        _categoryId != _comboCategoryFilter &&
-        _categoryId != -1) {
-      var list = _activeCombos
-          .where((combo) => combo.categoryId == _categoryId)
-          .toList();
-      if (_search.isEmpty) return list;
-      return list.where(_comboMatchesSearch).toList();
-    }
-
-    if (_categoryId == -1) {
+    if (_categoryId == _uncategorizedFilter) {
       return const [];
     }
 
     var list = _activeCombos;
-    if (_categoryId == _comboCategoryFilter) {
-      if (_search.isEmpty) return list;
-      return list.where(_comboMatchesSearch).toList();
+    if (_categoryId != null) {
+      list = list
+          .where((combo) => combo.categoryId == _categoryId)
+          .toList();
     }
 
     if (_search.isEmpty) {
@@ -268,11 +258,168 @@ class _PosScreenState extends State<PosScreen> {
     final name = combo.name.toLowerCase();
     final barcode = combo.barcode?.toLowerCase() ?? '';
     final components = combo.items
-        .map((item) => item.materialName?.toLowerCase() ?? '')
+        .map((item) => item.staffLabel.toLowerCase())
         .join(' ');
     return name.contains(_search) ||
         barcode.contains(_search) ||
         components.contains(_search);
+  }
+
+  bool _guardRapidTap() {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    if (now - _lastAddTapMs < 400) {
+      return false;
+    }
+    _lastAddTapMs = now;
+    return true;
+  }
+
+  List<String> _componentLabelsForCombo(Combo combo) {
+    return combo.items
+        .map((item) => item.staffLabel)
+        .where((label) => label.isNotEmpty)
+        .toList();
+  }
+
+  Future<void> _loadPendingOrders() async {
+    try {
+      final rows = await _repo.pendingOrders();
+      if (!mounted) return;
+      setState(() {
+        _pendingOrders = rows;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _persistActivePending() async {
+    if (_activePendingId == null) return;
+    await _repo.savePendingOrder(
+      pendingOrderId: _activePendingId!,
+      lines: _cart,
+      tax: _tax,
+      discount: _discount,
+      customerName: _customerNameController.text.trim().isEmpty
+          ? null
+          : _customerNameController.text.trim(),
+      customerPhone: _customerPhoneController.text.trim().isEmpty
+          ? null
+          : _customerPhoneController.text.trim(),
+    );
+    await _loadPendingOrders();
+  }
+
+  Future<void> _createNewToken() async {
+    if (_adminViewOnly) return;
+    await _persistActivePending();
+    final id = await _repo.createPendingOrder();
+    if (!mounted) return;
+    setState(() {
+      _activePendingId = id;
+      _cart.clear();
+      _taxController.text = '0';
+      _discountController.text = '0';
+      _customerNameController.clear();
+      _customerPhoneController.clear();
+      _phoneError = null;
+    });
+    await _loadPendingOrders();
+  }
+
+  Future<void> _selectPendingOrder(int pendingId) async {
+    if (_adminViewOnly) return;
+    await _persistActivePending();
+    final header = await _repo.pendingOrderById(pendingId);
+    final lines = await _repo.pendingOrderLines(pendingId);
+    if (!mounted || header == null) return;
+    setState(() {
+      _activePendingId = pendingId;
+      _cart
+        ..clear()
+        ..addAll(lines);
+      _taxController.text =
+          ((header['tax'] as num?)?.toDouble() ?? 0).toStringAsFixed(0);
+      _discountController.text =
+          ((header['discount'] as num?)?.toDouble() ?? 0).toStringAsFixed(0);
+      _customerNameController.text =
+          header['customer_name']?.toString() ?? '';
+      _customerPhoneController.text =
+          header['customer_phone']?.toString() ?? '';
+      _phoneError = null;
+    });
+    _refreshUi();
+  }
+
+  Future<void> _showPendingTokensSheet() async {
+    await _loadPendingOrders();
+    if (!mounted) return;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        return SafeArea(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Row(
+                  children: [
+                    const Expanded(
+                      child: Text(
+                        'Pending Tokens',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    FilledButton.icon(
+                      onPressed: () async {
+                        Navigator.pop(ctx);
+                        await _createNewToken();
+                      },
+                      icon: const Icon(Icons.add, size: 18),
+                      label: const Text('New Token'),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: _pendingOrders.isEmpty
+                    ? const Center(child: Text('No pending tokens'))
+                    : ListView.separated(
+                        itemCount: _pendingOrders.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          final row = _pendingOrders[index];
+                          final id = row['id'] as int;
+                          final token = row['token_number'] as int;
+                          final total =
+                              (row['running_total'] as num?)?.toDouble() ?? 0;
+                          final selected = _activePendingId == id;
+                          return ListTile(
+                            selected: selected,
+                            title: Text('Token $token'),
+                            subtitle: Text(
+                              '₹${total.toStringAsFixed(2)}',
+                            ),
+                            trailing: selected
+                                ? const Icon(Icons.check_circle)
+                                : null,
+                            onTap: () async {
+                              Navigator.pop(ctx);
+                              await _selectPendingOrder(id);
+                            },
+                          );
+                        },
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   bool _isValidCustomerPhone(String phone) =>
@@ -287,12 +434,8 @@ class _PosScreenState extends State<PosScreen> {
       return const [];
     }
 
-    if (_categoryId == _comboCategoryFilter) {
-      return _comboOnlySections(combos);
-    }
-
     if (_categoryId != null) {
-      final title = _categoryId == -1
+      final title = _categoryId == _uncategorizedFilter
           ? 'Other'
           : _categoryName(_categoryId!) ?? 'Category';
       return [
@@ -342,7 +485,7 @@ class _PosScreenState extends State<PosScreen> {
       final categoryCombos = comboGroups.remove(entry.key) ?? const [];
       if (materials.isEmpty && categoryCombos.isEmpty) continue;
       sections.add((
-        title: 'Other',
+        title: _categoryName(entry.key) ?? 'Other',
         materials: materials,
         combos: categoryCombos,
       ));
@@ -351,42 +494,10 @@ class _PosScreenState extends State<PosScreen> {
     for (final entry in comboGroups.entries) {
       if (entry.value.isEmpty) continue;
       sections.add((
-        title: 'Combos',
+        title: _categoryName(entry.key) ?? 'Other',
         materials: const [],
         combos: entry.value,
       ));
-    }
-
-    return sections;
-  }
-
-  List<({String title, List<RawMaterial> materials, List<Combo> combos})>
-      _comboOnlySections(List<Combo> combos) {
-    if (combos.isEmpty) {
-      return const [];
-    }
-
-    final grouped = <int?, List<Combo>>{};
-    for (final combo in combos) {
-      grouped.putIfAbsent(combo.categoryId, () => []).add(combo);
-    }
-
-    final sections =
-        <({String title, List<RawMaterial> materials, List<Combo> combos})>[];
-    for (final category in _categories) {
-      final list = grouped.remove(category.id);
-      if (list == null || list.isEmpty) continue;
-      sections.add((title: category.name, materials: const [], combos: list));
-    }
-
-    final uncategorized = grouped.remove(null);
-    if (uncategorized != null && uncategorized.isNotEmpty) {
-      sections.add((title: 'Combos', materials: const [], combos: uncategorized));
-    }
-
-    for (final entry in grouped.entries) {
-      if (entry.value.isEmpty) continue;
-      sections.add((title: 'Combos', materials: const [], combos: entry.value));
     }
 
     return sections;
@@ -493,6 +604,8 @@ class _PosScreenState extends State<PosScreen> {
   void _addRawMaterial(
       RawMaterial material,
       ) {
+    if (!_guardRapidTap()) return;
+
     if (material.id == null) {
       return;
     }
@@ -510,6 +623,7 @@ class _PosScreenState extends State<PosScreen> {
         ),
       );
       _refreshUi();
+      unawaited(_persistActivePending());
       return;
     }
 
@@ -519,15 +633,19 @@ class _PosScreenState extends State<PosScreen> {
       comboId: old.comboId,
       name: old.name,
       subItem: old.subItem,
+      componentLabels: old.componentLabels,
       qty: old.qty + 1,
       price: old.price,
     );
     _refreshUi();
+    unawaited(_persistActivePending());
   }
 
   void _addCombo(
       Combo combo,
       ) {
+    if (!_guardRapidTap()) return;
+
     if (combo.id == null) {
       return;
     }
@@ -540,17 +658,20 @@ class _PosScreenState extends State<PosScreen> {
     }
 
     final index = _cartIndexForCombo(combo.id!);
+    final labels = _componentLabelsForCombo(combo);
 
     if (index == -1) {
       _cart.add(
         CartLine(
           comboId: combo.id,
           name: combo.name,
+          componentLabels: labels,
           qty: 1,
           price: combo.price,
         ),
       );
       _refreshUi();
+      unawaited(_persistActivePending());
       return;
     }
 
@@ -560,10 +681,12 @@ class _PosScreenState extends State<PosScreen> {
       comboId: old.comboId,
       name: old.name,
       subItem: old.subItem,
+      componentLabels: old.componentLabels,
       qty: old.qty + 1,
       price: old.price,
     );
     _refreshUi();
+    unawaited(_persistActivePending());
   }
 
   // ============================================================
@@ -583,6 +706,7 @@ class _PosScreenState extends State<PosScreen> {
     if (newQty <= 0) {
       _cart.removeAt(index);
       _refreshUi();
+      unawaited(_persistActivePending());
       return;
     }
 
@@ -598,10 +722,12 @@ class _PosScreenState extends State<PosScreen> {
       comboId: line.comboId,
       name: line.name,
       subItem: line.subItem,
+      componentLabels: line.componentLabels,
       qty: newQty,
       price: line.price,
     );
     _refreshUi();
+    unawaited(_persistActivePending());
   }
 
   // ============================================================
@@ -618,11 +744,8 @@ class _PosScreenState extends State<PosScreen> {
 
     _cart.removeAt(index);
     _refreshUi();
+    unawaited(_persistActivePending());
   }
-
-  // ============================================================
-  // CLEAR CART
-  // ============================================================
 
   void _clearCart() {
     if (_cart.isEmpty) {
@@ -631,11 +754,8 @@ class _PosScreenState extends State<PosScreen> {
 
     _cart.clear();
     _refreshUi();
+    unawaited(_persistActivePending());
   }
-
-  // ============================================================
-  // TOTALS
-  // ============================================================
 
   double get _subtotal {
     return _cart.fold<double>(
@@ -675,6 +795,8 @@ class _PosScreenState extends State<PosScreen> {
   // ============================================================
 
   Future<void> _checkout() async {
+    if (_saving) return;
+
     if (_adminViewOnly) {
       _showError(
         'Admin accounts are view-only for sales.',
@@ -756,6 +878,13 @@ class _PosScreenState extends State<PosScreen> {
       );
 
       if (!mounted) return;
+
+      final pendingId = _activePendingId;
+      if (pendingId != null) {
+        await _repo.deletePendingOrder(pendingId);
+        _activePendingId = null;
+        await _loadPendingOrders();
+      }
 
       setState(() {
         _cart.clear();
@@ -968,7 +1097,7 @@ class _PosScreenState extends State<PosScreen> {
                       .start,
                   children: [
                     Text(
-                      material.name,
+                      material.staffLabel,
                       maxLines: 2,
                       overflow:
                       TextOverflow
@@ -981,21 +1110,6 @@ class _PosScreenState extends State<PosScreen> {
                         fontSize: 14,
                       ),
                     ),
-
-                    if (material.trimmedSubItem !=
-                        null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        material.trimmedSubItem!,
-                        maxLines: 1,
-                        overflow:
-                        TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                    ],
 
                     const SizedBox(
                       height: 5,
@@ -1276,8 +1390,8 @@ class _PosScreenState extends State<PosScreen> {
                   .start,
               children: [
                 Text(
-                  line.name,
-                  maxLines: 1,
+                  line.displayLabel,
+                  maxLines: 2,
                   overflow:
                   TextOverflow
                       .ellipsis,
@@ -1289,8 +1403,20 @@ class _PosScreenState extends State<PosScreen> {
                     fontSize: 13,
                   ),
                 ),
-                if (line.subItem != null &&
-                    line.subItem!.trim().isNotEmpty)
+                if (line.isCombo && line.componentLabels.length > 1)
+                  Text(
+                    line.componentLabels.join(' • '),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade700,
+                    ),
+                  )
+                else if (line.subItem != null &&
+                    line.subItem!.trim().isNotEmpty &&
+                    line.subItem!.trim().toLowerCase() !=
+                        line.name.trim().toLowerCase())
                   Text(
                     line.subItem!,
                     maxLines: 1,
@@ -1852,6 +1978,15 @@ class _PosScreenState extends State<PosScreen> {
     }
   }
 
+  String _pendingTokenLabel() {
+    for (final row in _pendingOrders) {
+      if (row['id'] == _activePendingId) {
+        return '${row['token_number']}';
+      }
+    }
+    return '?';
+  }
+
   // ============================================================
   // TOP BAR
   // ============================================================
@@ -1927,6 +2062,28 @@ class _PosScreenState extends State<PosScreen> {
               ),
             ],
           ),
+          if (!_adminViewOnly) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _showPendingTokensSheet,
+                  icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                  label: Text(
+                    _activePendingId == null
+                        ? 'Tokens (${_pendingOrders.length})'
+                        : 'Token ${_pendingTokenLabel()}',
+                  ),
+                ),
+                const SizedBox(width: 8),
+                if (_activePendingId != null)
+                  TextButton(
+                    onPressed: _createNewToken,
+                    child: const Text('New Token'),
+                  ),
+              ],
+            ),
+          ],
         ],
       ),
     );
@@ -2075,8 +2232,7 @@ class _PosScreenState extends State<PosScreen> {
 
   Widget _categoryChips() {
     final hasOther = _categoryIdsWithItems.contains(null);
-    final hasCombos = _activeCombos.isNotEmpty;
-    if (_categoriesWithItems.isEmpty && !hasOther && !hasCombos) {
+    if (_categoriesWithItems.isEmpty && !hasOther) {
       return const SizedBox.shrink();
     }
 
@@ -2115,14 +2271,8 @@ class _PosScreenState extends State<PosScreen> {
           if (hasOther)
             chip(
               label: 'Other',
-              selected: _categoryId == -1,
-              onTap: () => setState(() => _categoryId = -1),
-            ),
-          if (hasCombos)
-            chip(
-              label: 'Combos',
-              selected: _categoryId == _comboCategoryFilter,
-              onTap: () => setState(() => _categoryId = _comboCategoryFilter),
+              selected: _categoryId == _uncategorizedFilter,
+              onTap: () => setState(() => _categoryId = _uncategorizedFilter),
             ),
         ],
       ),
@@ -2142,9 +2292,7 @@ class _PosScreenState extends State<PosScreen> {
             ? 'No items match this search'
             : _categoryId == null
                 ? 'No menu items found'
-                : _categoryId == _comboCategoryFilter
-                    ? 'No combos found'
-                    : 'No items in this category',
+                : 'No items in this category',
       );
     }
 
