@@ -649,7 +649,7 @@ class _RawMaterialMasterScreenState
               const SizedBox(width: 8),
 
               IconButton(
-                tooltip: 'Save Excel/CSV template',
+                tooltip: 'Download current menu as Excel',
                 onPressed: _saveImportTemplate,
                 icon: const Icon(Icons.download_outlined),
               ),

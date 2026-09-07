@@ -1,11 +1,17 @@
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:foodstock/services/app_bootstrap.dart';
 import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/repository.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  const locationMenuFiles = [
+    'Gt world mall',
+    'Magadi road',
+    'Subbanna garden',
+  ];
 
   group('menu category normalization', () {
     test('maps legacy burger and bun names to Burgers', () {
@@ -38,8 +44,8 @@ void main() {
     });
   });
 
-  test('bundled location menu files exist for all three locations', () async {
-    for (final name in AppBootstrap.bundledLocationFiles) {
+  test('static location menu templates exist for manual first import', () async {
+    for (final name in locationMenuFiles) {
       final bytes = await rootBundle.load(
         'assets/templates/locations/$name.xlsx',
       );
