@@ -227,8 +227,16 @@ class ItemImportService {
     );
   }
 
-  Future<ItemImportResult> importXlsxBytes(Uint8List bytes) {
-    return _importRows(_parseXlsx(bytes), updateExisting: false);
+  Future<ItemImportResult> importXlsxBytes(
+    Uint8List bytes, {
+    bool updateExisting = true,
+    bool replaceCatalog = false,
+  }) {
+    return _importRows(
+      _parseXlsx(bytes),
+      updateExisting: updateExisting,
+      replaceCatalog: replaceCatalog,
+    );
   }
 
   Future<String> exportCsv() async {
