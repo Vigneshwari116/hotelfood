@@ -3,6 +3,7 @@
 import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/database/database_helper.dart';
@@ -57,6 +58,14 @@ class Repository {
       Repository._();
 
       static final Repository instance = Repository._();
+
+      AppDb? _testAppDb;
+
+      /// Allows integration tests to run against an in-memory database.
+      @visibleForTesting
+      void setAppDbForTesting(AppDb? db) {
+            _testAppDb = db;
+      }
 
       String? _sessionRole;
       int? _sessionLocationId;
@@ -227,6 +236,9 @@ class Repository {
       }
 
       Future<AppDb> get _db async {
+            if (_testAppDb != null) {
+                  return _testAppDb!;
+            }
             return DBHelper.instance.appDb;
       }
 
@@ -942,7 +954,16 @@ class Repository {
 
                   if (fromMenuImport) {
                         final updateMap = Map<String, Object?>.from(map)
-                              ..remove('created_at');
+                              ..remove('created_at')
+                              ..remove('opening_stock')
+                              ..remove('current_stock');
+
+                        await txn.update(
+                              'raw_materials',
+                              updateMap,
+                              where: 'id = ?',
+                              whereArgs: [rm.id],
+                        );
 
                         if (locationId != null) {
                               await _ensureLocationStockRow(
@@ -967,7 +988,6 @@ class Repository {
                               await txn.update(
                                     'raw_materials',
                                     {
-                                          ...updateMap,
                                           'opening_stock': rm.openingStock,
                                           'current_stock': rm.openingStock,
                                     },
