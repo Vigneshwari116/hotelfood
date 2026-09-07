@@ -2619,7 +2619,6 @@ class Repository {
 
       Future<List<Map<String, dynamic>>> pendingOrders() async {
             final db = await _db;
-            final locationId = _stockLocationId;
             final where = <String>[];
             final args = <Object>[];
             _appendEffectiveLocationFilter(where, args, column: 'po.location_id');
@@ -2689,7 +2688,6 @@ class Repository {
 
       Future<int> createPendingOrder() async {
             final db = await _db;
-            final locationId = _stockLocationId;
             final now = DateTime.now().toIso8601String();
 
             final where = <String>[];

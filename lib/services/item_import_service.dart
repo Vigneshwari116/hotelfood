@@ -65,7 +65,6 @@ class ItemImportService {
     'burger bun with sesame',
     'bbq seasoning',
     'tandoori mayonnaise',
-    'bbq seasoning',
     'cp marinade',
     'eggless mayonnaise',
     'paratha sauce',
