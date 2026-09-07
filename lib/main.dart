@@ -1,12 +1,11 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:foodstock/database/database_helper.dart';
-import 'package:foodstock/database/api_config.dart';
+import 'package:foodstock/services/app_bootstrap.dart';
 import 'package:foodstock/services/auth_session.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'services/item_import_service.dart';
 import 'services/repository.dart';
 
 import 'widgets/brand_logo.dart';
@@ -65,76 +64,25 @@ class _StartupGate extends StatefulWidget {
 }
 
 class _StartupGateState extends State<_StartupGate> {
-  late Future<void> _ready;
-  AuthSession? _session;
+  late Future<AuthSession?> _ready;
+  bool _deferredInitStarted = false;
 
   @override
   void initState() {
     super.initState();
 
-    _ready = _initializeApp();
+    _ready = AppBootstrap.runEssentialInit();
   }
 
-  Future<void> _initializeApp() async {
-    await DBHelper.instance.appDb;
-    await Repository.instance.ensureDefaultUsers();
-    await Repository.instance.ensureStandardUnits();
-    await Repository.instance.ensureDefaultCategories();
-    await Repository.instance.consolidateMenuCategories();
-    try {
-      const seedKey = 'menu_csv_seed';
-      const seedVersion = 9;
-      final remote = ApiConfig.enabled;
-      int seeded;
-      if (remote) {
-        final db = await DBHelper.instance.appDb;
-        final rows = await db.query(
-          'app_meta',
-          where: 'key = ?',
-          whereArgs: [seedKey],
-        );
-        seeded = rows.isEmpty
-            ? 0
-            : int.tryParse(rows.first['value']?.toString() ?? '') ?? 0;
-      } else {
-        final prefs = await SharedPreferences.getInstance();
-        seeded = prefs.getInt(seedKey) ?? 0;
-      }
-      await ItemImportService().importCsvText(
-        await rootBundle.loadString(
-          'assets/templates/menu_items_import.csv',
-        ),
-        updateExisting: seeded < seedVersion,
-        replaceCatalog: seeded < seedVersion,
-      );
-      if (seeded < seedVersion) {
-        if (remote) {
-          final db = await DBHelper.instance.appDb;
-          await db.delete('app_meta', where: 'key = ?', whereArgs: [seedKey]);
-          await db.insert('app_meta', {
-            'key': seedKey,
-            'value': '$seedVersion',
-          });
-        } else {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setInt(seedKey, seedVersion);
-        }
-      }
-    } catch (_) {}
-    await Repository.instance.writeOffExpiredStock();
-    _session = await AuthSession.load();
-    if (_session != null) {
-      Repository.instance.bindSession(
-        role: _session!.role,
-        locationId: _session!.locationId,
-        locationName: _session!.locationName,
-      );
-    }
+  void _startDeferredInit() {
+    if (_deferredInitStarted) return;
+    _deferredInitStarted = true;
+    unawaited(AppBootstrap.runDeferredInit());
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<void>(
+    return FutureBuilder<AuthSession?>(
       future: _ready,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
@@ -181,7 +129,7 @@ class _StartupGateState extends State<_StartupGate> {
                     FilledButton(
                       onPressed: () {
                         setState(() {
-                          _ready = _initializeApp();
+                          _ready = AppBootstrap.runEssentialInit();
                         });
                       },
                       child: const Text('Retry'),
@@ -193,7 +141,9 @@ class _StartupGateState extends State<_StartupGate> {
           );
         }
 
-        final session = _session;
+        _startDeferredInit();
+
+        final session = snapshot.data;
         if (session != null) {
           return MainShell(
             username: session.username,

@@ -91,14 +91,14 @@ class EscPosReceiptBuilder {
 
     for (final line in document.lines) {
       final printed = ReceiptLayout.itemLines(
-        name: line.name,
+        name: line.displayLabel,
         qty: ReceiptLayout.qtyText(line.qty),
         rate: ReceiptLayout.money(line.amount),
       );
       for (final row in printed) {
         bytes += generator.text(row);
       }
-      if (ReceiptLayout.extraDetail(line.name, line.subItem)) {
+      if (ReceiptLayout.extraDetail(line.displayLabel, line.subItem)) {
         bytes += generator.text('  ${line.subItem!.trim()}');
       }
     }

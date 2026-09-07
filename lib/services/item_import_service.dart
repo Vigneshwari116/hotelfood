@@ -26,9 +26,83 @@ class ItemImportService {
     'sauces': 'Sauces',
     'frieditems': 'Fried Items',
     'fried items': 'Fried Items',
+    'fried item': 'Fried Items',
     'rolls': 'Rolls',
     'roll': 'Rolls',
+    'beverages': 'Beverages',
+    'bevarges': 'Beverages',
+    'beverage': 'Beverages',
+    'drinks': 'Beverages',
+    'sauce dry stock': 'Sauces',
+    'saucedrystock': 'Sauces',
   };
+
+  /// Tags in the barcode/grouping column that are not real barcodes.
+  static const groupingTags = {
+    'combo',
+    'fried item',
+    'fried items',
+    'snacks',
+    'sauce/dry stock',
+    'sauces',
+    'bevarges',
+    'beverages',
+    'burgers',
+    'burger',
+    'rolls',
+    'roll',
+  };
+
+  static const hiddenGroupingTags = {
+    'combo',
+    'sauce/dry stock',
+    'sauces',
+  };
+
+  static const hiddenByDefaultNames = {
+    'paratha',
+    'bun',
+    'burger bun with sesame',
+    'bbq seasoning',
+    'tandoori mayonnaise',
+    'bbq seasoning',
+    'cp marinade',
+    'eggless mayonnaise',
+    'paratha sauce',
+  };
+
+  static bool isGroupingTag(String? value) {
+    final key = value?.trim().toLowerCase() ?? '';
+    if (key.isEmpty) return false;
+    final collapsed = key.replaceAll(RegExp(r'[^a-z0-9]+'), ' ');
+    final normalized = collapsed.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return groupingTags.contains(normalized) ||
+        groupingTags.contains(normalized.replaceAll(' ', ''));
+  }
+
+  static bool shouldHideFromSales({
+    String? groupingTag,
+    required String name,
+    String? subItem,
+    String? category,
+  }) {
+    final tag = groupingTag?.trim().toLowerCase() ?? '';
+    if (hiddenGroupingTags.contains(tag)) return true;
+
+    final labels = [
+      name.trim().toLowerCase(),
+      (subItem ?? '').trim().toLowerCase(),
+    ];
+    for (final label in labels) {
+      if (label.isEmpty) continue;
+      if (hiddenByDefaultNames.contains(label)) return true;
+    }
+
+    final categoryName = category?.trim().toLowerCase() ?? '';
+    if (categoryName == 'sauces') return true;
+
+    return false;
+  }
 
   static String? canonicalMenuCategory(String? name) {
     final trimmed = name?.trim() ?? '';
@@ -153,8 +227,16 @@ class ItemImportService {
     );
   }
 
-  Future<ItemImportResult> importXlsxBytes(Uint8List bytes) {
-    return _importRows(_parseXlsx(bytes), updateExisting: false);
+  Future<ItemImportResult> importXlsxBytes(
+    Uint8List bytes, {
+    bool updateExisting = true,
+    bool replaceCatalog = false,
+  }) {
+    return _importRows(
+      _parseXlsx(bytes),
+      updateExisting: updateExisting,
+      replaceCatalog: replaceCatalog,
+    );
   }
 
   Future<String> exportCsv() async {
@@ -318,11 +400,22 @@ class ItemImportService {
         }
         stock ??= 0;
 
+        final barcodeRaw = _first(map, const ['barcode', 'code', 'barcodeno', 'grouping']);
+        final groupingTag = isGroupingTag(barcodeRaw) ? barcodeRaw : null;
+        final barcode = groupingTag == null
+            ? normalizeBarcode(barcodeRaw)
+            : null;
+
+        final listed = !shouldHideFromSales(
+          groupingTag: groupingTag,
+          name: name,
+          subItem: subItem.isEmpty ? null : subItem,
+          category: categoryName,
+        );
+
         final saved = RawMaterial(
             id: existingItem?.id,
-            barcode: normalizeBarcode(
-              _first(map, const ['barcode', 'code', 'barcodeno']),
-            ),
+            barcode: barcode,
             name: name,
             subItem: subItem.isEmpty ? null : subItem,
             qtyNeeded: qtyNeeded,
@@ -346,7 +439,7 @@ class ItemImportService {
               'price',
             ])),
             imagePath: existingItem?.imagePath,
-            listed: true,
+            listed: listed,
             createdAt: existingItem?.createdAt,
           );
         final id = await Repository.instance.saveRawMaterial(
@@ -371,7 +464,7 @@ class ItemImportService {
           costPrice: saved.costPrice,
           sellingPrice: saved.sellingPrice,
           imagePath: saved.imagePath,
-          listed: true,
+          listed: saved.listed,
           createdAt: saved.createdAt,
         );
         if (existingItem == null) {
@@ -419,16 +512,33 @@ class ItemImportService {
   }
 
   Future<int> _ensureUnit(String name, List<UnitM> units) async {
-    final key = name.trim().toLowerCase();
+    final normalized = name.trim().toLowerCase();
+    final aliases = {
+      'g': 'g',
+      'gm': 'g',
+      'gms': 'g',
+      'gram': 'g',
+      'grams': 'g',
+      'pc': 'pc',
+      'pcs': 'pc',
+      'piece': 'pc',
+      'pieces': 'pc',
+    };
+    final lookup = aliases[normalized] ?? normalized;
     for (final unit in units) {
-      if (unit.name.trim().toLowerCase() == key ||
-          unit.shortCode.trim().toLowerCase() == key) {
+      if (unit.name.trim().toLowerCase() == lookup ||
+          unit.shortCode.trim().toLowerCase() == lookup) {
         return unit.id!;
       }
     }
-    final short = name.trim().length <= 6 ? name.trim() : name.trim().substring(0, 6);
+    final displayName = lookup == 'g'
+        ? 'Gram'
+        : lookup == 'pc'
+            ? 'Piece'
+            : name.trim();
+    final short = lookup.length <= 6 ? lookup : lookup.substring(0, 6);
     return Repository.instance.addUnit(
-      UnitM(name: name.trim(), shortCode: short),
+      UnitM(name: displayName, shortCode: short),
     );
   }
 

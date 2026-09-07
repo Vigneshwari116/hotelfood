@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:foodstock/model/models.dart';
 import '../services/report_pdf.dart';
 import '../services/repository.dart';
 import '../widgets/responsive_shell.dart';
@@ -129,7 +130,6 @@ class _StockReportTabState extends State<_StockReportTab> {
                 : SingleChildScrollView(
               child: DataTable(columns: const [
                 DataColumn(label: Text('Item')),
-                DataColumn(label: Text('Sub Item')),
                 DataColumn(label: Text('Category')),
                 DataColumn(label: Text('Stock')),
                 DataColumn(label: Text('Unit')),
@@ -155,10 +155,12 @@ class _StockReportTabState extends State<_StockReportTab> {
 
                 return DataRow(cells: [
                   DataCell(Text(
-                    r['name'] ?? '',
+                    RawMaterial.staffLabelFor(
+                      r['name']?.toString() ?? '',
+                      r['sub_item']?.toString(),
+                    ),
                     style: stockStyle,
                   )),
-                  DataCell(Text(r['sub_item']?.toString() ?? '-')),
                   DataCell(Text(r['category'] ?? '-')),
                   DataCell(Text(
                     _formatNumber(stock),
@@ -351,12 +353,14 @@ class _ItemSalesTabState extends State<_ItemSalesTab> {
                 onPressed: () async {
                   await ReportPdf.shareTable(
                     title: 'Item Sales',
-                    headers: const ['Item', 'Sub item', 'Sold qty', 'Amount'],
+                    headers: const ['Item', 'Sold qty', 'Amount'],
                     rows: _rows
                         .map(
                           (r) => [
-                            r['item_name']?.toString() ?? '',
-                            (r['sub_item'] as String?)?.trim() ?? '',
+                            RawMaterial.staffLabelFor(
+                              r['item_name']?.toString() ?? '',
+                              r['sub_item']?.toString(),
+                            ),
                             r['sold_qty']?.toString() ?? '',
                             '₹${r['total_amount']}',
                           ],
@@ -378,7 +382,6 @@ class _ItemSalesTabState extends State<_ItemSalesTab> {
               separatorBuilder: (_, __) => const Divider(height: 1),
               itemBuilder: (context, i) {
                 final r = _rows[i];
-                final sub = (r['sub_item'] as String?)?.trim();
                 final stock = (r['current_stock'] as num?)?.toDouble();
                 final kind = r['sale_kind']?.toString() ?? 'item';
                 final kindLabel = kind == 'combo'
@@ -389,11 +392,15 @@ class _ItemSalesTabState extends State<_ItemSalesTab> {
                 final negativeStock =
                     stock != null && stock < -0.000001;
                 return ListTile(
-                  title: Text(r['item_name']?.toString() ?? ''),
+                  title: Text(
+                    RawMaterial.staffLabelFor(
+                      r['item_name']?.toString() ?? '',
+                      r['sub_item']?.toString(),
+                    ),
+                  ),
                   subtitle: Text(
                     [
                       if (kindLabel != null) kindLabel,
-                      if (sub != null && sub.isNotEmpty) sub,
                       'Sold ${r['sold_qty']}',
                       if (stock != null)
                         negativeStock
@@ -673,7 +680,10 @@ class _PurchaseReportTabState extends State<_PurchaseReportTab> {
                                 (r) => [
                                   r['purchase_date']?.toString() ?? '',
                                   r['supplier_name']?.toString() ?? '-',
-                                  r['material_name']?.toString() ?? '',
+                                  RawMaterial.staffLabelFor(
+                                    r['material_name']?.toString() ?? '',
+                                    r['material_sub_item']?.toString(),
+                                  ),
                                   r['qty']?.toString() ?? '',
                                   '₹${r['rate']}',
                                   '₹${r['amount']}',
@@ -700,7 +710,7 @@ class _PurchaseReportTabState extends State<_PurchaseReportTab> {
                       final r = _rows[i];
                       return ListTile(
                         title: Text(
-                          '${r['material_name']}  •  qty ${r['qty']} @ ₹${r['rate']}',
+                          '${RawMaterial.staffLabelFor(r['material_name']?.toString() ?? '', r['material_sub_item']?.toString())}  •  qty ${r['qty']} @ ₹${r['rate']}',
                         ),
                         subtitle: Text(
                           '${r['supplier_name'] ?? '-'}  •  ${r['purchase_date']}',
@@ -754,14 +764,10 @@ class _TopSellingTabState extends State<_TopSellingTab> {
                     return Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
-                        [
-                          _rows[idx]['item_name'],
-                          if ((_rows[idx]['sub_item'] as String?)
-                                  ?.trim()
-                                  .isNotEmpty ==
-                              true)
-                            _rows[idx]['sub_item'],
-                        ].join('\n'),
+                        RawMaterial.staffLabelFor(
+                          _rows[idx]['item_name']?.toString() ?? '',
+                          _rows[idx]['sub_item']?.toString(),
+                        ),
                         textAlign: TextAlign.center,
                         style: const TextStyle(fontSize: 9),
                       ),

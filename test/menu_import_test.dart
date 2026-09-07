@@ -2,9 +2,16 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/repository.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  const locationMenuFiles = [
+    'Gt world mall',
+    'Magadi road',
+    'Subbanna garden',
+  ];
 
   group('menu category normalization', () {
     test('maps legacy burger and bun names to Burgers', () {
@@ -19,6 +26,7 @@ void main() {
       expect(ItemImportService.canonicalMenuCategory('SAUCES'), 'Sauces');
       expect(ItemImportService.canonicalMenuCategory('FRIED ITEMS'), 'Fried Items');
       expect(ItemImportService.canonicalMenuCategory('rolls'), 'Rolls');
+      expect(ItemImportService.canonicalMenuCategory('BEVARGES'), 'Beverages');
     });
   });
 
@@ -36,14 +44,24 @@ void main() {
     });
   });
 
-  test('seed menu CSV matches PDF burger and roll naming', () async {
+  test('static location menu templates exist for manual first import', () async {
+    for (final name in locationMenuFiles) {
+      final bytes = await rootBundle.load(
+        'assets/templates/locations/$name.xlsx',
+      );
+      expect(bytes.lengthInBytes, greaterThan(100));
+    }
+  });
+
+  test('seed menu CSV includes beverages and stock items from PDF', () async {
     final csv = await rootBundle.loadString(
       'assets/templates/menu_items_import.csv',
     );
 
-    expect(csv, contains('Burgers,Hungery bird burger,Whole Muscle Patty'));
-    expect(csv, contains('Rolls,Tandoori roll,chicken 65'));
-    expect(csv, isNot(contains(',Burger,')));
-    expect(csv, isNot(contains(',rolls,')));
+    expect(csv, contains('BURGERS,Hungery bird burger,Whole Muscle Patty'));
+    expect(csv, contains('ROLLS,Tandoori roll,chicken 65'));
+    expect(csv, contains('BEVARGES,pepsi 300 ml,pepsi'));
+    expect(csv, contains('STOCK,Paratha,Paratha'));
+    expect(csv, contains('ROLLS,Chicken Roll,chicken roll'));
   });
 }

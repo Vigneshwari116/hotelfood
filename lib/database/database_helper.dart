@@ -90,7 +90,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 19,
+      version: 20,
 
       onConfigure: (db) async {
         await db.execute(
@@ -1526,6 +1526,50 @@ class DBHelper {
           'ALTER TABLE sales ADD COLUMN customer_phone TEXT',
         );
       }
+    }
+
+    if (oldVersion < 20) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS pending_orders (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          token_number INTEGER NOT NULL,
+          location_id INTEGER,
+          customer_name TEXT,
+          customer_phone TEXT,
+          tax REAL NOT NULL DEFAULT 0,
+          discount REAL NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_pending_orders_location
+        ON pending_orders(location_id)
+      ''');
+
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS pending_order_items (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          pending_order_id INTEGER NOT NULL,
+          raw_material_id INTEGER,
+          combo_id INTEGER,
+          item_name TEXT NOT NULL,
+          sub_item TEXT,
+          component_labels TEXT,
+          qty REAL NOT NULL,
+          price REAL NOT NULL,
+          amount REAL NOT NULL,
+          FOREIGN KEY (pending_order_id)
+            REFERENCES pending_orders (id)
+            ON DELETE CASCADE
+        )
+      ''');
+
+      await db.execute('''
+        CREATE INDEX IF NOT EXISTS idx_pending_order_items_order
+        ON pending_order_items(pending_order_id)
+      ''');
     }
   }
 
