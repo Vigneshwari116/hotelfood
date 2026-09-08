@@ -26,6 +26,7 @@ class AppBootstrap {
     await Repository.instance.ensureStandardUnits();
     await Repository.instance.ensureDefaultCategories();
     await Repository.instance.consolidateMenuCategories();
+    await Repository.instance.ensureLocationStockRows();
     await Repository.instance.writeOffExpiredStock();
   }
 }

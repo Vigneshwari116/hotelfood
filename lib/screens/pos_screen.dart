@@ -55,7 +55,6 @@ class _PosScreenState extends State<PosScreen> {
   bool _loading = true;
   bool _saving = false;
   bool _cartSheetOpen = false;
-  String? _phoneError;
   int _lastAddTapMs = 0;
 
   bool get _adminViewOnly => _repo.isAdmin;
@@ -321,7 +320,6 @@ class _PosScreenState extends State<PosScreen> {
       _discountController.text = '0';
       _customerNameController.clear();
       _customerPhoneController.clear();
-      _phoneError = null;
     });
     await _loadPendingOrders();
   }
@@ -345,7 +343,6 @@ class _PosScreenState extends State<PosScreen> {
           header['customer_name']?.toString() ?? '';
       _customerPhoneController.text =
           header['customer_phone']?.toString() ?? '';
-      _phoneError = null;
     });
     _refreshUi();
   }
@@ -422,9 +419,6 @@ class _PosScreenState extends State<PosScreen> {
       },
     );
   }
-
-  bool _isValidCustomerPhone(String phone) =>
-      Repository.isValidCustomerPhone(phone);
 
   List<({String title, List<RawMaterial> materials, List<Combo> combos})>
       get _productSections {
@@ -813,17 +807,6 @@ class _PosScreenState extends State<PosScreen> {
     }
 
     final customerPhone = _customerPhoneController.text.trim();
-    if (!_isValidCustomerPhone(customerPhone)) {
-      setState(() {
-        _phoneError = 'Mobile number is required';
-      });
-      _showError('Enter a valid mobile number before completing the sale.');
-      return;
-    }
-
-    setState(() {
-      _phoneError = null;
-    });
 
     final tax = _tax;
     final discount =
@@ -877,7 +860,8 @@ class _PosScreenState extends State<PosScreen> {
         _paymentType,
         customerName:
             customerName.isEmpty ? null : customerName,
-        customerPhone: customerPhone,
+        customerPhone:
+            customerPhone.isEmpty ? null : customerPhone,
       );
 
       if (!mounted) return;
@@ -902,7 +886,6 @@ class _PosScreenState extends State<PosScreen> {
 
       _customerNameController.clear();
       _customerPhoneController.clear();
-      _phoneError = null;
 
       await _refreshStock();
 
@@ -1598,21 +1581,13 @@ class _PosScreenState extends State<PosScreen> {
           TextField(
             controller: _customerPhoneController,
             keyboardType: TextInputType.phone,
-            decoration: InputDecoration(
-              labelText: 'Mobile number',
-              border: const OutlineInputBorder(),
+            decoration: const InputDecoration(
+              labelText: 'Mobile number (optional)',
+              border: OutlineInputBorder(),
               isDense: true,
-              prefixIcon: const Icon(Icons.phone_outlined),
-              errorText: _phoneError,
+              prefixIcon: Icon(Icons.phone_outlined),
             ),
-            onChanged: (_) {
-              setState(() {
-                if (_isValidCustomerPhone(_customerPhoneController.text)) {
-                  _phoneError = null;
-                }
-              });
-              _refreshUi();
-            },
+            onChanged: (_) => _refreshUi(),
           ),
 
           const SizedBox(height: 8),

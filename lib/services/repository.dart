@@ -207,32 +207,37 @@ class Repository {
 
       Future<void> ensureLocationStockRows() async {
             final db = await _db;
-            final locationRows = await db.query(
-                  'locations',
-                  orderBy: 'id ASC',
-            );
-            if (locationRows.isEmpty) return;
+            final missing = await db.rawQuery('''
+      SELECT
+        l.id AS location_id,
+        rm.id AS raw_material_id,
+        COALESCE(rm.reorder_level, 0) AS reorder_level
+      FROM locations l
+      CROSS JOIN raw_materials rm
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM location_stock ls
+        WHERE ls.location_id = l.id
+          AND ls.raw_material_id = rm.id
+      )
+      ''');
 
-            final materialRows = await db.query(
-                  'raw_materials',
-                  columns: ['id', 'reorder_level'],
-            );
+            if (missing.isEmpty) return;
 
-            for (final location in locationRows) {
-                  final locationId = location['id'] as int;
-                  for (final material in materialRows) {
-                        final rawMaterialId = material['id'] as int;
-                        final reorderLevel =
-                            (material['reorder_level'] as num?)?.toDouble() ??
-                                0.0;
-                        await _ensureLocationStockRow(
-                              db,
-                              locationId,
-                              rawMaterialId,
-                              reorderLevel: reorderLevel,
+            await db.transaction((txn) async {
+                  for (final row in missing) {
+                        await txn.insert(
+                              'location_stock',
+                              {
+                                    'location_id': row['location_id'],
+                                    'raw_material_id': row['raw_material_id'],
+                                    'current_stock': 0,
+                                    'opening_stock': 0,
+                                    'reorder_level': row['reorder_level'],
+                              },
                         );
                   }
-            }
+            });
       }
 
       Future<AppDb> get _db async {
@@ -558,12 +563,6 @@ class Repository {
       static String? normalizeBarcodeValue(String? value) =>
           ItemImportService.normalizeBarcode(value);
 
-      static bool isValidCustomerPhone(String? phone) {
-            final trimmed = phone?.trim() ?? '';
-            if (trimmed.isEmpty) return false;
-            return !RegExp(r'^0+$').hasMatch(trimmed);
-      }
-
       static List<String> barcodeLookupCandidates(String barcode) {
             final normalized = normalizeBarcodeValue(barcode) ?? barcode.trim();
             if (normalized.isEmpty) return const [];
@@ -661,7 +660,6 @@ class Repository {
                   password: 'staff123',
                   role: 'staff',
             );
-            await ensureLocationStockRows();
       }
 
       Future<List<Map<String, dynamic>>> locations() async {
