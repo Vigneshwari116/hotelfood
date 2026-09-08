@@ -90,7 +90,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 20,
+      version: 22,
 
       onConfigure: (db) async {
         await db.execute(
@@ -260,6 +260,10 @@ class DBHelper {
         selling_price REAL,
 
         listed INTEGER NOT NULL DEFAULT 1,
+
+        menu_sort_order INTEGER,
+
+        menu_export_row TEXT,
 
         created_at TEXT NOT NULL,
 
@@ -1526,6 +1530,42 @@ class DBHelper {
           'ALTER TABLE sales ADD COLUMN customer_phone TEXT',
         );
       }
+    }
+
+    if (oldVersion < 22) {
+      final materialColumns = await db.rawQuery(
+        'PRAGMA table_info(raw_materials)',
+      );
+      final materialNames =
+          materialColumns.map((c) => c['name'] as String).toSet();
+      if (!materialNames.contains('menu_sort_order')) {
+        await db.execute(
+          'ALTER TABLE raw_materials ADD COLUMN menu_sort_order INTEGER',
+        );
+      }
+      if (!materialNames.contains('menu_export_row')) {
+        await db.execute(
+          'ALTER TABLE raw_materials ADD COLUMN menu_export_row TEXT',
+        );
+      }
+    }
+
+    if (oldVersion < 21) {
+      // Legacy combos stored their configured price in selling_price while
+      // the newer price column stayed at 0 after migration v15.
+      await db.execute('''
+        UPDATE combos
+        SET price = selling_price
+        WHERE (price IS NULL OR price = 0)
+          AND selling_price > 0
+      ''');
+
+      await db.execute('''
+        UPDATE combos
+        SET selling_price = price
+        WHERE (selling_price IS NULL OR selling_price = 0)
+          AND price > 0
+      ''');
     }
 
     if (oldVersion < 20) {

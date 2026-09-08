@@ -333,15 +333,28 @@ class Combo {
     this.createdAt,
   });
 
+  /// Reads the configured combo price from legacy or current DB columns.
+  static double resolveStoredPrice(Map<String, dynamic> map) {
+    final price = (map['price'] as num?)?.toDouble();
+    if (price != null && price > 0) {
+      return price;
+    }
+
+    final sellingPrice = (map['selling_price'] as num?)?.toDouble();
+    if (sellingPrice != null && sellingPrice > 0) {
+      return sellingPrice;
+    }
+
+    return price ?? sellingPrice ?? 0;
+  }
+
   factory Combo.fromMap(Map<String, dynamic> map) {
     return Combo(
       id: map['id'] as int?,
       name: map['name']?.toString() ?? '',
       barcode: map['barcode']?.toString(),
       categoryId: map['category_id'] as int?,
-      price: (map['price'] as num?)?.toDouble() ??
-          (map['selling_price'] as num?)?.toDouble() ??
-          0,
+      price: resolveStoredPrice(map),
       imagePath: map['image_path']?.toString(),
       isActive: ((map['is_active'] as num?)?.toInt() ?? 1) != 0,
       items: const [],
@@ -356,6 +369,7 @@ class Combo {
       'name': name,
       'category_id': categoryId,
       'price': price,
+      'selling_price': price,
       'image_path': imagePath,
       'is_active': isActive ? 1 : 0,
       'created_at':

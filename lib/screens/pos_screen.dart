@@ -1406,7 +1406,7 @@ class _PosScreenState extends State<PosScreen> {
                       fontSize: 11,
                       color: Colors.grey.shade700,
                     ),
-                  )
+                  ),
                 Text(
                   '₹${line.price.toStringAsFixed(2)} × '
                       '${_formatQty(line.qty)}',

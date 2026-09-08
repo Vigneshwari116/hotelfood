@@ -101,6 +101,7 @@ flutter:
     - assets/branding/thank_you_hands.png
     - assets/templates/menu_items_import.csv
     - assets/templates/menu_items_import_v2.xlsx
+    - assets/templates/Shilpa_Enterprise_menu_items_CLIENT_FINAL.xlsx
     - assets/templates/locations/
 
   # An image asset can refer to one or more resolution-specific "variants", see

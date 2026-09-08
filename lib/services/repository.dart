@@ -796,6 +796,8 @@ class Repository {
           RawMaterial rm, {
                 String? pin,
                 bool fromMenuImport = false,
+                List<String>? menuExportRow,
+                int? menuSortOrder,
           }) async {
             final db = await _db;
 
@@ -831,6 +833,18 @@ class Repository {
 
             final map = rm.toMap()..remove('id');
             map['barcode'] = normalizeBarcodeValue(rm.barcode);
+
+            if (!fromMenuImport) {
+                  map['menu_export_row'] = null;
+                  map['menu_sort_order'] = null;
+            } else {
+                  if (menuExportRow != null) {
+                        map['menu_export_row'] = jsonEncode(menuExportRow);
+                  }
+                  if (menuSortOrder != null) {
+                        map['menu_sort_order'] = menuSortOrder;
+                  }
+            }
 
             if (pin != null && pin.trim().isNotEmpty) {
                   map['entry_password_hash'] = hashPin(
@@ -3056,6 +3070,7 @@ class Repository {
                               'id',
                               'name',
                               'price',
+                              'selling_price',
                               'is_active',
                         ],
                         where: 'id = ?',
@@ -3080,7 +3095,7 @@ class Repository {
                   }
 
                   final double comboPrice =
-                      (comboRow['price'] as num?)?.toDouble() ?? 0.0;
+                      Combo.resolveStoredPrice(comboRow);
 
                   final comboName =
                       comboRow['name']?.toString().trim() ?? line.name;
@@ -3646,6 +3661,7 @@ class Repository {
             return db.rawQuery(
                   '''
       SELECT
+        rm.menu_export_row AS menu_export_row,
         COALESCE(c.name, '') AS category,
         rm.name AS item_name,
         COALESCE(rm.sub_item, '') AS sub_item,
@@ -3663,7 +3679,7 @@ class Repository {
       LEFT JOIN location_stock ls
         ON ls.raw_material_id = rm.id
         AND ls.location_id = ?
-      ORDER BY c.name ASC, rm.name ASC, rm.sub_item ASC
+      ORDER BY rm.menu_sort_order ASC, rm.id ASC
       ''',
                   [locationId],
             );
