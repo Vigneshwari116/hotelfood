@@ -3089,7 +3089,7 @@ class Repository {
                   if (labels.isEmpty) {
                         final items = await comboItems(line.comboId!);
                         labels = items
-                            .map((item) => item.staffLabel)
+                            .map((item) => item.itemNameLabel)
                             .where((label) => label.isNotEmpty)
                             .toList();
                   }

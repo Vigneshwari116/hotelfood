@@ -281,8 +281,11 @@ class RawMaterial {
     return value;
   }
 
-  /// Label shown to staff in POS, purchase, stock, and reports.
+  /// Label for stock, purchase, and reports (prefers sub-item / stock name).
   String get staffLabel => RawMaterial.staffLabelFor(name, subItem);
+
+  /// Customer-facing label for Sales/POS tiles, cart, and receipts.
+  String get salesLabel => name.trim();
 
   static String staffLabelFor(String name, String? subItem) {
     final trimmed = subItem?.trim();
@@ -452,6 +455,13 @@ class ComboItem {
   String get staffLabel =>
       RawMaterial.staffLabelFor(materialName ?? '', materialSubItem);
 
+  /// Component item name for Sales/POS cart and receipts.
+  String get itemNameLabel {
+    final trimmed = materialName?.trim();
+    if (trimmed != null && trimmed.isNotEmpty) return trimmed;
+    return staffLabel;
+  }
+
   factory ComboItem.fromMap(
       Map<String, dynamic> map,
       ) {
@@ -509,7 +519,7 @@ class CartLine {
   final String name;
   final String? subItem;
 
-  /// Combo component labels (sub-item names) for cart display.
+  /// Combo component labels (item names) for cart/receipt detail lines.
   final List<String> componentLabels;
 
   final double qty;
@@ -525,12 +535,8 @@ class CartLine {
     required this.price,
   });
 
-  String get displayLabel {
-    if (componentLabels.isNotEmpty) {
-      return componentLabels.join(', ');
-    }
-    return RawMaterial.staffLabelFor(name, subItem);
-  }
+  /// Customer-facing label for cart lines and receipts (item name only).
+  String get displayLabel => name.trim();
 
   double get amount {
     return qty * price;

@@ -257,12 +257,18 @@ class _PosScreenState extends State<PosScreen> {
   bool _comboMatchesSearch(Combo combo) {
     final name = combo.name.toLowerCase();
     final barcode = combo.barcode?.toLowerCase() ?? '';
-    final components = combo.items
-        .map((item) => item.staffLabel.toLowerCase())
-        .join(' ');
-    return name.contains(_search) ||
-        barcode.contains(_search) ||
-        components.contains(_search);
+    if (name.contains(_search) || barcode.contains(_search)) {
+      return true;
+    }
+
+    for (final item in combo.items) {
+      final itemName = item.materialName?.toLowerCase() ?? '';
+      final subItem = item.materialSubItem?.toLowerCase() ?? '';
+      if (itemName.contains(_search) || subItem.contains(_search)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   bool _guardRapidTap() {
@@ -276,7 +282,7 @@ class _PosScreenState extends State<PosScreen> {
 
   List<String> _componentLabelsForCombo(Combo combo) {
     return combo.items
-        .map((item) => item.staffLabel)
+        .map((item) => item.itemNameLabel)
         .where((label) => label.isNotEmpty)
         .toList();
   }
@@ -1083,7 +1089,7 @@ class _PosScreenState extends State<PosScreen> {
                       .start,
                   children: [
                     Text(
-                      material.staffLabel,
+                      material.salesLabel,
                       maxLines: 2,
                       overflow:
                       TextOverflow
@@ -1378,7 +1384,7 @@ class _PosScreenState extends State<PosScreen> {
                   .start,
               children: [
                 Text(
-                  line.isCombo ? line.name : line.displayLabel,
+                  line.name,
                   maxLines: 2,
                   overflow:
                   TextOverflow
@@ -1401,19 +1407,6 @@ class _PosScreenState extends State<PosScreen> {
                       color: Colors.grey.shade700,
                     ),
                   )
-                else if (line.subItem != null &&
-                    line.subItem!.trim().isNotEmpty &&
-                    line.subItem!.trim().toLowerCase() !=
-                        line.name.trim().toLowerCase())
-                  Text(
-                    line.subItem!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
                 Text(
                   '₹${line.price.toStringAsFixed(2)} × '
                       '${_formatQty(line.qty)}',
