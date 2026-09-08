@@ -21,7 +21,8 @@ class AppBootstrap {
   /// Heavier work that can run after login/shell is visible.
   ///
   /// Menu import is never run here — locations seed their catalog manually
-  /// via Menu Items -> Import CSV/Excel.
+  /// via Menu Items -> Import CSV/Excel. Location stock row sync also runs
+  /// here so large catalogs do not block the login screen.
   static Future<void> runDeferredInit() async {
     await Repository.instance.ensureStandardUnits();
     await Repository.instance.ensureDefaultCategories();

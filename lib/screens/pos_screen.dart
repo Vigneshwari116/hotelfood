@@ -1447,24 +1447,12 @@ class _PosScreenState extends State<PosScreen> {
             },
           ),
 
-          SizedBox(
-            width: 30,
-            child:
-            Text(
-              _formatQty(
-                line.qty,
-              ),
-              textAlign:
-              TextAlign
-                  .center,
-              style:
-              const TextStyle(
-                fontWeight:
-                FontWeight
-                    .bold,
-                fontSize: 13,
-              ),
-            ),
+          _CartQtyField(
+            qty: line.qty,
+            formatQty: _formatQty,
+            onQtyCommitted: (newQty) {
+              _changeQuantity(index, newQty);
+            },
           ),
 
           IconButton(
@@ -2451,6 +2439,97 @@ class _PosScreenState extends State<PosScreen> {
         behavior:
         SnackBarBehavior
             .floating,
+      ),
+    );
+  }
+}
+
+class _CartQtyField extends StatefulWidget {
+  final double qty;
+  final String Function(double value) formatQty;
+  final ValueChanged<double> onQtyCommitted;
+
+  const _CartQtyField({
+    required this.qty,
+    required this.formatQty,
+    required this.onQtyCommitted,
+  });
+
+  @override
+  State<_CartQtyField> createState() => _CartQtyFieldState();
+}
+
+class _CartQtyFieldState extends State<_CartQtyField> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.formatQty(widget.qty));
+    _focusNode = FocusNode()..addListener(_handleFocusChange);
+  }
+
+  @override
+  void didUpdateWidget(_CartQtyField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_focusNode.hasFocus && oldWidget.qty != widget.qty) {
+      _controller.text = widget.formatQty(widget.qty);
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_handleFocusChange);
+    _focusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleFocusChange() {
+    if (!_focusNode.hasFocus) {
+      _commit();
+    }
+  }
+
+  void _commit() {
+    final raw = _controller.text.trim().replaceAll(',', '.');
+    if (raw.isEmpty) {
+      _controller.text = widget.formatQty(widget.qty);
+      return;
+    }
+
+    final parsed = double.tryParse(raw);
+    if (parsed == null || parsed <= 0) {
+      _controller.text = widget.formatQty(widget.qty);
+      return;
+    }
+
+    _controller.text = widget.formatQty(parsed);
+    if ((parsed - widget.qty).abs() > 0.000001) {
+      widget.onQtyCommitted(parsed);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 52,
+      child: TextField(
+        controller: _controller,
+        focusNode: _focusNode,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 13,
+        ),
+        decoration: const InputDecoration(
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          border: OutlineInputBorder(),
+        ),
+        onSubmitted: (_) => _commit(),
       ),
     );
   }

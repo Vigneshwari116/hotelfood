@@ -4000,10 +4000,10 @@ class Repository {
       // DEMO RESET (SETTINGS → RESET)
       // ============================================================
 
-      /// Deletes sales and purchases, clears stock movement history, and
-      /// restores stock to the values from the last menu import for each
-      /// location. Keeps menu items, categories, units, customers, combos,
-      /// and suppliers.
+      /// Deletes sales and purchases, clears stock movement history, clears
+      /// pending POS tokens, and restores stock to the values from the last
+      /// menu import for each location. Keeps menu items, categories, units,
+      /// customers, combos, and suppliers.
       Future<void> resetDemoTransactionData({int? locationId}) async {
             final db = await _db;
             final targetLocationId = locationId ?? _sessionLocationId;
@@ -4022,6 +4022,25 @@ class Repository {
 
             await db.transaction((txn) async {
                   for (final locId in locationIds) {
+                        final pendingIds = await txn.query(
+                              'pending_orders',
+                              columns: ['id'],
+                              where: 'location_id = ?',
+                              whereArgs: [locId],
+                        );
+                        for (final pending in pendingIds) {
+                              await txn.delete(
+                                    'pending_order_items',
+                                    where: 'pending_order_id = ?',
+                                    whereArgs: [pending['id']],
+                              );
+                        }
+                        await txn.delete(
+                              'pending_orders',
+                              where: 'location_id = ?',
+                              whereArgs: [locId],
+                        );
+
                         final saleIds = await txn.query(
                               'sales',
                               columns: ['id'],
@@ -4079,6 +4098,25 @@ class Repository {
                         );
                   }
 
+                  if (targetLocationId == null && locationIds.isNotEmpty) {
+                        final nullPendingIds = await txn.query(
+                              'pending_orders',
+                              columns: ['id'],
+                              where: 'location_id IS NULL',
+                        );
+                        for (final pending in nullPendingIds) {
+                              await txn.delete(
+                                    'pending_order_items',
+                                    where: 'pending_order_id = ?',
+                                    whereArgs: [pending['id']],
+                              );
+                        }
+                        await txn.delete(
+                              'pending_orders',
+                              where: 'location_id IS NULL',
+                        );
+                  }
+
                   if (locationIds.isEmpty) {
                         await txn.delete('customer_ledger');
                         await txn.delete('sale_items');
@@ -4088,6 +4126,8 @@ class Repository {
                         await txn.delete('stock_ledger');
                         await txn.delete('stock_adjustments');
                         await txn.delete('stock_batches');
+                        await txn.delete('pending_order_items');
+                        await txn.delete('pending_orders');
                   }
             });
 
@@ -4105,7 +4145,7 @@ class Repository {
                         'sqlite_sequence',
                         where: '''
                           name IN (
-                            ?, ?, ?, ?, ?, ?, ?, ?
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                           )
                         ''',
                         whereArgs: [
@@ -4117,6 +4157,8 @@ class Repository {
                           'purchase_items',
                           'purchases',
                           'stock_batches',
+                          'pending_orders',
+                          'pending_order_items',
                         ],
                   );
             }
