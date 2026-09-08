@@ -4,7 +4,7 @@ import 'package:foodstock/services/item_import_service.dart';
 
 void main() {
   group('staff labels', () {
-    test('prefers sub-item name for staff display', () {
+    test('prefers sub-item name for stock-facing screens', () {
       final item = RawMaterial(
         name: 'star burger',
         subItem: 'Crispy Chicken Patty',

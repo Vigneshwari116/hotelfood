@@ -55,7 +55,6 @@ class _PosScreenState extends State<PosScreen> {
   bool _loading = true;
   bool _saving = false;
   bool _cartSheetOpen = false;
-  String? _phoneError;
   int _lastAddTapMs = 0;
 
   bool get _adminViewOnly => _repo.isAdmin;
@@ -258,12 +257,18 @@ class _PosScreenState extends State<PosScreen> {
   bool _comboMatchesSearch(Combo combo) {
     final name = combo.name.toLowerCase();
     final barcode = combo.barcode?.toLowerCase() ?? '';
-    final components = combo.items
-        .map((item) => item.staffLabel.toLowerCase())
-        .join(' ');
-    return name.contains(_search) ||
-        barcode.contains(_search) ||
-        components.contains(_search);
+    if (name.contains(_search) || barcode.contains(_search)) {
+      return true;
+    }
+
+    for (final item in combo.items) {
+      final itemName = item.materialName?.toLowerCase() ?? '';
+      final subItem = item.materialSubItem?.toLowerCase() ?? '';
+      if (itemName.contains(_search) || subItem.contains(_search)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   bool _guardRapidTap() {
@@ -277,7 +282,7 @@ class _PosScreenState extends State<PosScreen> {
 
   List<String> _componentLabelsForCombo(Combo combo) {
     return combo.items
-        .map((item) => item.staffLabel)
+        .map((item) => item.itemNameLabel)
         .where((label) => label.isNotEmpty)
         .toList();
   }
@@ -321,7 +326,6 @@ class _PosScreenState extends State<PosScreen> {
       _discountController.text = '0';
       _customerNameController.clear();
       _customerPhoneController.clear();
-      _phoneError = null;
     });
     await _loadPendingOrders();
   }
@@ -345,7 +349,6 @@ class _PosScreenState extends State<PosScreen> {
           header['customer_name']?.toString() ?? '';
       _customerPhoneController.text =
           header['customer_phone']?.toString() ?? '';
-      _phoneError = null;
     });
     _refreshUi();
   }
@@ -422,9 +425,6 @@ class _PosScreenState extends State<PosScreen> {
       },
     );
   }
-
-  bool _isValidCustomerPhone(String phone) =>
-      Repository.isValidCustomerPhone(phone);
 
   List<({String title, List<RawMaterial> materials, List<Combo> combos})>
       get _productSections {
@@ -813,17 +813,6 @@ class _PosScreenState extends State<PosScreen> {
     }
 
     final customerPhone = _customerPhoneController.text.trim();
-    if (!_isValidCustomerPhone(customerPhone)) {
-      setState(() {
-        _phoneError = 'Mobile number is required';
-      });
-      _showError('Enter a valid mobile number before completing the sale.');
-      return;
-    }
-
-    setState(() {
-      _phoneError = null;
-    });
 
     final tax = _tax;
     final discount =
@@ -877,7 +866,8 @@ class _PosScreenState extends State<PosScreen> {
         _paymentType,
         customerName:
             customerName.isEmpty ? null : customerName,
-        customerPhone: customerPhone,
+        customerPhone:
+            customerPhone.isEmpty ? null : customerPhone,
       );
 
       if (!mounted) return;
@@ -902,7 +892,6 @@ class _PosScreenState extends State<PosScreen> {
 
       _customerNameController.clear();
       _customerPhoneController.clear();
-      _phoneError = null;
 
       await _refreshStock();
 
@@ -1100,7 +1089,7 @@ class _PosScreenState extends State<PosScreen> {
                       .start,
                   children: [
                     Text(
-                      material.staffLabel,
+                      material.salesLabel,
                       maxLines: 2,
                       overflow:
                       TextOverflow
@@ -1395,7 +1384,7 @@ class _PosScreenState extends State<PosScreen> {
                   .start,
               children: [
                 Text(
-                  line.isCombo ? line.name : line.displayLabel,
+                  line.name,
                   maxLines: 2,
                   overflow:
                   TextOverflow
@@ -1412,19 +1401,6 @@ class _PosScreenState extends State<PosScreen> {
                   Text(
                     line.componentLabels.join(' • '),
                     maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: Colors.grey.shade700,
-                    ),
-                  )
-                else if (line.subItem != null &&
-                    line.subItem!.trim().isNotEmpty &&
-                    line.subItem!.trim().toLowerCase() !=
-                        line.name.trim().toLowerCase())
-                  Text(
-                    line.subItem!,
-                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 11,
@@ -1464,24 +1440,12 @@ class _PosScreenState extends State<PosScreen> {
             },
           ),
 
-          SizedBox(
-            width: 30,
-            child:
-            Text(
-              _formatQty(
-                line.qty,
-              ),
-              textAlign:
-              TextAlign
-                  .center,
-              style:
-              const TextStyle(
-                fontWeight:
-                FontWeight
-                    .bold,
-                fontSize: 13,
-              ),
-            ),
+          _CartQtyField(
+            qty: line.qty,
+            formatQty: _formatQty,
+            onQtyCommitted: (newQty) {
+              _changeQuantity(index, newQty);
+            },
           ),
 
           IconButton(
@@ -1598,21 +1562,13 @@ class _PosScreenState extends State<PosScreen> {
           TextField(
             controller: _customerPhoneController,
             keyboardType: TextInputType.phone,
-            decoration: InputDecoration(
-              labelText: 'Mobile number',
-              border: const OutlineInputBorder(),
+            decoration: const InputDecoration(
+              labelText: 'Mobile number (optional)',
+              border: OutlineInputBorder(),
               isDense: true,
-              prefixIcon: const Icon(Icons.phone_outlined),
-              errorText: _phoneError,
+              prefixIcon: Icon(Icons.phone_outlined),
             ),
-            onChanged: (_) {
-              setState(() {
-                if (_isValidCustomerPhone(_customerPhoneController.text)) {
-                  _phoneError = null;
-                }
-              });
-              _refreshUi();
-            },
+            onChanged: (_) => _refreshUi(),
           ),
 
           const SizedBox(height: 8),
@@ -2476,6 +2432,97 @@ class _PosScreenState extends State<PosScreen> {
         behavior:
         SnackBarBehavior
             .floating,
+      ),
+    );
+  }
+}
+
+class _CartQtyField extends StatefulWidget {
+  final double qty;
+  final String Function(double value) formatQty;
+  final ValueChanged<double> onQtyCommitted;
+
+  const _CartQtyField({
+    required this.qty,
+    required this.formatQty,
+    required this.onQtyCommitted,
+  });
+
+  @override
+  State<_CartQtyField> createState() => _CartQtyFieldState();
+}
+
+class _CartQtyFieldState extends State<_CartQtyField> {
+  late final TextEditingController _controller;
+  late final FocusNode _focusNode;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.formatQty(widget.qty));
+    _focusNode = FocusNode()..addListener(_handleFocusChange);
+  }
+
+  @override
+  void didUpdateWidget(_CartQtyField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_focusNode.hasFocus && oldWidget.qty != widget.qty) {
+      _controller.text = widget.formatQty(widget.qty);
+    }
+  }
+
+  @override
+  void dispose() {
+    _focusNode.removeListener(_handleFocusChange);
+    _focusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _handleFocusChange() {
+    if (!_focusNode.hasFocus) {
+      _commit();
+    }
+  }
+
+  void _commit() {
+    final raw = _controller.text.trim().replaceAll(',', '.');
+    if (raw.isEmpty) {
+      _controller.text = widget.formatQty(widget.qty);
+      return;
+    }
+
+    final parsed = double.tryParse(raw);
+    if (parsed == null || parsed <= 0) {
+      _controller.text = widget.formatQty(widget.qty);
+      return;
+    }
+
+    _controller.text = widget.formatQty(parsed);
+    if ((parsed - widget.qty).abs() > 0.000001) {
+      widget.onQtyCommitted(parsed);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 52,
+      child: TextField(
+        controller: _controller,
+        focusNode: _focusNode,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 13,
+        ),
+        decoration: const InputDecoration(
+          isDense: true,
+          contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          border: OutlineInputBorder(),
+        ),
+        onSubmitted: (_) => _commit(),
       ),
     );
   }

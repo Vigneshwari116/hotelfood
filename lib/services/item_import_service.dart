@@ -183,6 +183,30 @@ class ItemImportService {
     return SpreadsheetExport.buildXlsx(menuHeaders, rows);
   }
 
+  /// Parses spreadsheet bytes the same way menu import does (for tests).
+  List<List<String>> parseSpreadsheetBytes(
+    Uint8List bytes, {
+    String extension = '.xlsx',
+  }) {
+    if (extension.toLowerCase() == '.xlsx') {
+      return _parseXlsx(bytes);
+    }
+    return _parseCsv(utf8.decode(bytes, allowMalformed: true));
+  }
+
+  List<String> buildMenuExportRow(List<String> headers, List<String> row) {
+    final byKey = <String, String>{};
+    for (var c = 0; c < headers.length && c < row.length; c++) {
+      final key = _normalizeKey(headers[c]);
+      if (key.isEmpty) continue;
+      byKey[key] = row[c];
+    }
+    return menuHeaders.map((header) {
+      final key = _normalizeKey(header);
+      return byKey[key] ?? '';
+    }).toList();
+  }
+
   Future<String> exportCsvForLocation(int locationId) async {
     final rows = await _menuRowsForLocation(locationId);
     return SpreadsheetExport.buildCsv(menuHeaders, rows);
@@ -191,6 +215,12 @@ class ItemImportService {
   Future<List<List<String>>> _menuRowsForLocation(int locationId) async {
     final data = await Repository.instance.menuExportRows(locationId);
     return data.map((row) {
+      final snapshot = row['menu_export_row']?.toString();
+      if (snapshot != null && snapshot.isNotEmpty) {
+        final decoded = jsonDecode(snapshot) as List<dynamic>;
+        return decoded.map((cell) => cell.toString()).toList();
+      }
+
       String cell(Object? value) {
         if (value == null) return '';
         if (value is num) {
@@ -242,6 +272,7 @@ class ItemImportService {
       rows,
       updateExisting: true,
       replaceCatalog: replaceCatalog,
+      preserveSourceCategories: expectedLocationName != null,
     );
   }
 
@@ -317,6 +348,7 @@ class ItemImportService {
     List<List<String>> rows, {
     required bool updateExisting,
     bool replaceCatalog = false,
+    bool preserveSourceCategories = false,
   }) async {
     final result = ItemImportResult();
     if (rows.isEmpty) {
@@ -339,14 +371,24 @@ class ItemImportService {
     final existing = await Repository.instance.rawMaterials(
       includeHidden: true,
     );
-    final existingByKey = <String, RawMaterial>{
-      for (final item in existing)
-        _itemKey(item.name, item.subItem): item,
-    };
 
     var categories = await Repository.instance.categories(type: 'raw_material');
     var units = await Repository.instance.units();
+    final categoryNameById = {
+      for (final category in categories)
+        if (category.id != null) category.id!: category.name,
+    };
     final importedKeys = <String>{};
+    final existingByKey = <String, RawMaterial>{
+      for (final item in existing)
+        _itemKey(
+          item.name,
+          item.subItem,
+          category: item.categoryId == null
+              ? ''
+              : categoryNameById[item.categoryId],
+        ): item,
+    };
 
     for (var i = headerIndex + 1; i < rows.length; i++) {
       final row = rows[i];
@@ -365,7 +407,6 @@ class ItemImportService {
         'menuitem',
       ]);
       if (name.isEmpty) {
-        result.errors.add('Row ${i + 1}: missing item name.');
         continue;
       }
 
@@ -375,7 +416,15 @@ class ItemImportService {
         'sub',
         'variant',
       ]);
-      final key = _itemKey(name, subItem);
+
+      final categoryName = preserveSourceCategories
+          ? _first(map, const ['category', 'cat']).trim()
+          : (canonicalMenuCategory(
+                _first(map, const ['category', 'cat']),
+              ) ??
+              '');
+
+      final key = _itemKey(name, subItem, category: categoryName);
       importedKeys.add(key);
       final existingItem = existingByKey[key];
       if (existingItem != null && !updateExisting) {
@@ -384,9 +433,6 @@ class ItemImportService {
       }
 
       try {
-        final categoryName = canonicalMenuCategory(
-          _first(map, const ['category', 'cat']),
-        ) ?? '';
         int? categoryId;
         if (categoryName.isNotEmpty) {
           categoryId = await _ensureCategory(categoryName, categories);
@@ -482,6 +528,8 @@ class ItemImportService {
         final id = await Repository.instance.saveRawMaterial(
           saved,
           fromMenuImport: true,
+          menuExportRow: buildMenuExportRow(headers, row),
+          menuSortOrder: i - headerIndex,
         );
 
         existingByKey[key] = RawMaterial(
@@ -520,7 +568,13 @@ class ItemImportService {
       );
       for (final item in leftovers) {
         if (item.id == null) continue;
-        final key = _itemKey(item.name, item.subItem);
+        final key = _itemKey(
+          item.name,
+          item.subItem,
+          category: item.categoryId == null
+              ? ''
+              : categoryNameById[item.categoryId],
+        );
         if (importedKeys.contains(key)) continue;
         try {
           await Repository.instance.deleteRawMaterial(item.id!);
@@ -587,8 +641,14 @@ class ItemImportService {
     return '';
   }
 
-  String _itemKey(String name, String? subItem) {
-    return '${name.trim().toLowerCase()}|${(subItem ?? '').trim().toLowerCase()}';
+  String _itemKey(
+    String name,
+    String? subItem, {
+    String? category,
+  }) {
+    return '${(category ?? '').trim().toLowerCase()}|'
+        '${name.trim().toLowerCase()}|'
+        '${(subItem ?? '').trim().toLowerCase()}';
   }
 
   String _normalizeKey(String value) {

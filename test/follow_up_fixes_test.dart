@@ -23,20 +23,6 @@ void main() {
     });
   });
 
-  group('customer phone validation', () {
-    test('rejects blank and all-zero numbers', () {
-      expect(Repository.isValidCustomerPhone(null), isFalse);
-      expect(Repository.isValidCustomerPhone(''), isFalse);
-      expect(Repository.isValidCustomerPhone('0'), isFalse);
-      expect(Repository.isValidCustomerPhone('0000'), isFalse);
-    });
-
-    test('accepts any other non-empty value', () {
-      expect(Repository.isValidCustomerPhone('9876543210'), isTrue);
-      expect(Repository.isValidCustomerPhone('12'), isTrue);
-    });
-  });
-
   group('substring search helpers', () {
     bool matches(String haystack, String query) {
       return haystack.toLowerCase().contains(query.trim().toLowerCase());

@@ -207,32 +207,37 @@ class Repository {
 
       Future<void> ensureLocationStockRows() async {
             final db = await _db;
-            final locationRows = await db.query(
-                  'locations',
-                  orderBy: 'id ASC',
-            );
-            if (locationRows.isEmpty) return;
+            final missing = await db.rawQuery('''
+      SELECT
+        l.id AS location_id,
+        rm.id AS raw_material_id,
+        COALESCE(rm.reorder_level, 0) AS reorder_level
+      FROM locations l
+      CROSS JOIN raw_materials rm
+      WHERE NOT EXISTS (
+        SELECT 1
+        FROM location_stock ls
+        WHERE ls.location_id = l.id
+          AND ls.raw_material_id = rm.id
+      )
+      ''');
 
-            final materialRows = await db.query(
-                  'raw_materials',
-                  columns: ['id', 'reorder_level'],
-            );
+            if (missing.isEmpty) return;
 
-            for (final location in locationRows) {
-                  final locationId = location['id'] as int;
-                  for (final material in materialRows) {
-                        final rawMaterialId = material['id'] as int;
-                        final reorderLevel =
-                            (material['reorder_level'] as num?)?.toDouble() ??
-                                0.0;
-                        await _ensureLocationStockRow(
-                              db,
-                              locationId,
-                              rawMaterialId,
-                              reorderLevel: reorderLevel,
+            await db.transaction((txn) async {
+                  for (final row in missing) {
+                        await txn.insert(
+                              'location_stock',
+                              {
+                                    'location_id': row['location_id'],
+                                    'raw_material_id': row['raw_material_id'],
+                                    'current_stock': 0,
+                                    'opening_stock': 0,
+                                    'reorder_level': row['reorder_level'],
+                              },
                         );
                   }
-            }
+            });
       }
 
       Future<AppDb> get _db async {
@@ -558,12 +563,6 @@ class Repository {
       static String? normalizeBarcodeValue(String? value) =>
           ItemImportService.normalizeBarcode(value);
 
-      static bool isValidCustomerPhone(String? phone) {
-            final trimmed = phone?.trim() ?? '';
-            if (trimmed.isEmpty) return false;
-            return !RegExp(r'^0+$').hasMatch(trimmed);
-      }
-
       static List<String> barcodeLookupCandidates(String barcode) {
             final normalized = normalizeBarcodeValue(barcode) ?? barcode.trim();
             if (normalized.isEmpty) return const [];
@@ -661,7 +660,6 @@ class Repository {
                   password: 'staff123',
                   role: 'staff',
             );
-            await ensureLocationStockRows();
       }
 
       Future<List<Map<String, dynamic>>> locations() async {
@@ -798,6 +796,8 @@ class Repository {
           RawMaterial rm, {
                 String? pin,
                 bool fromMenuImport = false,
+                List<String>? menuExportRow,
+                int? menuSortOrder,
           }) async {
             final db = await _db;
 
@@ -833,6 +833,18 @@ class Repository {
 
             final map = rm.toMap()..remove('id');
             map['barcode'] = normalizeBarcodeValue(rm.barcode);
+
+            if (!fromMenuImport) {
+                  map['menu_export_row'] = null;
+                  map['menu_sort_order'] = null;
+            } else {
+                  if (menuExportRow != null) {
+                        map['menu_export_row'] = jsonEncode(menuExportRow);
+                  }
+                  if (menuSortOrder != null) {
+                        map['menu_sort_order'] = menuSortOrder;
+                  }
+            }
 
             if (pin != null && pin.trim().isNotEmpty) {
                   map['entry_password_hash'] = hashPin(
@@ -3058,6 +3070,7 @@ class Repository {
                               'id',
                               'name',
                               'price',
+                              'selling_price',
                               'is_active',
                         ],
                         where: 'id = ?',
@@ -3082,7 +3095,7 @@ class Repository {
                   }
 
                   final double comboPrice =
-                      (comboRow['price'] as num?)?.toDouble() ?? 0.0;
+                      Combo.resolveStoredPrice(comboRow);
 
                   final comboName =
                       comboRow['name']?.toString().trim() ?? line.name;
@@ -3091,7 +3104,7 @@ class Repository {
                   if (labels.isEmpty) {
                         final items = await comboItems(line.comboId!);
                         labels = items
-                            .map((item) => item.staffLabel)
+                            .map((item) => item.itemNameLabel)
                             .where((label) => label.isNotEmpty)
                             .toList();
                   }
@@ -3648,6 +3661,7 @@ class Repository {
             return db.rawQuery(
                   '''
       SELECT
+        rm.menu_export_row AS menu_export_row,
         COALESCE(c.name, '') AS category,
         rm.name AS item_name,
         COALESCE(rm.sub_item, '') AS sub_item,
@@ -3665,7 +3679,7 @@ class Repository {
       LEFT JOIN location_stock ls
         ON ls.raw_material_id = rm.id
         AND ls.location_id = ?
-      ORDER BY c.name ASC, rm.name ASC, rm.sub_item ASC
+      ORDER BY rm.menu_sort_order ASC, rm.id ASC
       ''',
                   [locationId],
             );
@@ -4002,10 +4016,10 @@ class Repository {
       // DEMO RESET (SETTINGS → RESET)
       // ============================================================
 
-      /// Deletes sales and purchases, clears stock movement history, and
-      /// restores stock to the values from the last menu import for each
-      /// location. Keeps menu items, categories, units, customers, combos,
-      /// and suppliers.
+      /// Deletes sales and purchases, clears stock movement history, clears
+      /// pending POS tokens, and restores stock to the values from the last
+      /// menu import for each location. Keeps menu items, categories, units,
+      /// customers, combos, and suppliers.
       Future<void> resetDemoTransactionData({int? locationId}) async {
             final db = await _db;
             final targetLocationId = locationId ?? _sessionLocationId;
@@ -4024,6 +4038,25 @@ class Repository {
 
             await db.transaction((txn) async {
                   for (final locId in locationIds) {
+                        final pendingIds = await txn.query(
+                              'pending_orders',
+                              columns: ['id'],
+                              where: 'location_id = ?',
+                              whereArgs: [locId],
+                        );
+                        for (final pending in pendingIds) {
+                              await txn.delete(
+                                    'pending_order_items',
+                                    where: 'pending_order_id = ?',
+                                    whereArgs: [pending['id']],
+                              );
+                        }
+                        await txn.delete(
+                              'pending_orders',
+                              where: 'location_id = ?',
+                              whereArgs: [locId],
+                        );
+
                         final saleIds = await txn.query(
                               'sales',
                               columns: ['id'],
@@ -4081,6 +4114,25 @@ class Repository {
                         );
                   }
 
+                  if (targetLocationId == null && locationIds.isNotEmpty) {
+                        final nullPendingIds = await txn.query(
+                              'pending_orders',
+                              columns: ['id'],
+                              where: 'location_id IS NULL',
+                        );
+                        for (final pending in nullPendingIds) {
+                              await txn.delete(
+                                    'pending_order_items',
+                                    where: 'pending_order_id = ?',
+                                    whereArgs: [pending['id']],
+                              );
+                        }
+                        await txn.delete(
+                              'pending_orders',
+                              where: 'location_id IS NULL',
+                        );
+                  }
+
                   if (locationIds.isEmpty) {
                         await txn.delete('customer_ledger');
                         await txn.delete('sale_items');
@@ -4090,6 +4142,8 @@ class Repository {
                         await txn.delete('stock_ledger');
                         await txn.delete('stock_adjustments');
                         await txn.delete('stock_batches');
+                        await txn.delete('pending_order_items');
+                        await txn.delete('pending_orders');
                   }
             });
 
@@ -4107,7 +4161,7 @@ class Repository {
                         'sqlite_sequence',
                         where: '''
                           name IN (
-                            ?, ?, ?, ?, ?, ?, ?, ?
+                            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                           )
                         ''',
                         whereArgs: [
@@ -4119,6 +4173,8 @@ class Repository {
                           'purchase_items',
                           'purchases',
                           'stock_batches',
+                          'pending_orders',
+                          'pending_order_items',
                         ],
                   );
             }
