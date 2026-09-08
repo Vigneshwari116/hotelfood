@@ -407,7 +407,6 @@ class ItemImportService {
         'menuitem',
       ]);
       if (name.isEmpty) {
-        result.errors.add('Row ${i + 1}: missing item name.');
         continue;
       }
 

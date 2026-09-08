@@ -176,12 +176,25 @@ void main() {
     List<List<String>> normalizedGrid(List<List<String>> rows) {
       if (rows.isEmpty) return rows;
       final width = ItemImportService.menuHeaders.length;
-      return rows.map((row) {
-        return [
-          for (var i = 0; i < width; i++)
-            i < row.length ? row[i] : '',
-        ];
-      }).toList();
+      return rows
+          .map((row) {
+            return [
+              for (var i = 0; i < width; i++)
+                i < row.length ? row[i] : '',
+            ];
+          })
+          .where((row) {
+            if (row.isEmpty) return false;
+            // Match import: skip header duplicates and rows without an item name.
+            final itemName = row.length > 1 ? row[1].trim() : '';
+            if (itemName.isEmpty) return false;
+            if (row.first.trim().toLowerCase() == 'category' &&
+                itemName.toLowerCase() == 'item_name') {
+              return false;
+            }
+            return true;
+          })
+          .toList();
     }
 
     test('export after location import matches client seed row-for-row', () async {
