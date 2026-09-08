@@ -90,7 +90,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 20,
+      version: 21,
 
       onConfigure: (db) async {
         await db.execute(
@@ -1526,6 +1526,24 @@ class DBHelper {
           'ALTER TABLE sales ADD COLUMN customer_phone TEXT',
         );
       }
+    }
+
+    if (oldVersion < 21) {
+      // Legacy combos stored their configured price in selling_price while
+      // the newer price column stayed at 0 after migration v15.
+      await db.execute('''
+        UPDATE combos
+        SET price = selling_price
+        WHERE (price IS NULL OR price = 0)
+          AND selling_price > 0
+      ''');
+
+      await db.execute('''
+        UPDATE combos
+        SET selling_price = price
+        WHERE (selling_price IS NULL OR selling_price = 0)
+          AND price > 0
+      ''');
     }
 
     if (oldVersion < 20) {

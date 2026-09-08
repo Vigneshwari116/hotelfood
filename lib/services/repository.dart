@@ -3058,6 +3058,7 @@ class Repository {
                               'id',
                               'name',
                               'price',
+                              'selling_price',
                               'is_active',
                         ],
                         where: 'id = ?',
@@ -3082,7 +3083,7 @@ class Repository {
                   }
 
                   final double comboPrice =
-                      (comboRow['price'] as num?)?.toDouble() ?? 0.0;
+                      Combo.resolveStoredPrice(comboRow);
 
                   final comboName =
                       comboRow['name']?.toString().trim() ?? line.name;
