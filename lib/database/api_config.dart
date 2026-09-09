@@ -14,5 +14,13 @@ class ApiConfig {
     defaultValue: false,
   );
 
+  static const requestTimeoutSeconds = int.fromEnvironment(
+    'SHILPA_REQUEST_TIMEOUT_SECONDS',
+    defaultValue: 8,
+  );
+
+  static Duration get requestTimeout =>
+      Duration(seconds: requestTimeoutSeconds);
+
   static bool get enabled => !useLocalDb && url.isNotEmpty;
 }
