@@ -12,6 +12,7 @@ import '../services/item_import_service.dart';
 import '../services/repository.dart';
 import '../widgets/barcode_field.dart';
 import '../widgets/responsive_shell.dart';
+import 'menu_items_grid_screen.dart';
 
 class RawMaterialMasterScreen extends StatefulWidget {
   const RawMaterialMasterScreen({super.key});
@@ -329,6 +330,19 @@ class _RawMaterialMasterScreenState
   // RAW MATERIAL EDITOR
   // ============================================================
 
+  Future<void> _openMenuItemsGrid() async {
+    if (!mounted) return;
+    final refreshed = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => const MenuItemsGridScreen(),
+      ),
+    );
+
+    if (refreshed == true && mounted) {
+      await _loadAll();
+    }
+  }
+
   Future<void> _openRawMaterialEditor({
     RawMaterial? existing,
   }) async {
@@ -643,6 +657,12 @@ class _RawMaterialMasterScreenState
                   _loadAll();
                 },
               ),
+            ),
+
+            OutlinedButton.icon(
+              onPressed: _openMenuItemsGrid,
+              icon: const Icon(Icons.table_chart_outlined),
+              label: Text(isMobile ? 'Grid' : 'Grid view'),
             ),
 
             if (!_readOnly) ...[
