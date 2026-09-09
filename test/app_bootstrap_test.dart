@@ -193,15 +193,38 @@ void main() {
       );
     });
 
+    test('immediate init does not block on remote database connection', () {
+      final source = File('lib/services/app_bootstrap.dart').readAsStringSync();
+      final immediate = source.substring(
+        source.indexOf('runImmediateInit'),
+        source.indexOf('connectRemoteDatabase'),
+      );
+
+      expect(immediate.contains('DBHelper.instance.appDb'), isFalse);
+      expect(immediate.contains('verifyRemoteConnection'), isFalse);
+      expect(immediate.contains('ensureDefaultUsers'), isFalse);
+    });
+
+    test('remote database connect runs after first frame path', () {
+      final source = File('lib/services/app_bootstrap.dart').readAsStringSync();
+      final connect = source.substring(
+        source.indexOf('connectRemoteDatabase'),
+        source.indexOf('runDeferredInit'),
+      );
+
+      expect(connect.contains('verifyRemoteConnection'), isTrue);
+      expect(connect.contains('ensureDefaultUsers'), isTrue);
+    });
+
     test('deferred init includes location stock sync after first frame path', () {
       final source = File('lib/services/app_bootstrap.dart').readAsStringSync();
-      final essential = source.substring(
-        source.indexOf('runEssentialInit'),
-        source.indexOf('runDeferredInit'),
+      final immediate = source.substring(
+        source.indexOf('runImmediateInit'),
+        source.indexOf('connectRemoteDatabase'),
       );
       final deferred = source.substring(source.indexOf('runDeferredInit'));
 
-      expect(essential.contains('ensureLocationStockRows'), isFalse);
+      expect(immediate.contains('ensureLocationStockRows'), isFalse);
       expect(deferred.contains('ensureLocationStockRows'), isTrue);
       expect(deferred.contains('writeOffExpiredStock'), isTrue);
     });

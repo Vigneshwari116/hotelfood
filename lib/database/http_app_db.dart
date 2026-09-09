@@ -24,7 +24,7 @@ class HttpAppDb implements AppDb {
   ) async {
     final response = await _client
         .post(_uri(path), headers: _headers, body: jsonEncode(body))
-        .timeout(const Duration(seconds: 30));
+        .timeout(ApiConfig.requestTimeout);
     Map<String, dynamic> decoded;
     try {
       decoded = jsonDecode(response.body) as Map<String, dynamic>;

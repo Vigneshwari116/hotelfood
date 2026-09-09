@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/services/app_bootstrap.dart';
 import 'package:foodstock/services/auth_session.dart';
+import 'package:foodstock/services/shop_server_connection.dart';
 import 'services/repository.dart';
 
 import 'widgets/brand_logo.dart';
@@ -64,14 +65,32 @@ class _StartupGate extends StatefulWidget {
 }
 
 class _StartupGateState extends State<_StartupGate> {
-  late Future<AuthSession?> _ready;
+  AuthSession? _session;
   bool _deferredInitStarted = false;
+  bool _loadingSession = true;
 
   @override
   void initState() {
     super.initState();
+    _boot();
+  }
 
-    _ready = AppBootstrap.runEssentialInit();
+  Future<void> _boot() async {
+    final session = await AppBootstrap.runImmediateInit();
+    if (!mounted) return;
+    setState(() {
+      _session = session;
+      _loadingSession = false;
+    });
+    unawaited(_connectServer());
+  }
+
+  Future<void> _connectServer() async {
+    await ShopServerConnection.instance.connect();
+    if (!mounted) return;
+    if (ShopServerConnection.instance.ready) {
+      _startDeferredInit();
+    }
   }
 
   void _startDeferredInit() {
@@ -82,78 +101,114 @@ class _StartupGateState extends State<_StartupGate> {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<AuthSession?>(
-      future: _ready,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(
-            body: Center(
-              child: CircularProgressIndicator(),
-            ),
-          );
-        }
+    if (_loadingSession) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
 
-        if (snapshot.hasError) {
-          return Scaffold(
-            body: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.error_outline,
-                      size: 60,
-                      color: Colors.red,
-                    ),
+    return ListenableBuilder(
+      listenable: ShopServerConnection.instance,
+      builder: (context, _) {
+        final connection = ShopServerConnection.instance;
+        final session = _session;
 
-                    const SizedBox(height: 16),
+        final child = session != null
+            ? MainShell(
+                username: session.username,
+                role: session.role,
+                locationName: session.locationName,
+              )
+            : const LoginScreen();
 
-                    const Text(
-                      'Unable to initialize application',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+        return _ServerConnectionShell(
+          connection: connection,
+          onRetry: _connectServer,
+          child: child,
+        );
+      },
+    );
+  }
+}
+
+class _ServerConnectionShell extends StatelessWidget {
+  final ShopServerConnection connection;
+  final VoidCallback onRetry;
+  final Widget child;
+
+  const _ServerConnectionShell({
+    required this.connection,
+    required this.onRetry,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (!connection.needsRemoteConnection || connection.ready) {
+      return child;
+    }
+
+    return Column(
+      children: [
+        Material(
+          color: connection.error != null
+              ? Colors.red.shade50
+              : Colors.orange.shade50,
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 12,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (connection.connecting)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2, right: 12),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    )
+                  else
+                    Padding(
+                      padding: const EdgeInsets.only(top: 2, right: 12),
+                      child: Icon(
+                        Icons.cloud_off_outlined,
+                        color: Colors.red.shade700,
+                        size: 20,
                       ),
                     ),
-
-                    const SizedBox(height: 8),
-
-                    Text(
-                      '${snapshot.error}',
-                      textAlign: TextAlign.center,
+                  Expanded(
+                    child: Text(
+                      connection.statusMessage,
+                      style: TextStyle(
+                        color: connection.error != null
+                            ? Colors.red.shade900
+                            : Colors.orange.shade900,
+                      ),
                     ),
-
-                    const SizedBox(height: 20),
-
-                    FilledButton(
-                      onPressed: () {
-                        setState(() {
-                          _ready = AppBootstrap.runEssentialInit();
-                        });
-                      },
+                  ),
+                  if (connection.error != null)
+                    TextButton(
+                      onPressed: connection.connecting ? null : onRetry,
                       child: const Text('Retry'),
                     ),
-                  ],
-                ),
+                ],
               ),
             ),
-          );
-        }
-
-        _startDeferredInit();
-
-        final session = snapshot.data;
-        if (session != null) {
-          return MainShell(
-            username: session.username,
-            role: session.role,
-            locationName: session.locationName,
-          );
-        }
-
-        return const LoginScreen();
-      },
+          ),
+        ),
+        Expanded(child: child),
+      ],
     );
   }
 }
@@ -193,6 +248,15 @@ class _LoginScreenState extends State<LoginScreen> {
         _error = 'Please enter username and password';
       });
 
+      return;
+    }
+
+    final connection = ShopServerConnection.instance;
+    if (connection.needsRemoteConnection && !connection.ready) {
+      setState(() {
+        _error = connection.error ??
+            'Still connecting to the shop server. Please wait or tap Retry.';
+      });
       return;
     }
 

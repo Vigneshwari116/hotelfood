@@ -53,18 +53,31 @@ class DBHelper {
     if (_appDb != null) return _appDb!;
     if (ApiConfig.enabled) {
       _appDb = HttpAppDb();
-      try {
-        await _appDb!.rawQuery('SELECT 1 AS ok');
-      } on TimeoutException {
-        throw StateError(
-          'Cannot reach the shop server at ${ApiConfig.url}. '
-          'Check the device internet connection, or install the local-data APK.',
-        );
-      }
       return _appDb!;
     }
     _appDb = SqliteAppDb(await database);
     return _appDb!;
+  }
+
+  /// Verifies VPS connectivity (or opens local SQLite). Call from background
+  /// startup — do not block the first UI frame on this.
+  Future<void> verifyRemoteConnection() async {
+    if (!ApiConfig.enabled) {
+      await appDb;
+      return;
+    }
+
+    final db = await appDb;
+    try {
+      await db
+          .rawQuery('SELECT 1 AS ok')
+          .timeout(ApiConfig.requestTimeout);
+    } on TimeoutException {
+      throw StateError(
+        'Cannot reach the shop server at ${ApiConfig.url}. '
+        'Check the device internet connection and try again.',
+      );
+    }
   }
 
   Future<void> reconnect() async {
