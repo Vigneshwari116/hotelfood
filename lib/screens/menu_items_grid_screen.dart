@@ -158,8 +158,11 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
 
     try {
       await Repository.instance.saveRawMaterial(item);
-      row.commitSaved(item);
+      final refreshed =
+          await Repository.instance.rawMaterialById(item.id!);
+      row.commitSaved(refreshed ?? item);
       _markChanged();
+      _showMessage('Saved ${item.name}');
     } catch (e) {
       _showMessage('Failed to save ${item.name}: $e', isError: true);
     } finally {
@@ -812,6 +815,26 @@ class _MenuGridRow {
 
   void commitSaved(RawMaterial saved) {
     item = saved;
+    barcode.text = saved.barcode ?? '';
+    itemName.text = saved.name;
+    subItemName.text = saved.subItem ?? saved.name;
+    qtyPerSale.text = MenuItemEditHelpers.formatNumber(saved.qtyNeeded);
+    unitsPerPacket.text = saved.unitsPerPacket == null
+        ? ''
+        : MenuItemEditHelpers.formatNumber(saved.unitsPerPacket!);
+    stock.text = MenuItemEditHelpers.formatNumber(saved.currentStock);
+    packets.text = MenuItemEditHelpers.packetsTextFromStock(
+          saved.currentStock,
+          saved.unitsPerPacket,
+        ) ??
+        '';
+    costPrice.text = saved.costPrice == null
+        ? ''
+        : MenuItemEditHelpers.formatNumber(saved.costPrice!);
+    sellingPrice.text = saved.sellingPrice == null
+        ? ''
+        : MenuItemEditHelpers.formatNumber(saved.sellingPrice!);
+    unitId = saved.unitId;
     _snapshot = _captureSnapshot();
   }
 

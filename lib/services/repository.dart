@@ -834,10 +834,7 @@ class Repository {
             final map = rm.toMap()..remove('id');
             map['barcode'] = normalizeBarcodeValue(rm.barcode);
 
-            if (!fromMenuImport) {
-                  map['menu_export_row'] = null;
-                  map['menu_sort_order'] = null;
-            } else {
+            if (fromMenuImport) {
                   if (menuExportRow != null) {
                         map['menu_export_row'] = jsonEncode(menuExportRow);
                   }
@@ -845,6 +842,9 @@ class Repository {
                         map['menu_sort_order'] = menuSortOrder;
                   }
             }
+            // Manual edits (grid, Edit Item popup) must not touch menu export
+            // metadata, and must stay compatible with older Postgres schemas
+            // that may not yet have these optional columns.
 
             if (pin != null && pin.trim().isNotEmpty) {
                   map['entry_password_hash'] = hashPin(
