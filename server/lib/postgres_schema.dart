@@ -256,6 +256,8 @@ const postgresSchemaStatements = <String>[
   'ALTER TABLE sale_items ALTER COLUMN raw_material_id DROP NOT NULL',
   'ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_name TEXT',
   'ALTER TABLE sales ADD COLUMN IF NOT EXISTS customer_phone TEXT',
+  'ALTER TABLE raw_materials ADD COLUMN IF NOT EXISTS menu_sort_order INTEGER',
+  'ALTER TABLE raw_materials ADD COLUMN IF NOT EXISTS menu_export_row TEXT',
   '''
   INSERT INTO combo_raw_materials (combo_id, raw_material_id, qty)
   SELECT ci.combo_id, ci.raw_material_id, ci.qty
