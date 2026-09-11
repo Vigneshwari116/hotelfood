@@ -170,12 +170,43 @@ class ItemImportService {
   ];
 
   void validateImportFilename(String filePath, String expectedLocationName) {
-    final baseName = p.basenameWithoutExtension(filePath);
-    if (baseName != expectedLocationName) {
+    final baseName = p.basenameWithoutExtension(filePath).trim().toLowerCase();
+    final expected = expectedLocationName.trim().toLowerCase();
+    if (baseName != expected) {
       throw InvalidInventoryException(
-        'This file is for a different location',
+        'This file is for a different location. '
+        'Expected "$expectedLocationName" but got "${p.basenameWithoutExtension(filePath)}".',
       );
     }
+  }
+
+  Future<ItemImportResult> importFileBytes(
+    Uint8List bytes,
+    String filename, {
+    String? expectedLocationName,
+    bool replaceCatalog = true,
+  }) async {
+    if (expectedLocationName != null) {
+      validateImportFilename(filename, expectedLocationName);
+      replaceCatalog = false;
+    }
+
+    final ext = p.extension(filename).toLowerCase();
+    if (ext == '.xls') {
+      throw InvalidInventoryException(
+        'Old .xls files are not supported. Save as .xlsx or CSV and import again.',
+      );
+    }
+    final rows = ext == '.xlsx'
+        ? _parseXlsx(bytes)
+        : _parseCsv(utf8.decode(bytes, allowMalformed: true));
+
+    return _importRows(
+      rows,
+      updateExisting: true,
+      replaceCatalog: replaceCatalog,
+      preserveSourceCategories: expectedLocationName != null,
+    );
   }
 
   Future<Uint8List> exportXlsxForLocation(int locationId) async {
@@ -252,27 +283,12 @@ class ItemImportService {
     String? expectedLocationName,
     bool replaceCatalog = true,
   }) async {
-    if (expectedLocationName != null) {
-      validateImportFilename(path, expectedLocationName);
-      replaceCatalog = false;
-    }
-
-    final ext = p.extension(path).toLowerCase();
     final bytes = await File(path).readAsBytes();
-    if (ext == '.xls') {
-      throw InvalidInventoryException(
-        'Old .xls files are not supported. Save as .xlsx or CSV and import again.',
-      );
-    }
-    final rows = ext == '.xlsx'
-        ? _parseXlsx(bytes)
-        : _parseCsv(utf8.decode(bytes, allowMalformed: true));
-
-    return _importRows(
-      rows,
-      updateExisting: true,
+    return importFileBytes(
+      bytes,
+      p.basename(path),
+      expectedLocationName: expectedLocationName,
       replaceCatalog: replaceCatalog,
-      preserveSourceCategories: expectedLocationName != null,
     );
   }
 

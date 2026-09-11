@@ -51,7 +51,11 @@ Handler buildApi(DbStore store) {
   final router = Router();
 
   router.get('/health', (Request request) {
-    return _json({'ok': true, 'database': Env.pgDatabase});
+    return _json({
+      'ok': true,
+      'database': Env.pgDatabase,
+      'menu_export_metadata': true,
+    });
   });
 
   Future<Response> guarded(

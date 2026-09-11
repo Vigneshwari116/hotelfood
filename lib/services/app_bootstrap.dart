@@ -1,6 +1,7 @@
 import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/services/auth_session.dart';
+import 'package:foodstock/services/remote_capabilities.dart';
 import 'package:foodstock/services/repository.dart';
 
 /// Fast path before the first frame: restore saved session from device storage.
@@ -22,6 +23,7 @@ class AppBootstrap {
   /// Runs in the background after login/shell is visible. Never block the
   /// first frame on this call.
   static Future<void> connectRemoteDatabase() async {
+    await RemoteCapabilities.refresh();
     await DBHelper.instance.verifyRemoteConnection();
     await Repository.instance.ensureDefaultUsers();
   }
