@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -220,10 +221,38 @@ class _RawMaterialMasterScreenState
       type: FileType.custom,
       allowedExtensions: const ['csv', 'xlsx', 'xls'],
       allowMultiple: false,
+      withData: true,
     );
-    if (picked == null ||
-        picked.files.isEmpty ||
-        picked.files.first.path == null) {
+    if (picked == null || picked.files.isEmpty) {
+      return;
+    }
+
+    final file = picked.files.first;
+    final filename = file.name;
+    if (filename.trim().isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not read the selected file. Try again.'),
+        ),
+      );
+      return;
+    }
+
+    Uint8List? bytes = file.bytes;
+    if (bytes == null && file.path != null) {
+      bytes = await File(file.path!).readAsBytes();
+    }
+    if (bytes == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not read the selected file. '
+            'Try saving the Excel to Downloads and import again.',
+          ),
+        ),
+      );
       return;
     }
 
@@ -243,23 +272,34 @@ class _RawMaterialMasterScreenState
     );
 
     try {
-      final result = await ItemImportService().importFile(
-        picked.files.first.path!,
+      final result = await ItemImportService().importFileBytes(
+        bytes,
+        filename,
         expectedLocationName: locationName,
       );
       if (!mounted) return;
       Navigator.of(context).pop();
       await _loadAll();
       if (!mounted) return;
+
+      final importedTotal = result.created + result.updated;
+      final summary = importedTotal == 0
+          ? 'No items were imported.'
+          : 'Added ${result.created} new item(s).\n'
+              'Updated ${result.updated} existing item(s).';
+
       await showDialog<void>(
         context: context,
         builder: (context) {
           return AlertDialog(
-            title: const Text('Import complete'),
+            title: Text(
+              importedTotal == 0 ? 'Import finished' : 'Import complete',
+            ),
             content: Text(
-              'Added ${result.created} new item(s).\n'
-              'Updated ${result.updated} existing item(s).'
-              '${result.errors.isEmpty ? '' : '\n\n${result.errors.take(8).join('\n')}'}',
+              '$summary'
+              '${result.skipped > 0 ? '\nSkipped ${result.skipped} row(s).' : ''}'
+              '${result.errors.isEmpty ? '' : '\n\n${result.errors.take(8).join('\n')}'
+                  '${result.errors.length > 8 ? '\n…and ${result.errors.length - 8} more' : ''}'}',
             ),
             actions: [
               TextButton(
@@ -638,65 +678,66 @@ class _RawMaterialMasterScreenState
         // SEARCH + ADD
         // ------------------------------------------------------
 
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller:
-                _searchController,
-                decoration:
-                const InputDecoration(
-                  prefixIcon:
-                  Icon(Icons.search),
-                  hintText:
-                  'Search menu items...',
-                  border:
-                  OutlineInputBorder(),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final actions = Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _openMenuItemsGrid,
+                  icon: const Icon(Icons.table_chart_outlined),
+                  label: Text(isMobile ? 'Grid' : 'Grid view'),
                 ),
-                onChanged: (_) {
-                  _loadAll();
-                },
-              ),
-            ),
+                if (!_readOnly) ...[
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Download current menu as Excel',
+                    onPressed: _saveImportTemplate,
+                    icon: const Icon(Icons.download_outlined),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _importItemsFile,
+                    icon: const Icon(Icons.upload_file),
+                    label: Text(isMobile ? 'Import' : 'Import CSV / Excel'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: () {
+                      _openRawMaterialEditor();
+                    },
+                    icon: const Icon(Icons.add),
+                    label: Text(isMobile ? 'Add' : 'Add Item'),
+                  ),
+                ],
+              ],
+            );
 
-            OutlinedButton.icon(
-              onPressed: _openMenuItemsGrid,
-              icon: const Icon(Icons.table_chart_outlined),
-              label: Text(isMobile ? 'Grid' : 'Grid view'),
-            ),
-
-            if (!_readOnly) ...[
-              const SizedBox(width: 8),
-
-              IconButton(
-                tooltip: 'Download current menu as Excel',
-                onPressed: _saveImportTemplate,
-                icon: const Icon(Icons.download_outlined),
-              ),
-
-              OutlinedButton.icon(
-                onPressed: _importItemsFile,
-                icon: const Icon(Icons.upload_file),
-                label: Text(isMobile ? 'Import' : 'Import CSV / Excel'),
-              ),
-
-              const SizedBox(width: 8),
-
-              FilledButton.icon(
-                onPressed: () {
-                  _openRawMaterialEditor();
-                },
-                icon: const Icon(
-                  Icons.add,
+            return Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _searchController,
+                    decoration: const InputDecoration(
+                      prefixIcon: Icon(Icons.search),
+                      hintText: 'Search menu items...',
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (_) {
+                      _loadAll();
+                    },
+                  ),
                 ),
-                label: Text(
-                  isMobile
-                      ? 'Add'
-                      : 'Add Item',
-                ),
-              ),
-            ],
-          ],
+                const SizedBox(width: 8),
+                if (isMobile)
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: actions,
+                  )
+                else
+                  actions,
+              ],
+            );
+          },
         ),
 
         const SizedBox(height: 16),

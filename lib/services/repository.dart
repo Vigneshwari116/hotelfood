@@ -59,6 +59,31 @@ class Repository {
 
       static final Repository instance = Repository._();
 
+      /// True when the connected VPS Postgres schema includes menu export columns.
+      static bool remoteMenuExportMetadataSupported = false;
+
+      static bool get menuExportMetadataSupported =>
+          !ApiConfig.enabled || remoteMenuExportMetadataSupported;
+
+      @visibleForTesting
+      static bool includeMenuExportMetadataForSave({
+        required bool fromMenuImport,
+        required bool remoteDbEnabled,
+        required bool remoteMetadataSupported,
+      }) {
+        if (!fromMenuImport) return false;
+        if (!remoteDbEnabled) return true;
+        return remoteMetadataSupported;
+      }
+
+      bool _includeMenuExportMetadata(bool fromMenuImport) {
+            return includeMenuExportMetadataForSave(
+                  fromMenuImport: fromMenuImport,
+                  remoteDbEnabled: ApiConfig.enabled,
+                  remoteMetadataSupported: remoteMenuExportMetadataSupported,
+                );
+      }
+
       AppDb? _testAppDb;
 
       /// Allows integration tests to run against an in-memory database.
@@ -834,7 +859,7 @@ class Repository {
             final map = rm.toMap()..remove('id');
             map['barcode'] = normalizeBarcodeValue(rm.barcode);
 
-            if (fromMenuImport) {
+            if (fromMenuImport && _includeMenuExportMetadata(fromMenuImport)) {
                   if (menuExportRow != null) {
                         map['menu_export_row'] = jsonEncode(menuExportRow);
                   }
@@ -3658,8 +3683,9 @@ class Repository {
 
       Future<List<Map<String, dynamic>>> menuExportRows(int locationId) async {
             final db = await _db;
-            return db.rawQuery(
-                  '''
+            if (menuExportMetadataSupported) {
+                  return db.rawQuery(
+                        '''
       SELECT
         rm.menu_export_row AS menu_export_row,
         COALESCE(c.name, '') AS category,
@@ -3680,6 +3706,33 @@ class Repository {
         ON ls.raw_material_id = rm.id
         AND ls.location_id = ?
       ORDER BY rm.menu_sort_order ASC, rm.id ASC
+      ''',
+                        [locationId],
+                  );
+            }
+
+            return db.rawQuery(
+                  '''
+      SELECT
+        NULL AS menu_export_row,
+        COALESCE(c.name, '') AS category,
+        rm.name AS item_name,
+        COALESCE(rm.sub_item, '') AS sub_item,
+        COALESCE(rm.barcode, '') AS barcode,
+        rm.qty_needed AS qty_per_sale,
+        '' AS packets,
+        rm.units_per_packet AS units_per_packet,
+        COALESCE(u.short_code, '') AS unit,
+        COALESCE(ls.opening_stock, 0) AS opening_stock,
+        rm.cost_price AS cost_price,
+        rm.selling_price AS selling_price
+      FROM raw_materials rm
+      LEFT JOIN categories c ON c.id = rm.category_id
+      LEFT JOIN units u ON u.id = rm.unit_id
+      LEFT JOIN location_stock ls
+        ON ls.raw_material_id = rm.id
+        AND ls.location_id = ?
+      ORDER BY c.name ASC, rm.name ASC, rm.id ASC
       ''',
                   [locationId],
             );

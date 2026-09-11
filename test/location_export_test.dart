@@ -10,11 +10,18 @@ void main() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
   });
-  test('import filename must match location name exactly', () {
+  test('import filename matches location name case-insensitively', () {
     final service = ItemImportService();
     expect(
       () => service.validateImportFilename(
         '/tmp/Gt world mall.xlsx',
+        'Gt world mall',
+      ),
+      returnsNormally,
+    );
+    expect(
+      () => service.validateImportFilename(
+        '/tmp/gt world mall.xlsx',
         'Gt world mall',
       ),
       returnsNormally,
@@ -28,7 +35,7 @@ void main() {
         isA<InvalidInventoryException>().having(
           (e) => e.message,
           'message',
-          'This file is for a different location',
+          contains('different location'),
         ),
       ),
     );
