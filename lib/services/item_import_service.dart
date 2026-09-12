@@ -56,7 +56,6 @@ class ItemImportService {
   };
 
   static const hiddenGroupingTags = {
-    'combo',
     'sauce/dry stock',
     'sauces',
   };
@@ -496,11 +495,13 @@ class ItemImportService {
         final trimmedBarcode = barcodeRaw?.trim() ?? '';
         final groupingTag =
             isGroupingTag(trimmedBarcode) ? trimmedBarcode : null;
+        // PDF grouping labels (COMBO, SNACKS, BEVARGES, …) are not unique product
+        // barcodes. Storing them in raw_materials.barcode violates its UNIQUE
+        // constraint on the second row with the same label. The spreadsheet value
+        // is preserved in menu_export_row for round-trip export instead.
         final String? barcode;
-        if (trimmedBarcode.isEmpty) {
+        if (trimmedBarcode.isEmpty || groupingTag != null) {
           barcode = null;
-        } else if (groupingTag != null) {
-          barcode = canonicalGroupingBarcode(trimmedBarcode);
         } else {
           barcode = normalizeBarcode(trimmedBarcode);
         }
