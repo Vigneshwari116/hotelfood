@@ -611,6 +611,13 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
+    if (material.sellingPrice == null) {
+      _showError(
+        'Set a selling price for "${material.name}" in Menu Items before selling it.',
+      );
+      return;
+    }
+
     final index = _cartIndexForRaw(material.id!);
 
     if (index == -1) {
@@ -1108,13 +1115,18 @@ class _PosScreenState extends State<PosScreen> {
                     ),
 
                     Text(
-                      '₹${(material.sellingPrice ?? 0).toStringAsFixed(2)}',
+                      material.sellingPrice == null
+                          ? 'No price'
+                          : '₹${material.sellingPrice!.toStringAsFixed(2)}',
                       style:
-                      const TextStyle(
+                      TextStyle(
                         fontWeight:
                         FontWeight
                             .w600,
                         fontSize: 14,
+                        color: material.sellingPrice == null
+                            ? Theme.of(context).colorScheme.error
+                            : null,
                       ),
                     ),
                     Text(

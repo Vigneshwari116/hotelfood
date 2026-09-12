@@ -43,7 +43,7 @@ void main() {
       );
     });
 
-    test('hides combo components like paratha and bun', () {
+    test('hides combo components like paratha and bun by name', () {
       expect(
         ItemImportService.shouldHideFromSales(
           groupingTag: 'COMBO',
@@ -52,6 +52,18 @@ void main() {
           category: '',
         ),
         isTrue,
+      );
+    });
+
+    test('keeps sellable combo menu items like rolls visible', () {
+      expect(
+        ItemImportService.shouldHideFromSales(
+          groupingTag: 'COMBO',
+          name: 'Chicken Roll',
+          subItem: 'chicken roll',
+          category: 'Rolls',
+        ),
+        isFalse,
       );
     });
 
