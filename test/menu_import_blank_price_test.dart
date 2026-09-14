@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foodstock/database/sqlite_app_db.dart';
+import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -77,6 +78,9 @@ void main() {
               listed INTEGER NOT NULL DEFAULT 1,
               menu_sort_order INTEGER,
               menu_export_row TEXT,
+              variant_group TEXT,
+              variant_label TEXT,
+              stock_source_id INTEGER,
               created_at TEXT NOT NULL
             )
           ''');

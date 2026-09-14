@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/printer_service.dart';
 import 'package:foodstock/services/repository.dart';
+import 'package:foodstock/services/variant_helpers.dart';
 
 class PosScreen extends StatefulWidget {
   const PosScreen({super.key});
@@ -57,7 +58,17 @@ class _PosScreenState extends State<PosScreen> {
   bool _cartSheetOpen = false;
   int _lastAddTapMs = 0;
 
+  /// Selected variant raw_material id per [VariantGroup.key].
+  final Map<String, int> _selectedVariantIdByGroup = {};
+
   bool get _adminViewOnly => _repo.isAdmin;
+
+  Map<int, RawMaterial> get _materialsById {
+    return {
+      for (final material in _materials)
+        if (material.id != null) material.id!: material,
+    };
+  }
 
   void Function(VoidCallback)? _sheetSetState;
 
@@ -229,9 +240,13 @@ class _PosScreenState extends State<PosScreen> {
       final name = material.name.toLowerCase();
       final subItem = material.trimmedSubItem?.toLowerCase() ?? '';
       final barcode = material.barcode?.toLowerCase() ?? '';
+      final variantGroup = material.variantGroup?.toLowerCase() ?? '';
+      final variantLabel = material.variantLabel?.toLowerCase() ?? '';
       return name.contains(_search) ||
           subItem.contains(_search) ||
-          barcode.contains(_search);
+          barcode.contains(_search) ||
+          variantGroup.contains(_search) ||
+          variantLabel.contains(_search);
     }).toList();
   }
 
@@ -426,13 +441,21 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
-  List<({String title, List<RawMaterial> materials, List<Combo> combos})>
+  List<({String title, List<_PosGridEntry> entries, List<Combo> combos})>
       get _productSections {
     final items = _filteredMaterials;
     final combos = _filteredCombos;
 
     if (items.isEmpty && combos.isEmpty) {
       return const [];
+    }
+
+    List<_PosGridEntry> entriesFor(List<RawMaterial> materials) {
+      final partition = VariantHelpers.partitionForPos(materials);
+      return [
+        ...partition.groups.map(_PosGridEntry.variant),
+        ...partition.singles.map(_PosGridEntry.material),
+      ];
     }
 
     if (_categoryId != null) {
@@ -442,7 +465,7 @@ class _PosScreenState extends State<PosScreen> {
       return [
         (
           title: title,
-          materials: items,
+          entries: entriesFor(items),
           combos: combos,
         ),
       ];
@@ -459,14 +482,14 @@ class _PosScreenState extends State<PosScreen> {
     }
 
     final sections =
-        <({String title, List<RawMaterial> materials, List<Combo> combos})>[];
+        <({String title, List<_PosGridEntry> entries, List<Combo> combos})>[];
     for (final category in _categories) {
       final materials = materialGroups.remove(category.id) ?? const [];
       final categoryCombos = comboGroups.remove(category.id) ?? const [];
       if (materials.isEmpty && categoryCombos.isEmpty) continue;
       sections.add((
         title: category.name,
-        materials: materials,
+        entries: entriesFor(materials),
         combos: categoryCombos,
       ));
     }
@@ -476,7 +499,7 @@ class _PosScreenState extends State<PosScreen> {
     if (uncategorizedMaterials.isNotEmpty || uncategorizedCombos.isNotEmpty) {
       sections.add((
         title: 'Other',
-        materials: uncategorizedMaterials,
+        entries: entriesFor(uncategorizedMaterials),
         combos: uncategorizedCombos,
       ));
     }
@@ -487,7 +510,7 @@ class _PosScreenState extends State<PosScreen> {
       if (materials.isEmpty && categoryCombos.isEmpty) continue;
       sections.add((
         title: _categoryName(entry.key) ?? 'Other',
-        materials: materials,
+        entries: entriesFor(materials),
         combos: categoryCombos,
       ));
     }
@@ -496,7 +519,7 @@ class _PosScreenState extends State<PosScreen> {
       if (entry.value.isEmpty) continue;
       sections.add((
         title: _categoryName(entry.key) ?? 'Other',
-        materials: const [],
+        entries: const [],
         combos: entry.value,
       ));
     }
@@ -552,7 +575,30 @@ class _PosScreenState extends State<PosScreen> {
   double _stockForMaterial(
       RawMaterial material,
       ) {
-    return material.currentStock;
+    return VariantHelpers.stockCount(material, _materialsById);
+  }
+
+  RawMaterial _selectedVariant(VariantGroup group) {
+    final selectedId = _selectedVariantIdByGroup[group.key];
+    if (selectedId != null) {
+      for (final variant in group.variants) {
+        if (variant.id == selectedId) return variant;
+      }
+    }
+
+    for (final variant in group.variants) {
+      if (variant.sellingPrice != null) return variant;
+    }
+    return group.variants.first;
+  }
+
+  double _cartQtyForVariantGroup(VariantGroup group) {
+    var total = 0.0;
+    for (final variant in group.variants) {
+      if (variant.id == null) continue;
+      total += _cartQtyForRaw(variant.id!);
+    }
+    return total;
   }
 
   // ============================================================
@@ -1171,6 +1217,137 @@ class _PosScreenState extends State<PosScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _variantGroupCard(VariantGroup group) {
+    final selected = _selectedVariant(group);
+    final stock = VariantHelpers.sellableUnits(selected, _materialsById);
+    final cartQty = _cartQtyForVariantGroup(group);
+    final imagePath = selected.imagePath ?? group.stockSource.imagePath;
+    final isNarrow = MediaQuery.sizeOf(context).width < 900;
+
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        onTap: () => _addRawMaterial(selected),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _image(imagePath, height: 72),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      group.posTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Flexible(
+                      child: isNarrow
+                          ? _variantSelectorColumn(group, selected)
+                          : _variantSelectorRow(group, selected),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      selected.sellingPrice == null
+                          ? 'No price'
+                          : '₹${selected.sellingPrice!.toStringAsFixed(2)}',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13,
+                        color: selected.sellingPrice == null
+                            ? Theme.of(context).colorScheme.error
+                            : null,
+                      ),
+                    ),
+                    Text(
+                      _formatStockLabel(stock),
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: stock < 0
+                            ? Colors.red.shade700
+                            : Colors.grey.shade700,
+                      ),
+                    ),
+                    const Spacer(),
+                    Row(
+                      children: [
+                        const Spacer(),
+                        if (cartQty > 0)
+                          CircleAvatar(
+                            radius: 11,
+                            child: Text(
+                              _formatQty(cartQty),
+                              style: const TextStyle(fontSize: 10),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _variantSelectorRow(VariantGroup group, RawMaterial selected) {
+    return Wrap(
+      spacing: 4,
+      runSpacing: 2,
+      children: group.variants.map((variant) {
+        final id = variant.id;
+        if (id == null) return const SizedBox.shrink();
+        final label = VariantHelpers.variantSelectorLabel(variant);
+        return ChoiceChip(
+          label: Text(
+            label,
+            style: const TextStyle(fontSize: 11),
+          ),
+          visualDensity: VisualDensity.compact,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          selected: selected.id == id,
+          onSelected: (_) {
+            setState(() => _selectedVariantIdByGroup[group.key] = id);
+          },
+        );
+      }).toList(),
+    );
+  }
+
+  Widget _variantSelectorColumn(VariantGroup group, RawMaterial selected) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: group.variants.map((variant) {
+        final id = variant.id;
+        if (id == null) return const SizedBox.shrink();
+        return RadioListTile<int>(
+          value: id,
+          groupValue: selected.id,
+          onChanged: (_) {
+            setState(() => _selectedVariantIdByGroup[group.key] = id);
+          },
+          dense: true,
+          visualDensity: VisualDensity.compact,
+          contentPadding: EdgeInsets.zero,
+          title: Text(
+            VariantHelpers.variantSelectorLabel(variant),
+            style: const TextStyle(fontSize: 12),
+          ),
+        );
+      }).toList(),
     );
   }
 
@@ -2293,21 +2470,28 @@ class _PosScreenState extends State<PosScreen> {
               gridDelegate:
                   const SliverGridDelegateWithMaxCrossAxisExtent(
                 maxCrossAxisExtent: 230,
-                mainAxisExtent: 220,
+                mainAxisExtent: 280,
                 crossAxisSpacing: 10,
                 mainAxisSpacing: 10,
               ),
               delegate: SliverChildBuilderDelegate(
                 (context, index) {
-                  final materialCount = section.materials.length;
-                  if (index < materialCount) {
-                    return _materialCard(section.materials[index]);
+                  final entryCount = section.entries.length;
+                  if (index < entryCount) {
+                    final entry = section.entries[index];
+                    if (entry.variantGroup != null) {
+                      return _variantGroupCard(entry.variantGroup!);
+                    }
+                    if (entry.material != null) {
+                      return _materialCard(entry.material!);
+                    }
+                    return const SizedBox.shrink();
                   }
                   return _comboCard(
-                    section.combos[index - materialCount],
+                    section.combos[index - entryCount],
                   );
                 },
-                childCount: section.materials.length + section.combos.length,
+                childCount: section.entries.length + section.combos.length,
               ),
             ),
           ),
@@ -2447,6 +2631,21 @@ class _PosScreenState extends State<PosScreen> {
       ),
     );
   }
+}
+
+class _PosGridEntry {
+  const _PosGridEntry._({this.material, this.variantGroup});
+
+  factory _PosGridEntry.material(RawMaterial material) {
+    return _PosGridEntry._(material: material);
+  }
+
+  factory _PosGridEntry.variant(VariantGroup group) {
+    return _PosGridEntry._(variantGroup: group);
+  }
+
+  final RawMaterial? material;
+  final VariantGroup? variantGroup;
 }
 
 class _CartQtyField extends StatefulWidget {

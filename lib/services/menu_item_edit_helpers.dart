@@ -44,6 +44,9 @@ class MenuItemEditHelpers {
     required String costPriceText,
     required String sellingPriceText,
     required int? unitId,
+    String? variantGroupText,
+    String? variantLabelText,
+    int? stockSourceId,
   }) {
     final name = itemName.trim();
     final subItem = subItemText.trim();
@@ -59,6 +62,11 @@ class MenuItemEditHelpers {
 
     final parsedStock = double.tryParse(stockText.trim()) ?? 0;
     final currentStock = recalculatedStock ?? parsedStock;
+
+    final variantGroup = (variantGroupText ?? existing.variantGroup ?? '')
+        .trim();
+    final variantLabel = (variantLabelText ?? existing.variantLabel ?? '')
+        .trim();
 
     return RawMaterial(
       id: existing.id,
@@ -83,6 +91,10 @@ class MenuItemEditHelpers {
       imagePath: existing.imagePath,
       listed: existing.listed,
       createdAt: existing.createdAt,
+      menuSortOrder: existing.menuSortOrder,
+      variantGroup: variantGroup.isEmpty ? null : variantGroup,
+      variantLabel: variantLabel.isEmpty ? null : variantLabel,
+      stockSourceId: stockSourceId ?? existing.stockSourceId,
     );
   }
 }

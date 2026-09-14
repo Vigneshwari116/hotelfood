@@ -78,6 +78,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
       for (final item in items) {
         _rows.add(_MenuGridRow(item: item));
       }
+      _MenuGridRow.linkStockSourceNames(_rows, items);
     } catch (e) {
       if (!mounted) return;
       _showMessage('Failed to load menu items: $e', isError: true);
@@ -147,7 +148,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
   Future<void> _saveRow(_MenuGridRow row) async {
     if (_readOnly || row.saving || !row.isDirty) return;
 
-    final item = row.buildItem();
+    final item = row.buildItem(_rows);
     if (item.name.trim().isEmpty) {
       _showMessage('Item name cannot be empty', isError: true);
       return;
@@ -160,7 +161,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
       await Repository.instance.saveRawMaterial(item);
       final refreshed =
           await Repository.instance.rawMaterialById(item.id!);
-      row.commitSaved(refreshed ?? item);
+      row.commitSaved(refreshed ?? item, _rows);
       _markChanged();
       _showMessage('Saved ${item.name}');
     } catch (e) {
@@ -181,7 +182,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
 
     var saved = 0;
     for (final row in dirtyRows) {
-      final item = row.buildItem();
+      final item = row.buildItem(_rows);
       if (item.name.trim().isEmpty) continue;
 
       row.saving = true;
@@ -189,7 +190,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
 
       try {
         await Repository.instance.saveRawMaterial(item);
-        row.commitSaved(item);
+        row.commitSaved(item, _rows);
         saved++;
       } catch (e) {
         _showMessage('Failed to save ${item.name}: $e', isError: true);
@@ -355,6 +356,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                                 return _CategoryGridSection(
                                   category: category,
                                   rows: rows,
+                                  allRows: _rows,
                                   units: _units,
                                   readOnly: _readOnly,
                                   isMobile: isMobile,
@@ -379,6 +381,7 @@ class _CategoryGridSection extends StatelessWidget {
   const _CategoryGridSection({
     required this.category,
     required this.rows,
+    required this.allRows,
     required this.units,
     required this.readOnly,
     required this.isMobile,
@@ -388,6 +391,7 @@ class _CategoryGridSection extends StatelessWidget {
 
   final String category;
   final List<_MenuGridRow> rows;
+  final List<_MenuGridRow> allRows;
   final List<UnitM> units;
   final bool readOnly;
   final bool isMobile;
@@ -398,6 +402,23 @@ class _CategoryGridSection extends StatelessWidget {
     _GridColumnSpec('Barcode', width: 120),
     _GridColumnSpec('Item name', width: 140),
     _GridColumnSpec('Sub-item name', width: 140),
+    _GridColumnSpec(
+      'Variant\nGroup',
+      width: 100,
+      tooltip:
+          'Items with the same group appear as one POS card with a size selector',
+    ),
+    _GridColumnSpec(
+      'Variant\nLabel',
+      width: 88,
+      tooltip: 'Size/portion label on the POS selector (e.g. Large, Mini Bucket)',
+    ),
+    _GridColumnSpec(
+      'Stock\nSource',
+      width: 120,
+      tooltip:
+          'Which item holds the shared stock pool (leave blank when this item owns stock)',
+    ),
     _GridColumnSpec(
       'Qty/Sale\n(per order)',
       width: 88,
@@ -501,6 +522,24 @@ class _CategoryGridSection extends StatelessWidget {
                           ),
                           _GridTextCell(
                             controller: row.subItemName,
+                            readOnly: readOnly,
+                            onChanged: onFieldChanged,
+                            onCommit: () => onFieldCommitted(row),
+                          ),
+                          _GridTextCell(
+                            controller: row.variantGroup,
+                            readOnly: readOnly,
+                            onChanged: onFieldChanged,
+                            onCommit: () => onFieldCommitted(row),
+                          ),
+                          _GridTextCell(
+                            controller: row.variantLabel,
+                            readOnly: readOnly,
+                            onChanged: onFieldChanged,
+                            onCommit: () => onFieldCommitted(row),
+                          ),
+                          _GridTextCell(
+                            controller: row.stockSourceName,
                             readOnly: readOnly,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
@@ -719,6 +758,9 @@ class _MenuGridRow {
     barcode = TextEditingController(text: item.barcode ?? '');
     itemName = TextEditingController(text: item.name);
     subItemName = TextEditingController(text: item.subItem ?? item.name);
+    variantGroup = TextEditingController(text: item.variantGroup ?? '');
+    variantLabel = TextEditingController(text: item.variantLabel ?? '');
+    stockSourceName = TextEditingController();
     qtyPerSale = TextEditingController(
       text: MenuItemEditHelpers.formatNumber(item.qtyNeeded),
     );
@@ -758,6 +800,9 @@ class _MenuGridRow {
   late final TextEditingController barcode;
   late final TextEditingController itemName;
   late final TextEditingController subItemName;
+  late final TextEditingController variantGroup;
+  late final TextEditingController variantLabel;
+  late final TextEditingController stockSourceName;
   late final TextEditingController qtyPerSale;
   late final TextEditingController packets;
   late final TextEditingController unitsPerPacket;
@@ -768,11 +813,32 @@ class _MenuGridRow {
 
   late String _snapshot;
 
+  static void linkStockSourceNames(
+    List<_MenuGridRow> rows,
+    List<RawMaterial> items,
+  ) {
+    final nameById = {
+      for (final item in items)
+        if (item.id != null) item.id!: item.name,
+    };
+    for (final row in rows) {
+      final sourceId = row.item.stockSourceId;
+      if (sourceId == null) {
+        row.stockSourceName.text = '';
+        continue;
+      }
+      row.stockSourceName.text = nameById[sourceId] ?? '';
+    }
+  }
+
   String _captureSnapshot() {
     return [
       barcode.text,
       itemName.text,
       subItemName.text,
+      variantGroup.text,
+      variantLabel.text,
+      stockSourceName.text,
       qtyPerSale.text,
       packets.text,
       unitsPerPacket.text,
@@ -797,7 +863,19 @@ class _MenuGridRow {
     stock.text = text;
   }
 
-  RawMaterial buildItem() {
+  RawMaterial buildItem(List<_MenuGridRow> allRows) {
+    final sourceName = stockSourceName.text.trim().toLowerCase();
+    int? stockSourceId;
+    if (sourceName.isNotEmpty) {
+      for (final row in allRows) {
+        if (row.item.id == item.id) continue;
+        if (row.itemName.text.trim().toLowerCase() == sourceName) {
+          stockSourceId = row.item.id;
+          break;
+        }
+      }
+    }
+
     return MenuItemEditHelpers.buildForSave(
       existing: item,
       barcodeText: barcode.text,
@@ -810,14 +888,19 @@ class _MenuGridRow {
       costPriceText: costPrice.text,
       sellingPriceText: sellingPrice.text,
       unitId: unitId,
+      variantGroupText: variantGroup.text,
+      variantLabelText: variantLabel.text,
+      stockSourceId: sourceName.isEmpty ? null : stockSourceId,
     );
   }
 
-  void commitSaved(RawMaterial saved) {
+  void commitSaved(RawMaterial saved, List<_MenuGridRow> allRows) {
     item = saved;
     barcode.text = saved.barcode ?? '';
     itemName.text = saved.name;
     subItemName.text = saved.subItem ?? saved.name;
+    variantGroup.text = saved.variantGroup ?? '';
+    variantLabel.text = saved.variantLabel ?? '';
     qtyPerSale.text = MenuItemEditHelpers.formatNumber(saved.qtyNeeded);
     unitsPerPacket.text = saved.unitsPerPacket == null
         ? ''
@@ -835,6 +918,15 @@ class _MenuGridRow {
         ? ''
         : MenuItemEditHelpers.formatNumber(saved.sellingPrice!);
     unitId = saved.unitId;
+    stockSourceName.text = '';
+    if (saved.stockSourceId != null) {
+      for (final row in allRows) {
+        if (row.item.id == saved.stockSourceId) {
+          stockSourceName.text = row.itemName.text;
+          break;
+        }
+      }
+    }
     _snapshot = _captureSnapshot();
   }
 
@@ -842,6 +934,9 @@ class _MenuGridRow {
     barcode.dispose();
     itemName.dispose();
     subItemName.dispose();
+    variantGroup.dispose();
+    variantLabel.dispose();
+    stockSourceName.dispose();
     qtyPerSale.dispose();
     packets.dispose();
     unitsPerPacket.dispose();

@@ -3168,10 +3168,16 @@ class Repository {
                         final rawMaterialId =
                         line.rawMaterialId!;
 
-                        final double existing =
-                            totalNeeded[rawMaterialId] ?? 0.0;
+                        final stockMaterialId =
+                            await _stockMaterialIdForSale(
+                              txn,
+                              rawMaterialId,
+                            );
 
-                        totalNeeded[rawMaterialId] =
+                        final double existing =
+                            totalNeeded[stockMaterialId] ?? 0.0;
+
+                        totalNeeded[stockMaterialId] =
                             existing +
                                 (line.qty * await _qtyNeeded(
                                   txn,
@@ -3280,6 +3286,25 @@ class Repository {
             final value =
                 (rows.first['qty_needed'] as num?)?.toDouble() ?? 1;
             return value <= 0 ? 1 : value;
+      }
+
+      Future<int> _stockMaterialIdForSale(
+            AppDb txn,
+            int soldMaterialId,
+            ) async {
+            final rows = await txn.query(
+                  'raw_materials',
+                  columns: ['stock_source_id', 'id'],
+                  where: 'id = ?',
+                  whereArgs: [soldMaterialId],
+                  limit: 1,
+            );
+
+            if (rows.isEmpty) return soldMaterialId;
+
+            final sourceId =
+                (rows.first['stock_source_id'] as num?)?.toInt();
+            return sourceId ?? soldMaterialId;
       }
 
       // ============================================================
