@@ -191,6 +191,18 @@ class RawMaterial {
 
   final DateTime? createdAt;
 
+  /// Spreadsheet row order for POS / grid sorting.
+  final int? menuSortOrder;
+
+  /// Groups size/portion variants under one POS card (e.g. "Thai Crispy").
+  final String? variantGroup;
+
+  /// Label on the POS size selector (e.g. "Mini Bucket", "Large").
+  final String? variantLabel;
+
+  /// When set, sales deduct stock from this raw material instead of [id].
+  final int? stockSourceId;
+
   RawMaterial({
     this.id,
     this.barcode,
@@ -210,6 +222,10 @@ class RawMaterial {
     this.imagePath,
     this.listed = true,
     this.createdAt,
+    this.menuSortOrder,
+    this.variantGroup,
+    this.variantLabel,
+    this.stockSourceId,
   });
 
   factory RawMaterial.fromMap(Map<String, dynamic> map) {
@@ -243,11 +259,15 @@ class RawMaterial {
       listed: (map['listed'] as num?)?.toInt() != 0,
       createdAt:
       _parseDate(map['created_at']),
+      menuSortOrder: (map['menu_sort_order'] as num?)?.toInt(),
+      variantGroup: map['variant_group']?.toString(),
+      variantLabel: map['variant_label']?.toString(),
+      stockSourceId: (map['stock_source_id'] as num?)?.toInt(),
     );
   }
 
   Map<String, dynamic> toMap() {
-    return {
+    final map = <String, dynamic>{
       'id': id,
       'barcode': barcode,
       'name': name,
@@ -269,6 +289,21 @@ class RawMaterial {
       createdAt?.toIso8601String() ??
           DateTime.now().toIso8601String(),
     };
+
+    if (menuSortOrder != null) {
+      map['menu_sort_order'] = menuSortOrder;
+    }
+    if (variantGroup != null) {
+      map['variant_group'] = variantGroup;
+    }
+    if (variantLabel != null) {
+      map['variant_label'] = variantLabel;
+    }
+    if (stockSourceId != null) {
+      map['stock_source_id'] = stockSourceId;
+    }
+
+    return map;
   }
 
   bool get isLowStock {

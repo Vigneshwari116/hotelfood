@@ -111,7 +111,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 22,
+      version: 23,
 
       onConfigure: (db) async {
         await db.execute(
@@ -285,6 +285,12 @@ class DBHelper {
         menu_sort_order INTEGER,
 
         menu_export_row TEXT,
+
+        variant_group TEXT,
+
+        variant_label TEXT,
+
+        stock_source_id INTEGER,
 
         created_at TEXT NOT NULL,
 
@@ -1567,6 +1573,29 @@ class DBHelper {
       if (!materialNames.contains('menu_export_row')) {
         await db.execute(
           'ALTER TABLE raw_materials ADD COLUMN menu_export_row TEXT',
+        );
+      }
+    }
+
+    if (oldVersion < 23) {
+      final materialColumns = await db.rawQuery(
+        'PRAGMA table_info(raw_materials)',
+      );
+      final materialNames =
+          materialColumns.map((c) => c['name'] as String).toSet();
+      if (!materialNames.contains('variant_group')) {
+        await db.execute(
+          'ALTER TABLE raw_materials ADD COLUMN variant_group TEXT',
+        );
+      }
+      if (!materialNames.contains('variant_label')) {
+        await db.execute(
+          'ALTER TABLE raw_materials ADD COLUMN variant_label TEXT',
+        );
+      }
+      if (!materialNames.contains('stock_source_id')) {
+        await db.execute(
+          'ALTER TABLE raw_materials ADD COLUMN stock_source_id INTEGER',
         );
       }
     }

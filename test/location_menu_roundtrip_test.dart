@@ -77,6 +77,9 @@ void main() {
               listed INTEGER NOT NULL DEFAULT 1,
               menu_sort_order INTEGER,
               menu_export_row TEXT,
+              variant_group TEXT,
+              variant_label TEXT,
+              stock_source_id INTEGER,
               created_at TEXT NOT NULL
             )
           ''');

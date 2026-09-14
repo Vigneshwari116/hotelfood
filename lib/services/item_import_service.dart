@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/services/spreadsheet_export.dart';
+import 'package:foodstock/services/variant_helpers.dart';
 import 'package:path/path.dart' as p;
 
 class ItemImportResult {
@@ -166,6 +167,9 @@ class ItemImportService {
     'opening stock',
     'cost_price',
     'selling_price',
+    'variant_group',
+    'variant_label',
+    'stock_source_name',
   ];
 
   void validateImportFilename(String filePath, String expectedLocationName) {
@@ -513,6 +517,30 @@ class ItemImportService {
           category: categoryName,
         );
 
+        final variantGroup = _emptyToNull(_first(map, const [
+          'variantgroup',
+          'variantgroupname',
+        ]));
+        final variantLabel = _emptyToNull(_first(map, const [
+          'variantlabel',
+          'variantsize',
+          'size',
+          'portion',
+        ]));
+        final stockSourceName = _first(map, const [
+          'stocksourcename',
+          'stocksource',
+          'stockitem',
+        ]);
+        int? stockSourceId = existingItem?.stockSourceId;
+        if (stockSourceName.isNotEmpty) {
+          stockSourceId = _resolveStockSourceId(
+            stockSourceName,
+            existingByKey,
+            categoryName,
+          );
+        }
+
         final saved = RawMaterial(
             id: existingItem?.id,
             barcode: barcode,
@@ -541,6 +569,10 @@ class ItemImportService {
             imagePath: existingItem?.imagePath,
             listed: listed,
             createdAt: existingItem?.createdAt,
+            menuSortOrder: existingItem?.menuSortOrder,
+            variantGroup: variantGroup ?? existingItem?.variantGroup,
+            variantLabel: variantLabel ?? existingItem?.variantLabel,
+            stockSourceId: stockSourceId,
           );
         final id = await Repository.instance.saveRawMaterial(
           saved,
@@ -568,6 +600,10 @@ class ItemImportService {
           imagePath: saved.imagePath,
           listed: saved.listed,
           createdAt: saved.createdAt,
+          menuSortOrder: i - headerIndex,
+          variantGroup: saved.variantGroup,
+          variantLabel: saved.variantLabel,
+          stockSourceId: saved.stockSourceId,
         );
         if (existingItem == null) {
           result.created++;
@@ -601,7 +637,45 @@ class ItemImportService {
       }
     }
 
+    await _applyVariantAutoLinking();
+
     return result;
+  }
+
+  Future<void> _applyVariantAutoLinking() async {
+    final items = await Repository.instance.rawMaterials(
+      includeHidden: true,
+    );
+    final updates = VariantHelpers.applyAutoVariantLinking(items);
+    for (final item in updates) {
+      await Repository.instance.saveRawMaterial(item);
+    }
+  }
+
+  int? _resolveStockSourceId(
+    String stockSourceName,
+    Map<String, RawMaterial> existingByKey,
+    String categoryName,
+  ) {
+    final target = stockSourceName.trim().toLowerCase();
+    if (target.isEmpty) return null;
+
+    for (final item in existingByKey.values) {
+      if (item.id == null) continue;
+      if (item.name.trim().toLowerCase() == target) {
+        return item.id;
+      }
+    }
+
+    for (final item in existingByKey.values) {
+      if (item.id == null) continue;
+      final sub = item.subItem?.trim().toLowerCase() ?? '';
+      if (sub == target || item.name.trim().toLowerCase() == target) {
+        return item.id;
+      }
+    }
+
+    return null;
   }
 
   Future<int> _ensureCategory(
@@ -659,6 +733,15 @@ class ItemImportService {
   }
 
   String _itemKey(
+    String name,
+    String? subItem, {
+    String? category,
+  }) {
+    return itemKeyFor(name, subItem, category: category);
+  }
+
+  /// Public for tests — import matching uses category + item_name + sub_item.
+  String itemKeyFor(
     String name,
     String? subItem, {
     String? category,
