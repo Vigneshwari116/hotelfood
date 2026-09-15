@@ -6,6 +6,12 @@ import 'package:foodstock/services/app_bootstrap.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+/// Private in-memory SQLite URIs for isolated FFI test databases.
+/// Do not append to [inMemoryDatabasePath] (`:memory:`) — that becomes an
+/// invalid relative file path on Windows and triggers sqlite error 14.
+const _essentialSeedDb = 'file:essential_seed?mode=memory&cache=private';
+const _locationStockDb = 'file:location_stock?mode=memory&cache=private';
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -26,7 +32,7 @@ void main() {
 
     test('essential user seeding stays fast with a large catalog', () async {
       final database = await openDatabase(
-        '${inMemoryDatabasePath}_essential_seed',
+        _essentialSeedDb,
         version: 1,
         onCreate: (db, version) async {
           final now = DateTime.now().toIso8601String();
@@ -111,7 +117,7 @@ void main() {
 
     test('location stock sync runs in deferred init and stays bounded', () async {
       final database = await openDatabase(
-        '${inMemoryDatabasePath}_location_stock',
+        _locationStockDb,
         version: 1,
         onCreate: (db, version) async {
           final now = DateTime.now().toIso8601String();
