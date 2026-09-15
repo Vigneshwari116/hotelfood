@@ -18,7 +18,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 7, vsync: this);
+    _tab = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -30,23 +30,19 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
             controller: _tab,
             isScrollable: true,
             tabs: const [
-              Tab(text: 'Stock Report'),
               Tab(text: 'Stock Summary'),
-              Tab(text: 'Item Sales'),
-              Tab(text: 'Sales Report'),
+              Tab(text: 'Bill-wise Sales'),
+              Tab(text: 'Bill-wise Purchase'),
               Tab(text: 'Day End'),
-              Tab(text: 'Purchase Report'),
               Tab(text: 'Top Selling'),
             ],
           ),
           Expanded(
             child: TabBarView(controller: _tab, children: const [
-              _StockReportTab(),
               _StockSummaryTab(),
-              _ItemSalesTab(),
-              _SalesReportTab(),
+              _BillWiseSalesTab(),
+              _PurchaseBillsTab(),
               _DayEndTab(),
-              _PurchaseReportTab(),
               _TopSellingTab(),
             ]),
           ),
@@ -308,11 +304,6 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
     return '₹${value.toDouble().toStringAsFixed(2)}';
   }
 
-  String _categoryLabel(String? name) {
-    if (name == null || name.trim().isEmpty) return '-';
-    return ItemImportService.canonicalMenuCategory(name) ?? name;
-  }
-
   Future<void> _pickFromDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -441,7 +432,6 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                           title: 'Stock Summary',
                           headers: const [
                             'Item',
-                            'Category',
                             'Unit',
                             'Opening',
                             'Purchase',
@@ -455,7 +445,6 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                                     row['item_name']?.toString() ?? '',
                                     row['sub_item']?.toString(),
                                   ),
-                                  _categoryLabel(row['category']?.toString()),
                                   row['unit']?.toString() ?? '-',
                                   _formatQty(row['opening_qty']),
                                   _formatQty(row['purchase_qty']),
@@ -486,9 +475,15 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                     scrollDirection: Axis.horizontal,
                     child: SingleChildScrollView(
                       child: DataTable(
+                        border: TableBorder.all(
+                          color: Colors.grey.shade400,
+                          width: 1,
+                        ),
+                        headingRowColor: WidgetStateProperty.all(
+                          Colors.grey.shade100,
+                        ),
                         columns: const [
                           DataColumn(label: Text('Item')),
-                          DataColumn(label: Text('Category')),
                           DataColumn(label: Text('Unit')),
                           DataColumn(label: Text('Opening'), numeric: true),
                           DataColumn(label: Text('Purchase'), numeric: true),
@@ -503,9 +498,6 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                                   row['item_name']?.toString() ?? '',
                                   row['sub_item']?.toString(),
                                 ),
-                              )),
-                              DataCell(Text(
-                                _categoryLabel(row['category']?.toString()),
                               )),
                               DataCell(Text(row['unit']?.toString() ?? '-')),
                               DataCell(Text(_formatQty(row['opening_qty']))),
@@ -851,6 +843,167 @@ class _SalesReportTabState extends State<_SalesReportTab> {
   }
 }
 
+class _BillWiseSalesTab extends StatefulWidget {
+  const _BillWiseSalesTab();
+  @override
+  State<_BillWiseSalesTab> createState() => _BillWiseSalesTabState();
+}
+
+class _BillWiseSalesTabState extends State<_BillWiseSalesTab> {
+  List<Map<String, dynamic>> _bills = [];
+  Map<String, dynamic>? _selected;
+  List<Map<String, dynamic>> _lines = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBills();
+  }
+
+  Future<void> _loadBills() async {
+    setState(() => _loading = true);
+    final bills = await Repository.instance.salesReport(includeVoided: false);
+    if (!mounted) return;
+    setState(() {
+      _bills = bills;
+      _loading = false;
+      if (_selected != null) {
+        final id = _selected!['id'];
+        _selected = bills.cast<Map<String, dynamic>?>().firstWhere(
+              (bill) => bill?['id'] == id,
+              orElse: () => null,
+            );
+      }
+      if (_selected != null) {
+        _loadLines(_selected!['id'] as int);
+      } else {
+        _lines = [];
+      }
+    });
+  }
+
+  Future<void> _loadLines(int saleId) async {
+    final lines = await Repository.instance.saleItems(saleId);
+    if (!mounted) return;
+    setState(() => _lines = lines);
+  }
+
+  void _selectBill(Map<String, dynamic> bill) {
+    setState(() => _selected = bill);
+    _loadLines(bill['id'] as int);
+  }
+
+  String _formatBillDate(dynamic value) {
+    final text = value?.toString() ?? '';
+    if (text.length >= 10) return text.substring(0, 10);
+    return text;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return ResponsivePage(
+      maxWidth: 1200,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            flex: 5,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'BILL-WISE REPORT',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: _bills.isEmpty
+                      ? const Center(child: Text('No sales yet'))
+                      : ListView.separated(
+                          itemCount: _bills.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final bill = _bills[index];
+                            final selected =
+                                _selected?['id'] == bill['id'];
+                            return ListTile(
+                              selected: selected,
+                              title: Text('Bill #${bill['id']}'),
+                              subtitle: Text(
+                                _formatBillDate(bill['sale_date']),
+                              ),
+                              trailing: Text(
+                                '₹${(bill['total'] as num).toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              onTap: () => _selectBill(bill),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+          const VerticalDivider(width: 1),
+          Expanded(
+            flex: 6,
+            child: _selected == null
+                ? const Center(
+                    child: Text('Select a bill to see line items'),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Bill #${_selected!['id']} — ${_formatBillDate(_selected!['sale_date'])}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      Text(
+                        'Total ₹${(_selected!['total'] as num).toStringAsFixed(2)}',
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: _lines.isEmpty
+                            ? const Center(child: Text('No line items'))
+                            : ListView.separated(
+                                itemCount: _lines.length,
+                                separatorBuilder: (_, __) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final line = _lines[index];
+                                  return ListTile(
+                                    title: Text(
+                                      RawMaterial.staffLabelFor(
+                                        line['item_name']?.toString() ?? '',
+                                        line['sub_item']?.toString(),
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      'Qty ${line['qty']}  •  ₹${line['amount']}',
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DayEndTab extends StatefulWidget {
   const _DayEndTab();
   @override
@@ -951,96 +1104,170 @@ class _DayEndTabState extends State<_DayEndTab> {
   }
 }
 
-class _PurchaseReportTab extends StatefulWidget {
-  const _PurchaseReportTab();
+class _PurchaseBillsTab extends StatefulWidget {
+  const _PurchaseBillsTab();
   @override
-  State<_PurchaseReportTab> createState() => _PurchaseReportTabState();
+  State<_PurchaseBillsTab> createState() => _PurchaseBillsTabState();
 }
 
-class _PurchaseReportTabState extends State<_PurchaseReportTab> {
-  List<Map<String, dynamic>> _rows = [];
+class _PurchaseBillsTabState extends State<_PurchaseBillsTab> {
+  List<Map<String, dynamic>> _bills = [];
+  Map<String, dynamic>? _selected;
+  List<Map<String, dynamic>> _lines = [];
+  bool _loading = true;
+
   @override
   void initState() {
     super.initState();
-    Repository.instance.purchaseReport().then((r) => setState(() => _rows = r));
+    _loadBills();
+  }
+
+  Future<void> _loadBills() async {
+    setState(() => _loading = true);
+    final bills = await Repository.instance.purchases();
+    if (!mounted) return;
+    setState(() {
+      _bills = bills;
+      _loading = false;
+      if (_selected != null) {
+        final id = _selected!['id'];
+        _selected = bills.cast<Map<String, dynamic>?>().firstWhere(
+              (bill) => bill?['id'] == id,
+              orElse: () => null,
+            );
+      }
+      if (_selected != null) {
+        _loadLines(_selected!['id'] as int);
+      } else {
+        _lines = [];
+      }
+    });
+  }
+
+  Future<void> _loadLines(int purchaseId) async {
+    final lines = await Repository.instance.purchaseItems(purchaseId);
+    if (!mounted) return;
+    setState(() => _lines = lines);
+  }
+
+  void _selectBill(Map<String, dynamic> bill) {
+    setState(() => _selected = bill);
+    _loadLines(bill['id'] as int);
+  }
+
+  String _formatBillDate(dynamic value) {
+    final text = value?.toString() ?? '';
+    if (text.length >= 10) return text.substring(0, 10);
+    return text;
   }
 
   @override
   Widget build(BuildContext context) {
-    final totalAmt = _rows.fold<double>(
-      0,
-      (sum, r) => sum + ((r['amount'] as num?)?.toDouble() ?? 0),
-    );
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
     return ResponsivePage(
-      child: Column(
+      maxWidth: 1200,
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Total purchase: ₹${totalAmt.toStringAsFixed(2)}',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-              ),
-              FilledButton.icon(
-                onPressed: _rows.isEmpty
-                    ? null
-                    : () async {
-                        await ReportPdf.shareTable(
-                          title: 'Purchase Report',
-                          headers: const [
-                            'Date',
-                            'Supplier',
-                            'Item',
-                            'Qty',
-                            'Rate',
-                            'Amount',
-                          ],
-                          rows: _rows
-                              .map(
-                                (r) => [
-                                  r['purchase_date']?.toString() ?? '',
-                                  r['supplier_name']?.toString() ?? '-',
-                                  RawMaterial.staffLabelFor(
-                                    r['material_name']?.toString() ?? '',
-                                    r['material_sub_item']?.toString(),
-                                  ),
-                                  r['qty']?.toString() ?? '',
-                                  '₹${r['rate']}',
-                                  '₹${r['amount']}',
-                                ],
-                              )
-                              .toList(),
-                          totalLine:
-                              'Total purchase ₹${totalAmt.toStringAsFixed(2)}',
-                        );
-                      },
-                icon: const Icon(Icons.picture_as_pdf, size: 18),
-                label: const Text('Share PDF'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
           Expanded(
-            child: _rows.isEmpty
-                ? const Center(child: Text('No purchases yet'))
-                : ListView.separated(
-                    itemCount: _rows.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, i) {
-                      final r = _rows[i];
-                      return ListTile(
-                        title: Text(
-                          '${RawMaterial.staffLabelFor(r['material_name']?.toString() ?? '', r['material_sub_item']?.toString())}  •  qty ${r['qty']} @ ₹${r['rate']}',
+            flex: 5,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'BILL-WISE PURCHASE REPORT',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: _bills.isEmpty
+                      ? const Center(child: Text('No purchases yet'))
+                      : ListView.separated(
+                          itemCount: _bills.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final bill = _bills[index];
+                            final selected = _selected?['id'] == bill['id'];
+                            return ListTile(
+                              selected: selected,
+                              title: Text('Bill #${bill['id']}'),
+                              subtitle: Text(
+                                _formatBillDate(bill['purchase_date']),
+                              ),
+                              trailing: Text(
+                                '₹${(bill['total_amount'] as num).toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              onTap: () => _selectBill(bill),
+                            );
+                          },
                         ),
-                        subtitle: Text(
-                          '${r['supplier_name'] ?? '-'}  •  ${r['purchase_date']}',
+                ),
+              ],
+            ),
+          ),
+          const VerticalDivider(width: 1),
+          Expanded(
+            flex: 6,
+            child: _selected == null
+                ? const Center(
+                    child: Text('Select a bill to see purchased items'),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Bill #${_selected!['id']} — ${_formatBillDate(_selected!['purchase_date'])}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
                         ),
-                        trailing: Text('₹${r['amount']}'),
-                      );
-                    },
+                      ),
+                      Text(
+                        'Total ₹${(_selected!['total_amount'] as num).toStringAsFixed(2)}',
+                      ),
+                      if (_selected!['supplier_name'] != null)
+                        Text(
+                          'Supplier: ${_selected!['supplier_name']}',
+                        ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: _lines.isEmpty
+                            ? const Center(child: Text('No line items'))
+                            : ListView.separated(
+                                itemCount: _lines.length,
+                                separatorBuilder: (_, __) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final line = _lines[index];
+                                  final qty =
+                                      (line['qty'] as num?)?.toDouble() ?? 0;
+                                  final rate =
+                                      (line['rate'] as num?)?.toDouble() ?? 0;
+                                  final amount =
+                                      (line['amount'] as num?)?.toDouble() ??
+                                          qty * rate;
+                                  return ListTile(
+                                    title: Text(
+                                      RawMaterial.staffLabelFor(
+                                        line['material_name']?.toString() ??
+                                            '',
+                                        line['material_sub_item']?.toString(),
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      'Qty $qty ${line['unit'] ?? ''}  •  Rate ₹${rate.toStringAsFixed(2)}  •  Amount ₹${amount.toStringAsFixed(2)}',
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
                   ),
           ),
         ],

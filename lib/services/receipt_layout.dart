@@ -172,6 +172,6 @@ class ReceiptLayout {
     }
     final pad = width - trimmed.length;
     final left = pad ~/ 2;
-    return (' ' * left) + trimmed;
+    return (' ' * left) + trimmed + (' ' * (pad - left));
   }
 }

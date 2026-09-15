@@ -203,6 +203,15 @@ class _PosScreenState extends State<PosScreen> {
     return null;
   }
 
+  bool _isBurgersCategory(int? categoryId) {
+    final name = _categoryName(categoryId)?.trim().toLowerCase() ?? '';
+    return name == 'burgers' || name == 'burger';
+  }
+
+  bool _isDirectSaleMaterial(RawMaterial material) {
+    return !_isBurgersCategory(material.categoryId);
+  }
+
   List<RawMaterial> get _allMaterials => _materials;
 
   List<Combo> get _activeCombos => _combos
@@ -213,10 +222,14 @@ class _PosScreenState extends State<PosScreen> {
       .toList();
 
   Set<int?> get _categoryIdsWithItems {
-    final ids = {for (final material in _allMaterials) material.categoryId};
+    final ids = {
+      for (final material in _allMaterials)
+        if (_isDirectSaleMaterial(material)) material.categoryId,
+    };
     for (final combo in _activeCombos) {
       ids.add(combo.categoryId);
     }
+    ids.removeWhere((id) => _isBurgersCategory(id));
     return ids;
   }
 
@@ -235,7 +248,7 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   List<RawMaterial> get _filteredMaterials {
-    var list = _allMaterials;
+    var list = _allMaterials.where(_isDirectSaleMaterial).toList();
     if (_categoryId == _uncategorizedFilter) {
       list = list.where((material) => material.categoryId == null).toList();
     } else if (_categoryId != null) {
@@ -662,8 +675,6 @@ class _PosScreenState extends State<PosScreen> {
   void _addRawMaterial(
       RawMaterial material,
       ) {
-    if (!_guardRapidTap()) return;
-
     if (material.id == null) {
       return;
     }
@@ -1238,7 +1249,7 @@ class _PosScreenState extends State<PosScreen> {
     final stock = VariantHelpers.sellableUnits(selected, _materialsById);
     final cartQty = _cartQtyForVariantGroup(group);
     final imagePath = selected.imagePath ?? group.stockSource.imagePath;
-    final useColumnSelector = group.variants.length >= 3;
+    final useColumnSelector = group.variants.length >= 2;
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -1384,7 +1395,6 @@ class _PosScreenState extends State<PosScreen> {
               : null,
           onPressed: () {
             setState(() => _selectedVariantIdByGroup[group.key] = id);
-            _lastAddTapMs = 0;
             _addRawMaterial(variant);
           },
         );
@@ -1399,22 +1409,42 @@ class _PosScreenState extends State<PosScreen> {
       children: group.variants.map((variant) {
         final id = variant.id;
         if (id == null) return const SizedBox.shrink();
-        return RadioListTile<int>(
-          value: id,
-          groupValue: selected.id,
-          onChanged: (_) {
+        final isSelected = selected.id == id;
+        final label = VariantHelpers.variantSelectorLabel(variant);
+        return InkWell(
+          onTap: () {
             setState(() => _selectedVariantIdByGroup[group.key] = id);
-            _lastAddTapMs = 0;
             _addRawMaterial(variant);
           },
-          dense: true,
-          visualDensity: VisualDensity.compact,
-          contentPadding: EdgeInsets.zero,
-          title: Text(
-            VariantHelpers.variantSelectorLabel(variant),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 12),
+          borderRadius: BorderRadius.circular(6),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                Icon(
+                  isSelected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_off,
+                  size: 18,
+                  color: isSelected
+                      ? Theme.of(context).colorScheme.primary
+                      : Colors.grey.shade600,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight:
+                          isSelected ? FontWeight.w600 : FontWeight.normal,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       }).toList(),

@@ -56,7 +56,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
 
     try {
       final results = await Future.wait([
-        Repository.instance.rawMaterials(
+        Repository.instance.rawMaterialsForDisplay(
           search: _searchController.text.trim(),
           includeHidden: true,
         ),
@@ -113,11 +113,13 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
     }
 
     for (final rows in grouped.values) {
-      rows.sort(
-        (a, b) => a.item.name.toLowerCase().compareTo(
-              b.item.name.toLowerCase(),
-            ),
-      );
+      rows.sort((a, b) {
+        final subA = (a.item.subItem ?? a.item.name).toLowerCase();
+        final subB = (b.item.subItem ?? b.item.name).toLowerCase();
+        final bySub = subA.compareTo(subB);
+        if (bySub != 0) return bySub;
+        return a.item.name.toLowerCase().compareTo(b.item.name.toLowerCase());
+      });
     }
 
     return grouped;

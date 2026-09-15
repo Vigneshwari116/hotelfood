@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -19,6 +20,8 @@ void main() {
     late SqliteAppDb appDb;
     late ItemImportService service;
 
+    const approvedMasterPath =
+        'assets/templates/shilpa_enterprise_menu_1401.csv';
     const fixturePath =
         'test/fixtures/Shilpa_Enterprise_menu_items_CLIENT_FINAL.xlsx';
 
@@ -188,7 +191,6 @@ void main() {
           })
           .where((row) {
             if (row.isEmpty) return false;
-            // Match import: skip header duplicates and rows without an item name.
             final itemName = row.length > 1 ? row[1].trim() : '';
             if (itemName.isEmpty) return false;
             if (row.first.trim().toLowerCase() == 'category' &&
@@ -200,35 +202,101 @@ void main() {
           .toList();
     }
 
-    test('export after location import matches client seed row-for-row', () async {
-      await openRoundTripDb();
+    List<List<String>> sortExportRows(
+      List<({List<String> row, int importIndex})> rows,
+    ) {
+      final sorted = [...rows];
+      sorted.sort((a, b) {
+        // Match SQLite ORDER BY c.name ASC, rm.name ASC, rm.id ASC.
+        final cat = a.row[0].compareTo(b.row[0]);
+        if (cat != 0) return cat;
+        final name = a.row[1].compareTo(b.row[1]);
+        if (name != 0) return name;
+        return a.importIndex.compareTo(b.importIndex);
+      });
+      return sorted.map((entry) => entry.row).toList();
+    }
 
-      final seedBytes = await File(fixturePath).readAsBytes();
-      final originalRows = service.parseSpreadsheetBytes(seedBytes);
-
-      final tempDir = await Directory.systemTemp.createTemp('menu-import-');
-      final importPath = '${tempDir.path}/Gt world mall.xlsx';
-      await File(importPath).writeAsBytes(seedBytes);
-
-      final result = await service.importFile(
-        importPath,
-        expectedLocationName: 'Gt world mall',
+    /// Builds the export grid the app produces from the approved Sheet2 master.
+    List<List<String>> expectedExportFromApprovedMaster(
+      List<List<String>> parsedRows,
+    ) {
+      final headerIndex = parsedRows.indexWhere(
+        (row) => row.any((cell) => cell.trim().isNotEmpty),
       );
-      expect(result.errors, isEmpty);
+      if (headerIndex < 0) return [];
 
-      final exportedBytes = await service.exportXlsxForLocation(1);
-      final exportedRows = service.parseSpreadsheetBytes(exportedBytes);
+      final expected = <({List<String> row, int importIndex})>[];
+      var importIndex = 0;
+      for (final row in parsedRows.skip(headerIndex + 1)) {
+        if (row.every((cell) => cell.trim().isEmpty)) continue;
 
-      expect(
-        normalizedGrid(exportedRows),
-        normalizedGrid(originalRows),
-        reason: 'Downloaded menu must match imported client file exactly',
-      );
-    });
+        final itemName = row.length > 1 ? row[1].trim() : '';
+        if (itemName.isEmpty) continue;
+
+        final category = ItemImportService.canonicalMenuCategory(row[0]) ??
+            row[0].trim();
+
+        expected.add((
+          row: [
+            category,
+            itemName,
+            row.length > 2 ? row[2] : '',
+            '',
+            row.length > 4 ? row[4] : '',
+            '',
+            row.length > 6 ? row[6] : '',
+            row.length > 7 ? row[7] : '',
+            '0',
+            row.length > 9 ? row[9] : '',
+            row.length > 10 ? row[10] : '',
+            '',
+            '',
+            '',
+          ],
+          importIndex: importIndex++,
+        ));
+      }
+
+      return sortExportRows(expected);
+    }
+
+    test(
+      'export after location import matches approved Sheet2 master data',
+      () async {
+        await openRoundTripDb();
+
+        final approvedCsv = await File(approvedMasterPath).readAsString();
+        final approvedRows = service.parseSpreadsheetBytes(
+          utf8.encode(approvedCsv),
+          extension: '.csv',
+        );
+        final expectedRows = expectedExportFromApprovedMaster(approvedRows);
+
+        final tempDir = await Directory.systemTemp.createTemp('menu-import-');
+        final importPath = '${tempDir.path}/Gt world mall.csv';
+        await File(importPath).writeAsString(approvedCsv);
+
+        final result = await service.importFile(
+          importPath,
+          expectedLocationName: 'Gt world mall',
+        );
+        expect(result.errors, isEmpty);
+
+        final exportedBytes = await service.exportXlsxForLocation(1);
+        final exportedRows = service.parseSpreadsheetBytes(exportedBytes);
+
+        expect(
+          normalizedGrid(exportedRows),
+          expectedRows,
+          reason:
+              'Downloaded menu must match approved Sheet2 master after import',
+        );
+      },
+    );
 
     test('all location template files are byte-identical to client seed', () async {
-      final seedBytes =
-          await File(fixturePath).readAsBytes();
+      final seedBytes = await File(fixturePath).readAsBytes();
       for (final name in [
         'Gt world mall',
         'Magadi road',

@@ -168,7 +168,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       await Repository.instance.suppliers();
 
       final materials =
-      await Repository.instance.rawMaterials();
+      await Repository.instance.rawMaterialsForDisplay();
 
       final history =
       await Repository.instance.purchases();

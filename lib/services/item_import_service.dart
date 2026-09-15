@@ -640,8 +640,54 @@ class ItemImportService {
     }
 
     await _applyVariantAutoLinking();
+    await _cleanupDuplicateSnacksPopcorn();
+    await _cleanupPopcornFromSnacksCombos();
 
     return result;
+  }
+
+  /// Removes Chicken Popcorn from snack-style combo definitions only.
+  Future<void> _cleanupPopcornFromSnacksCombos() async {
+    final removed =
+        await Repository.instance.removePopcornFromSnacksComboComponents();
+    if (removed > 0) {
+      // Logged via import result only when callers surface errors; silent cleanup.
+    }
+  }
+
+  /// Hides stray SNACKS-category popcorn rows when the FRIED ITEMS row exists.
+  Future<void> _cleanupDuplicateSnacksPopcorn() async {
+    final items = await Repository.instance.rawMaterials(includeHidden: true);
+    final categories = await Repository.instance.categories(type: 'raw_material');
+    final categoryNameById = {
+      for (final category in categories)
+        if (category.id != null) category.id!: category.name,
+    };
+
+    bool isPopcornLarge(RawMaterial item) {
+      final name = item.name.trim().toLowerCase();
+      return name.contains('popcorn') && name.contains('large');
+    }
+
+    String categoryName(RawMaterial item) {
+      if (item.categoryId == null) return '';
+      return categoryNameById[item.categoryId]?.trim().toLowerCase() ?? '';
+    }
+
+    final friedPopcorn = items.where(
+      (item) =>
+          isPopcornLarge(item) &&
+          categoryName(item).replaceAll(' ', '') == 'frieditems',
+    );
+    if (friedPopcorn.isEmpty) return;
+
+    for (final item in items) {
+      if (item.id == null || !item.listed) continue;
+      if (!isPopcornLarge(item)) continue;
+      final category = categoryName(item);
+      if (category != 'snacks') continue;
+      await Repository.instance.hideRawMaterial(item.id!);
+    }
   }
 
   Future<void> _applyVariantAutoLinking() async {

@@ -89,6 +89,6 @@ void main() {
     expect(csv, contains('ROLLS,Tandoori roll,chicken 65'));
     expect(csv, contains('BEVARGES,pepsi 300 ml,pepsi'));
     expect(csv, contains('STOCK,Paratha,Paratha'));
-    expect(csv, contains('ROLLS,Chicken Roll,chicken roll'));
+    expect(csv, contains('ROLLS,Chicken roll,chicken finger'));
   });
 }
