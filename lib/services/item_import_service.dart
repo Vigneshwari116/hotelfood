@@ -694,7 +694,17 @@ class ItemImportService {
     final items = await Repository.instance.rawMaterials(
       includeHidden: true,
     );
-    final updates = VariantHelpers.syncVariantLinks(items);
+    final categories = await Repository.instance.categories(
+      type: 'raw_material',
+    );
+    final categoryNameById = {
+      for (final category in categories)
+        if (category.id != null) category.id!: category.name,
+    };
+    final updates = VariantHelpers.syncVariantLinks(
+      items,
+      categoryNameById: categoryNameById,
+    );
     for (final item in updates) {
       await Repository.instance.saveRawMaterial(item);
     }

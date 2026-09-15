@@ -584,6 +584,13 @@ class _PosScreenState extends State<PosScreen> {
         return;
       }
 
+      if (!_isDirectSaleMaterial(material)) {
+        _showError(
+          'Burgers are sold through combos only. Select a combo instead.',
+        );
+        return;
+      }
+
       _addRawMaterial(material);
     } catch (e) {
       _showError(
