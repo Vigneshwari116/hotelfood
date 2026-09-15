@@ -89,15 +89,39 @@ class VariantHelpers {
     return _normalizedFamilyKey(name);
   }
 
+  /// Returns [materials] with variant_group / stock_source_id applied in memory.
+  static List<RawMaterial> withSyncedLinks(List<RawMaterial> materials) {
+    final updates = syncVariantLinks(materials);
+    if (updates.isEmpty) return materials;
+
+    final byId = {
+      for (final material in materials)
+        if (material.id != null) material.id!: material,
+    };
+    for (final update in updates) {
+      if (update.id != null) {
+        byId[update.id!] = update;
+      }
+    }
+    return materials
+        .map(
+          (material) => material.id != null
+              ? (byId[material.id!] ?? material)
+              : material,
+        )
+        .toList();
+  }
+
   /// Splits [materials] into standalone tiles and multi-variant groups.
   static ({
     List<RawMaterial> singles,
     List<VariantGroup> groups,
   }) partitionForPos(List<RawMaterial> materials) {
+    final linked = withSyncedLinks(materials);
     final byGroup = <String, List<RawMaterial>>{};
     final singles = <RawMaterial>[];
 
-    for (final material in materials) {
+    for (final material in linked) {
       final groupKey = material.variantGroup?.trim();
       if (groupKey == null || groupKey.isEmpty) {
         singles.add(material);
@@ -181,11 +205,12 @@ class VariantHelpers {
   static bool shouldAutoLinkFamily(List<RawMaterial> family) {
     if (family.length < 2) return false;
 
-    final sub = family.first.subItem?.trim().toLowerCase();
-    if (sub == null || sub.isEmpty) return false;
-
     final familyKey = productFamilyKey(family.first);
     if (familyKey == null || familyKey.isEmpty) return false;
+
+    if (family.any((item) => productFamilyKey(item) != familyKey)) {
+      return false;
+    }
 
     final source = canonicalStockSource(family, familyKey: familyKey);
     if (source == null) return false;
