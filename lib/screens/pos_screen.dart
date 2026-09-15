@@ -1220,85 +1220,117 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
+  static const double _variantCardHeight = 330;
+
   Widget _variantGroupCard(VariantGroup group) {
     final selected = _selectedVariant(group);
     final stock = VariantHelpers.sellableUnits(selected, _materialsById);
     final cartQty = _cartQtyForVariantGroup(group);
     final imagePath = selected.imagePath ?? group.stockSource.imagePath;
-    final isNarrow = MediaQuery.sizeOf(context).width < 900;
+    final useColumnSelector = group.variants.length >= 3;
 
     return Card(
       clipBehavior: Clip.antiAlias,
       margin: EdgeInsets.zero,
-      child: InkWell(
-        onTap: () => _addRawMaterial(selected),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _image(imagePath, height: 72),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      group.posTitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            onTap: () => _addRawMaterial(selected),
+            child: _image(imagePath, height: 72),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    group.posTitle,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Expanded(
+                    child: Align(
+                      alignment: Alignment.topLeft,
+                      child: _variantSelector(
+                        group,
+                        selected,
+                        useColumn: useColumnSelector,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Flexible(
-                      child: isNarrow
-                          ? _variantSelectorColumn(group, selected)
-                          : _variantSelectorRow(group, selected),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      selected.sellingPrice == null
-                          ? 'No price'
-                          : '₹${selected.sellingPrice!.toStringAsFixed(2)}',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 13,
-                        color: selected.sellingPrice == null
-                            ? Theme.of(context).colorScheme.error
-                            : null,
-                      ),
-                    ),
-                    Text(
-                      _formatStockLabel(stock),
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: stock < 0
-                            ? Colors.red.shade700
-                            : Colors.grey.shade700,
-                      ),
-                    ),
-                    const Spacer(),
-                    Row(
-                      children: [
-                        const Spacer(),
-                        if (cartQty > 0)
-                          CircleAvatar(
-                            radius: 11,
-                            child: Text(
-                              _formatQty(cartQty),
-                              style: const TextStyle(fontSize: 10),
+                  ),
+                  const SizedBox(height: 6),
+                  InkWell(
+                    onTap: () => _addRawMaterial(selected),
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 2),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            selected.sellingPrice == null
+                                ? 'No price'
+                                : '₹${selected.sellingPrice!.toStringAsFixed(2)}',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: selected.sellingPrice == null
+                                  ? Theme.of(context).colorScheme.error
+                                  : null,
                             ),
                           ),
-                      ],
+                          Text(
+                            _formatStockLabel(stock),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: stock < 0
+                                  ? Colors.red.shade700
+                                  : Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                  ],
-                ),
+                  ),
+                  if (cartQty > 0)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: CircleAvatar(
+                        radius: 11,
+                        child: Text(
+                          _formatQty(cartQty),
+                          style: const TextStyle(fontSize: 10),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _variantSelector(
+    VariantGroup group,
+    RawMaterial selected, {
+    required bool useColumn,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: SingleChildScrollView(
+        physics: const ClampingScrollPhysics(),
+        child: useColumn
+            ? _variantSelectorColumn(group, selected)
+            : _variantSelectorRow(group, selected),
       ),
     );
   }
@@ -1306,7 +1338,8 @@ class _PosScreenState extends State<PosScreen> {
   Widget _variantSelectorRow(VariantGroup group, RawMaterial selected) {
     return Wrap(
       spacing: 4,
-      runSpacing: 2,
+      runSpacing: 4,
+      alignment: WrapAlignment.start,
       children: group.variants.map((variant) {
         final id = variant.id;
         if (id == null) return const SizedBox.shrink();
@@ -1314,10 +1347,13 @@ class _PosScreenState extends State<PosScreen> {
         return ChoiceChip(
           label: Text(
             label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 11),
           ),
           visualDensity: VisualDensity.compact,
           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          padding: const EdgeInsets.symmetric(horizontal: 4),
           selected: selected.id == id,
           onSelected: (_) {
             setState(() => _selectedVariantIdByGroup[group.key] = id);
@@ -1330,6 +1366,7 @@ class _PosScreenState extends State<PosScreen> {
   Widget _variantSelectorColumn(VariantGroup group, RawMaterial selected) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: group.variants.map((variant) {
         final id = variant.id;
         if (id == null) return const SizedBox.shrink();
@@ -1344,6 +1381,8 @@ class _PosScreenState extends State<PosScreen> {
           contentPadding: EdgeInsets.zero,
           title: Text(
             VariantHelpers.variantSelectorLabel(variant),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(fontSize: 12),
           ),
         );
@@ -2257,32 +2296,22 @@ class _PosScreenState extends State<PosScreen> {
       return _mobileBody();
     }
 
+    final cartWidth = width < 1100 ? 320.0 : (width < 1300 ? 360.0 : 400.0);
+
     return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          child:
-          _productArea(),
+          child: ClipRect(
+            child: _productArea(),
+          ),
         ),
-
-        const SizedBox(
-          width: 8,
-        ),
-
+        const SizedBox(width: 8),
         SizedBox(
-          width:
-          width < 1200
-              ? 390
-              : 440,
-          child:
-          Padding(
-            padding:
-            const EdgeInsets
-                .only(
-              right: 8,
-              bottom: 8,
-            ),
-            child:
-            _cartView(),
+          width: cartWidth,
+          child: Padding(
+            padding: const EdgeInsets.only(right: 8, bottom: 8),
+            child: _cartView(),
           ),
         ),
       ],
@@ -2468,9 +2497,9 @@ class _PosScreenState extends State<PosScreen> {
             padding: const EdgeInsets.fromLTRB(10, 0, 10, 4),
             sliver: SliverGrid(
               gridDelegate:
-                  const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 230,
-                mainAxisExtent: 280,
+                  SliverGridDelegateWithMaxCrossAxisExtent(
+                maxCrossAxisExtent: 220,
+                mainAxisExtent: _variantCardHeight,
                 crossAxisSpacing: 10,
                 mainAxisSpacing: 10,
               ),
