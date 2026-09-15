@@ -32,6 +32,29 @@ void main() {
       expect(result.groups.first.posTitle, 'Thai Crispy');
     });
 
+    test('keeps invalid burger groups as separate singles', () {
+      final hotCrispy = RawMaterial(
+        id: 1,
+        name: 'Hot Crispy burger',
+        subItem: 'Hot Crispy Patty',
+        variantGroup: 'Hot Crispy Patty',
+        sellingPrice: 110,
+      );
+      final bigJuicy = RawMaterial(
+        id: 2,
+        name: 'Big juicy burger',
+        subItem: 'Hot Crispy Patty',
+        variantGroup: 'Hot Crispy Patty',
+        sellingPrice: 129,
+        stockSourceId: 1,
+      );
+
+      final result = VariantHelpers.partitionForPos([hotCrispy, bigJuicy]);
+
+      expect(result.groups, isEmpty);
+      expect(result.singles.length, 2);
+    });
+
     test('keeps ungrouped items as singles', () {
       final item = RawMaterial(
         id: 3,
@@ -113,27 +136,35 @@ void main() {
         name: 'chicken popcorn large',
         subItem: 'Chicken Popcorn',
       );
+      final small = RawMaterial(
+        id: 3,
+        name: 'Chicken Popcorn small',
+        subItem: 'Chicken Popcorn Small',
+      );
 
-      final updates = VariantHelpers.syncVariantLinks([base, large]);
+      final updates = VariantHelpers.syncVariantLinks([base, large, small]);
 
-      expect(updates.length, 2);
+      expect(updates.length, 3);
       expect(
-        updates.firstWhere((item) => item.id == 2).stockSourceId,
+        updates.where((item) => item.variantGroup == 'Chicken Popcorn').length,
+        3,
+      );
+      expect(
+        updates.firstWhere((item) => item.id == 3).stockSourceId,
         1,
       );
     });
 
-    test('does not merge burgers that only share a patty sub_item', () {
+    test('clears burger groups that only share a patty sub_item', () {
       final hotCrispy = RawMaterial(
         id: 1,
         name: 'Hot Crispy burger',
         subItem: 'Hot Crispy Patty',
         variantGroup: 'Hot Crispy Patty',
-        stockSourceId: null,
       );
       final bigJuicy = RawMaterial(
         id: 2,
-        name: 'Big juciy burger',
+        name: 'Big juicy burger',
         subItem: 'Hot Crispy Patty',
         variantGroup: 'Hot Crispy Patty',
         stockSourceId: 1,
@@ -151,11 +182,13 @@ void main() {
         id: 1,
         name: 'Chicken Popcorn',
         subItem: 'Chicken Popcorn Small',
+        categoryId: 1,
       );
       final snacks = RawMaterial(
         id: 2,
         name: 'chicken popcorn large',
         subItem: 'Chicken Popcorn Large',
+        categoryId: 2,
       );
 
       final updates = VariantHelpers.syncVariantLinks([

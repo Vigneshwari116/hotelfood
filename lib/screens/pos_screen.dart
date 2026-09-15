@@ -124,6 +124,7 @@ class _PosScreenState extends State<PosScreen> {
     }
 
     try {
+      await _repo.refreshVariantLinks();
       final materials = await _repo.rawMaterials();
       final combos = await _repo.combosWithItems(activeOnly: true);
       final categories = await _repo.categories(type: 'raw_material');
@@ -221,7 +222,16 @@ class _PosScreenState extends State<PosScreen> {
 
   List<Category> get _categoriesWithItems {
     final ids = _categoryIdsWithItems;
-    return _categories.where((category) => ids.contains(category.id)).toList();
+    final seen = <String>{};
+    final result = <Category>[];
+    for (final category in _categories) {
+      if (!ids.contains(category.id)) continue;
+      final label = _categoryLabel(category.name).toLowerCase();
+      if (seen.contains(label)) continue;
+      seen.add(label);
+      result.add(category);
+    }
+    return result;
   }
 
   List<RawMaterial> get _filteredMaterials {
@@ -1345,19 +1355,36 @@ class _PosScreenState extends State<PosScreen> {
         final id = variant.id;
         if (id == null) return const SizedBox.shrink();
         final label = VariantHelpers.variantSelectorLabel(variant);
-        return ChoiceChip(
+        final isSelected = selected.id == id;
+        return ActionChip(
           label: Text(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontSize: 11),
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+            ),
           ),
           visualDensity: VisualDensity.compact,
           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
           padding: const EdgeInsets.symmetric(horizontal: 4),
-          selected: selected.id == id,
-          onSelected: (_) {
+          backgroundColor: isSelected
+              ? Theme.of(context).colorScheme.primaryContainer
+              : null,
+          side: isSelected
+              ? BorderSide(color: Theme.of(context).colorScheme.primary)
+              : null,
+          avatar: isSelected
+              ? Icon(
+                  Icons.check,
+                  size: 14,
+                  color: Theme.of(context).colorScheme.primary,
+                )
+              : null,
+          onPressed: () {
             setState(() => _selectedVariantIdByGroup[group.key] = id);
+            _lastAddTapMs = 0;
             _addRawMaterial(variant);
           },
         );
@@ -1377,6 +1404,7 @@ class _PosScreenState extends State<PosScreen> {
           groupValue: selected.id,
           onChanged: (_) {
             setState(() => _selectedVariantIdByGroup[group.key] = id);
+            _lastAddTapMs = 0;
             _addRawMaterial(variant);
           },
           dense: true,

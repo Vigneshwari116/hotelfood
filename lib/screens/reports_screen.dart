@@ -443,11 +443,9 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                             'Item',
                             'Category',
                             'Unit',
-                            'Opening qty',
                             'Opening value',
                             'Purchase value',
                             'Sales value',
-                            'Closing qty',
                             'Closing value',
                           ],
                           rows: _rows
@@ -459,17 +457,15 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                                   ),
                                   _categoryLabel(row['category']?.toString()),
                                   row['unit']?.toString() ?? '-',
-                                  _formatQty(row['opening_qty']),
                                   _formatMoney(row['opening_value']),
                                   _formatMoney(row['purchase_value']),
                                   _formatMoney(row['sales_value']),
-                                  _formatQty(row['closing_qty']),
                                   _formatMoney(row['closing_value']),
                                 ],
                               )
                               .toList(),
                           totalLine:
-                              'Opening value ₹${openingValue.toStringAsFixed(2)}  •  Purchase ₹${purchaseValue.toStringAsFixed(2)}  •  Sales (cost) ₹${salesValue.toStringAsFixed(2)}  •  Closing value ₹${closingValue.toStringAsFixed(2)}',
+                              'Opening ₹${openingValue.toStringAsFixed(2)}  •  Purchase ₹${purchaseValue.toStringAsFixed(2)}  •  Sales ₹${salesValue.toStringAsFixed(2)}  •  Closing ₹${closingValue.toStringAsFixed(2)}',
                         );
                       },
                 icon: const Icon(Icons.picture_as_pdf, size: 18),
@@ -494,11 +490,9 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                           DataColumn(label: Text('Item')),
                           DataColumn(label: Text('Category')),
                           DataColumn(label: Text('Unit')),
-                          DataColumn(label: Text('Opening'), numeric: true),
                           DataColumn(label: Text('Opening ₹'), numeric: true),
                           DataColumn(label: Text('Purchase ₹'), numeric: true),
                           DataColumn(label: Text('Sales ₹'), numeric: true),
-                          DataColumn(label: Text('Closing'), numeric: true),
                           DataColumn(label: Text('Closing ₹'), numeric: true),
                         ],
                         rows: _rows.map((row) {
@@ -514,14 +508,9 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                                 _categoryLabel(row['category']?.toString()),
                               )),
                               DataCell(Text(row['unit']?.toString() ?? '-')),
-                              DataCell(Text(_formatQty(row['opening_qty']))),
                               DataCell(Text(_formatMoney(row['opening_value']))),
                               DataCell(Text(_formatMoney(row['purchase_value']))),
                               DataCell(Text(_formatMoney(row['sales_value']))),
-                              DataCell(Text(
-                                _formatQty(row['closing_qty']),
-                                style: const TextStyle(fontWeight: FontWeight.w600),
-                              )),
                               DataCell(Text(
                                 _formatMoney(row['closing_value']),
                                 style: const TextStyle(fontWeight: FontWeight.w600),
@@ -542,19 +531,19 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                 runSpacing: 8,
                 children: [
                   Text(
-                    'Opening value: ₹${openingValue.toStringAsFixed(2)}',
+                    'Opening: ₹${openingValue.toStringAsFixed(2)}',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   Text(
-                    'Purchases: ₹${purchaseValue.toStringAsFixed(2)}',
+                    'Purchase: ₹${purchaseValue.toStringAsFixed(2)}',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   Text(
-                    'Sales at cost: ₹${salesValue.toStringAsFixed(2)}',
+                    'Sales: ₹${salesValue.toStringAsFixed(2)}',
                     style: const TextStyle(fontWeight: FontWeight.w600),
                   ),
                   Text(
-                    'Closing value: ₹${closingValue.toStringAsFixed(2)}',
+                    'Closing: ₹${closingValue.toStringAsFixed(2)}',
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,

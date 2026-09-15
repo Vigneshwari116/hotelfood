@@ -888,6 +888,15 @@ class Repository {
                         final locationId = _stockLocationId;
 
                         map['current_stock'] = openingStock;
+                        if (map['variant_group'] == null) {
+                              map.remove('variant_group');
+                        }
+                        if (map['variant_label'] == null) {
+                              map.remove('variant_label');
+                        }
+                        if (map['stock_source_id'] == null) {
+                              map.remove('stock_source_id');
+                        }
 
                         final id = await txn.insert(
                               'raw_materials',
@@ -2553,6 +2562,7 @@ class Repository {
         c.name AS category,
         u.short_code AS unit,
         rm.cost_price AS cost_price,
+        rm.selling_price AS selling_price,
         COALESCE(
           (
             SELECT sl.balance_after
@@ -2575,7 +2585,6 @@ class Repository {
       LEFT JOIN units u ON u.id = rm.unit_id
       LEFT JOIN categories c ON c.id = rm.category_id
       LEFT JOIN period_moves pm ON pm.raw_material_id = rm.id
-      WHERE rm.listed = 1
       ORDER BY c.name ASC, rm.name ASC, rm.sub_item ASC
       ''',
                   [
@@ -2601,22 +2610,31 @@ class Repository {
                       openingQty + purchaseQty - salesQty + adjustmentQty;
                   final costPrice =
                       (row['cost_price'] as num?)?.toDouble();
+                  final sellingPrice =
+                      (row['selling_price'] as num?)?.toDouble();
+                  final unitValue = costPrice ?? sellingPrice;
                   final purchaseValue =
                       (row['purchase_value'] as num?)?.toDouble() ?? 0.0;
                   final salesValue =
                       (row['sales_value'] as num?)?.toDouble() ?? 0.0;
+                  final purchaseQtyValue = purchaseQty * (unitValue ?? 0);
+                  final salesQtyValue = salesQty * (unitValue ?? 0);
 
                   return {
                         ...row,
                         'closing_qty': closingQty,
-                        'opening_value': costPrice == null
+                        'opening_value': unitValue == null
                             ? null
-                            : openingQty * costPrice,
-                        'closing_value': costPrice == null
+                            : openingQty * unitValue,
+                        'closing_value': unitValue == null
                             ? null
-                            : closingQty * costPrice,
-                        'purchase_value': purchaseValue,
-                        'sales_value': salesValue,
+                            : closingQty * unitValue,
+                        'purchase_value': purchaseValue > 0
+                            ? purchaseValue
+                            : purchaseQtyValue,
+                        'sales_value': salesValue > 0
+                            ? salesValue
+                            : salesQtyValue,
                   };
             }).toList();
       }

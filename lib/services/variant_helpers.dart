@@ -28,7 +28,7 @@ class VariantHelpers {
   VariantHelpers._();
 
   static final RegExp _sizeVariantPattern = RegExp(
-    r'\b(small|sm|large|lg|mini|big|bucket|buckets|regular|medium|pcs|pieces|popcorn)\b',
+    r'(popcorn\s+(small|large)|masala\s+fries\s+(small|large)|\b(small|large|mini\s+bucket|big\s+bucket|buckets?)\b)',
     caseSensitive: false,
   );
 
@@ -66,6 +66,29 @@ class VariantHelpers {
     return material.salesLabel;
   }
 
+  static String _normalizedFamilyKey(String text) {
+    return text
+        .trim()
+        .toLowerCase()
+        .replaceAll(
+          RegExp(r'\s+(small|sm|large|lg|mini|big|bucket|buckets)\b.*$'),
+          '',
+        )
+        .trim();
+  }
+
+  static String? productFamilyKey(RawMaterial item) {
+    final sub = item.subItem?.trim();
+    if (sub != null && sub.isNotEmpty) {
+      final key = _normalizedFamilyKey(sub);
+      if (key.isNotEmpty) return key;
+    }
+
+    final name = item.name.trim();
+    if (name.isEmpty) return null;
+    return _normalizedFamilyKey(name);
+  }
+
   /// Splits [materials] into standalone tiles and multi-variant groups.
   static ({
     List<RawMaterial> singles,
@@ -86,7 +109,7 @@ class VariantHelpers {
     final groups = <VariantGroup>[];
     for (final entry in byGroup.entries) {
       final variants = List<RawMaterial>.from(entry.value);
-      if (variants.length < 2) {
+      if (variants.length < 2 || !shouldAutoLinkFamily(variants)) {
         singles.addAll(variants);
         continue;
       }
@@ -121,15 +144,25 @@ class VariantHelpers {
     return (singles: singles, groups: groups);
   }
 
-  /// Picks the canonical stock owner when several items share a sub-item name.
-  static RawMaterial? canonicalStockSource(List<RawMaterial> sameSubItem) {
-    if (sameSubItem.isEmpty) return null;
+  /// Picks the canonical stock owner for a size-variant family.
+  static RawMaterial? canonicalStockSource(
+    List<RawMaterial> family, {
+    String? familyKey,
+  }) {
+    if (family.isEmpty) return null;
 
-    final subKey = sameSubItem.first.subItem?.trim().toLowerCase();
-    if (subKey == null || subKey.isEmpty) return null;
+    final key = familyKey ?? productFamilyKey(family.first);
+    if (key == null || key.isEmpty) return null;
 
-    for (final item in sameSubItem) {
-      if (item.name.trim().toLowerCase() == subKey) {
+    for (final item in family) {
+      if (item.name.trim().toLowerCase() == key) {
+        return item;
+      }
+    }
+
+    for (final item in family) {
+      final sub = productFamilyKey(item);
+      if (sub == key && !looksLikeSizeVariant(item)) {
         return item;
       }
     }
@@ -151,8 +184,17 @@ class VariantHelpers {
     final sub = family.first.subItem?.trim().toLowerCase();
     if (sub == null || sub.isEmpty) return false;
 
-    final source = canonicalStockSource(family);
+    final familyKey = productFamilyKey(family.first);
+    if (familyKey == null || familyKey.isEmpty) return false;
+
+    final source = canonicalStockSource(family, familyKey: familyKey);
     if (source == null) return false;
+
+    final sourceSub = productFamilyKey(source);
+    if (sourceSub != familyKey) return false;
+
+    final categoryIds = family.map((item) => item.categoryId).toSet();
+    if (categoryIds.length > 1) return false;
 
     for (final item in family) {
       if (item.id == source.id) continue;
@@ -162,25 +204,43 @@ class VariantHelpers {
     return true;
   }
 
+  static List<RawMaterial> _familyForKey(
+    String familyKey,
+    List<RawMaterial> items,
+  ) {
+    final matches = <RawMaterial>[];
+    for (final item in items) {
+      final key = productFamilyKey(item);
+      if (key == familyKey) {
+        matches.add(item);
+      }
+    }
+    return matches;
+  }
+
   /// Applies or clears variant_group / stock_source_id / variant_label.
   static List<RawMaterial> syncVariantLinks(List<RawMaterial> items) {
-    final bySubItem = <String, List<RawMaterial>>{};
+    final familyKeys = <String>{};
     for (final item in items) {
-      final sub = item.subItem?.trim().toLowerCase();
-      if (sub == null || sub.isEmpty) continue;
-      bySubItem.putIfAbsent(sub, () => []).add(item);
+      final key = productFamilyKey(item);
+      if (key != null && key.isNotEmpty) {
+        familyKeys.add(key);
+      }
     }
 
     final updates = <RawMaterial>[];
     final linkedIds = <int>{};
 
-    for (final family in bySubItem.values) {
+    for (final familyKey in familyKeys) {
+      final family = _familyForKey(familyKey, items);
       if (!shouldAutoLinkFamily(family)) continue;
 
-      final source = canonicalStockSource(family);
+      final source = canonicalStockSource(family, familyKey: familyKey);
       if (source == null || source.id == null) continue;
 
-      final groupName = source.subItem?.trim() ?? source.name.trim();
+      final groupName = source.name.trim().isNotEmpty
+          ? source.name.trim()
+          : (source.subItem?.trim() ?? familyKey);
       if (groupName.isEmpty) continue;
 
       for (final item in family) {
@@ -188,6 +248,10 @@ class VariantHelpers {
         linkedIds.add(item.id!);
 
         final isSource = item.id == source.id;
+        final sizeLabel = item.variantLabel?.trim();
+        final derivedLabel = looksLikeSizeVariant(item) && !isSource
+            ? _sizeLabel(item)
+            : null;
         final next = RawMaterial(
           id: item.id,
           barcode: item.barcode,
@@ -210,8 +274,8 @@ class VariantHelpers {
           menuSortOrder: item.menuSortOrder,
           variantGroup: groupName,
           variantLabel: isSource
-              ? (item.variantLabel ?? 'Regular')
-              : (item.variantLabel ?? item.name),
+              ? (sizeLabel ?? 'Regular')
+              : (sizeLabel ?? derivedLabel ?? item.name),
           stockSourceId: isSource ? null : source.id,
         );
 
@@ -257,6 +321,14 @@ class VariantHelpers {
     }
 
     return updates;
+  }
+
+  static String _sizeLabel(RawMaterial item) {
+    final name = item.name.trim();
+    final match = _sizeVariantPattern.firstMatch(name.toLowerCase());
+    if (match == null) return name;
+    final start = match.start;
+    return name.substring(start).trim();
   }
 
   @Deprecated('Use syncVariantLinks')
