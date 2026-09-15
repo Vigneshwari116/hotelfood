@@ -75,7 +75,10 @@ SNACKS,French Fries,French Fries Small,,80,,,g,0,,50
             cost_price REAL,
             selling_price REAL,
             listed INTEGER NOT NULL DEFAULT 1,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            variant_group TEXT,
+            variant_label TEXT,
+            stock_source_id INTEGER
           )
         ''');
 

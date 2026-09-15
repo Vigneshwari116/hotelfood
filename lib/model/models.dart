@@ -293,15 +293,9 @@ class RawMaterial {
     if (menuSortOrder != null) {
       map['menu_sort_order'] = menuSortOrder;
     }
-    if (variantGroup != null) {
-      map['variant_group'] = variantGroup;
-    }
-    if (variantLabel != null) {
-      map['variant_label'] = variantLabel;
-    }
-    if (stockSourceId != null) {
-      map['stock_source_id'] = stockSourceId;
-    }
+    map['variant_group'] = variantGroup;
+    map['variant_label'] = variantLabel;
+    map['stock_source_id'] = stockSourceId;
 
     return map;
   }
