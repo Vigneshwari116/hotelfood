@@ -49,7 +49,7 @@ class MenuItemEditHelpers {
     int? stockSourceId,
   }) {
     final name = itemName.trim();
-    final subItem = subItemText.trim();
+    final subItem = subItemText.trim().isEmpty ? name : subItemText.trim();
 
     final unitsPerPacket = unitsPerPacketText.trim().isEmpty
         ? null

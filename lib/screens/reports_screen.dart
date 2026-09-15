@@ -18,7 +18,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 7, vsync: this);
+    _tab = TabController(length: 5, vsync: this);
   }
 
   @override
@@ -30,23 +30,19 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
             controller: _tab,
             isScrollable: true,
             tabs: const [
-              Tab(text: 'Stock Report'),
               Tab(text: 'Stock Summary'),
-              Tab(text: 'Item Sales'),
-              Tab(text: 'Sales Report'),
+              Tab(text: 'Bill-wise Sales'),
+              Tab(text: 'Purchase Bills'),
               Tab(text: 'Day End'),
-              Tab(text: 'Purchase Report'),
               Tab(text: 'Top Selling'),
             ],
           ),
           Expanded(
             child: TabBarView(controller: _tab, children: const [
-              _StockReportTab(),
               _StockSummaryTab(),
-              _ItemSalesTab(),
-              _SalesReportTab(),
+              _BillWiseSalesTab(),
+              _PurchaseBillsTab(),
               _DayEndTab(),
-              _PurchaseReportTab(),
               _TopSellingTab(),
             ]),
           ),
@@ -486,6 +482,13 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                     scrollDirection: Axis.horizontal,
                     child: SingleChildScrollView(
                       child: DataTable(
+                        border: TableBorder.all(
+                          color: Colors.grey.shade400,
+                          width: 1,
+                        ),
+                        headingRowColor: WidgetStateProperty.all(
+                          Colors.grey.shade100,
+                        ),
                         columns: const [
                           DataColumn(label: Text('Item')),
                           DataColumn(label: Text('Category')),
@@ -851,6 +854,167 @@ class _SalesReportTabState extends State<_SalesReportTab> {
   }
 }
 
+class _BillWiseSalesTab extends StatefulWidget {
+  const _BillWiseSalesTab();
+  @override
+  State<_BillWiseSalesTab> createState() => _BillWiseSalesTabState();
+}
+
+class _BillWiseSalesTabState extends State<_BillWiseSalesTab> {
+  List<Map<String, dynamic>> _bills = [];
+  Map<String, dynamic>? _selected;
+  List<Map<String, dynamic>> _lines = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBills();
+  }
+
+  Future<void> _loadBills() async {
+    setState(() => _loading = true);
+    final bills = await Repository.instance.salesReport(includeVoided: false);
+    if (!mounted) return;
+    setState(() {
+      _bills = bills;
+      _loading = false;
+      if (_selected != null) {
+        final id = _selected!['id'];
+        _selected = bills.cast<Map<String, dynamic>?>().firstWhere(
+              (bill) => bill?['id'] == id,
+              orElse: () => null,
+            );
+      }
+      if (_selected != null) {
+        _loadLines(_selected!['id'] as int);
+      } else {
+        _lines = [];
+      }
+    });
+  }
+
+  Future<void> _loadLines(int saleId) async {
+    final lines = await Repository.instance.saleItems(saleId);
+    if (!mounted) return;
+    setState(() => _lines = lines);
+  }
+
+  void _selectBill(Map<String, dynamic> bill) {
+    setState(() => _selected = bill);
+    _loadLines(bill['id'] as int);
+  }
+
+  String _formatBillDate(dynamic value) {
+    final text = value?.toString() ?? '';
+    if (text.length >= 10) return text.substring(0, 10);
+    return text;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    return ResponsivePage(
+      maxWidth: 1200,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            flex: 5,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Bills',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: _bills.isEmpty
+                      ? const Center(child: Text('No sales yet'))
+                      : ListView.separated(
+                          itemCount: _bills.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final bill = _bills[index];
+                            final selected =
+                                _selected?['id'] == bill['id'];
+                            return ListTile(
+                              selected: selected,
+                              title: Text('Bill #${bill['id']}'),
+                              subtitle: Text(
+                                _formatBillDate(bill['sale_date']),
+                              ),
+                              trailing: Text(
+                                '₹${(bill['total'] as num).toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              onTap: () => _selectBill(bill),
+                            );
+                          },
+                        ),
+                ),
+              ],
+            ),
+          ),
+          const VerticalDivider(width: 1),
+          Expanded(
+            flex: 6,
+            child: _selected == null
+                ? const Center(
+                    child: Text('Select a bill to see line items'),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Bill #${_selected!['id']} — ${_formatBillDate(_selected!['sale_date'])}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                      Text(
+                        'Total ₹${(_selected!['total'] as num).toStringAsFixed(2)}',
+                      ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: _lines.isEmpty
+                            ? const Center(child: Text('No line items'))
+                            : ListView.separated(
+                                itemCount: _lines.length,
+                                separatorBuilder: (_, __) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final line = _lines[index];
+                                  return ListTile(
+                                    title: Text(
+                                      RawMaterial.staffLabelFor(
+                                        line['item_name']?.toString() ?? '',
+                                        line['sub_item']?.toString(),
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      'Qty ${line['qty']}  •  ₹${line['amount']}',
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _DayEndTab extends StatefulWidget {
   const _DayEndTab();
   @override
@@ -951,13 +1115,13 @@ class _DayEndTabState extends State<_DayEndTab> {
   }
 }
 
-class _PurchaseReportTab extends StatefulWidget {
-  const _PurchaseReportTab();
+class _PurchaseBillsTab extends StatefulWidget {
+  const _PurchaseBillsTab();
   @override
-  State<_PurchaseReportTab> createState() => _PurchaseReportTabState();
+  State<_PurchaseBillsTab> createState() => _PurchaseBillsTabState();
 }
 
-class _PurchaseReportTabState extends State<_PurchaseReportTab> {
+class _PurchaseBillsTabState extends State<_PurchaseBillsTab> {
   List<Map<String, dynamic>> _rows = [];
   @override
   void initState() {

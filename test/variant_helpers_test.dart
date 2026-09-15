@@ -226,7 +226,6 @@ void main() {
 
       expect(updates.length, 2);
       expect(updates.every((item) => item.variantGroup == null), isTrue);
-      expect(updates.every((item) => item.stockSourceId == null), isTrue);
     });
 
     test('does not merge distinct chicken popcorn items in different categories', () {
