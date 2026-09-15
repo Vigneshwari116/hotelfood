@@ -381,9 +381,19 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'Opening + Purchases − Sales = Closing stock value for the selected dates.',
-            style: TextStyle(fontWeight: FontWeight.w600),
+          Text(
+            'All menu items are always listed. Pick dates to see opening, purchases, sales, and closing for that period only.',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Period: ${_formatDate(_from)}'
+            '${_from.year == _to.year && _from.month == _to.month && _from.day == _to.day ? '' : ' → ${_formatDate(_to)}'}'
+            '  •  Opening + Purchases − Sales = Closing',
+            style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
           ),
           const SizedBox(height: 12),
           Wrap(
