@@ -27,6 +27,11 @@ class VariantGroup {
 class VariantHelpers {
   VariantHelpers._();
 
+  static final RegExp _sizeVariantPattern = RegExp(
+    r'\b(small|sm|large|lg|mini|big|bucket|buckets|regular|medium|pcs|pieces|popcorn)\b',
+    caseSensitive: false,
+  );
+
   /// Resolves which raw material row holds the physical stock count.
   static int stockMaterialId(RawMaterial material) {
     return material.stockSourceId ?? material.id!;
@@ -94,7 +99,6 @@ class VariantHelpers {
         return a.salesLabel.toLowerCase().compareTo(b.salesLabel.toLowerCase());
       });
 
-      final byId = {for (final v in variants) if (v.id != null) v.id!: v};
       final stockSource = variants.firstWhere(
         (v) => v.stockSourceId == null,
         orElse: () => variants.first,
@@ -103,7 +107,7 @@ class VariantHelpers {
       groups.add(
         VariantGroup(
           key: entry.key,
-          displayName: entry.key,
+          displayName: stockSource.salesLabel,
           variants: variants,
           stockSource: stockSource,
         ),
@@ -130,17 +134,36 @@ class VariantHelpers {
       }
     }
 
-    final withUnitStock = sameSubItem.where((item) => item.qtyNeeded == 1);
-    if (withUnitStock.isNotEmpty) {
-      return withUnitStock.first;
-    }
-
-    return sameSubItem.first;
+    return null;
   }
 
-  /// Applies variant_group / stock_source_id / variant_label when multiple
-  /// listed items share the same sub-item (e.g. Thai Crispy pieces + buckets).
-  static List<RawMaterial> applyAutoVariantLinking(List<RawMaterial> items) {
+  static bool looksLikeSizeVariant(RawMaterial item) {
+    final text = '${item.variantLabel ?? ''} ${item.name}';
+    return _sizeVariantPattern.hasMatch(text);
+  }
+
+  /// Only link items that share a stock sub-item when one row is the base
+  /// product and the others are clearly size/portion variants (small/large/etc).
+  /// Different burgers sharing the same patty sub-item stay separate.
+  static bool shouldAutoLinkFamily(List<RawMaterial> family) {
+    if (family.length < 2) return false;
+
+    final sub = family.first.subItem?.trim().toLowerCase();
+    if (sub == null || sub.isEmpty) return false;
+
+    final source = canonicalStockSource(family);
+    if (source == null) return false;
+
+    for (final item in family) {
+      if (item.id == source.id) continue;
+      if (!looksLikeSizeVariant(item)) return false;
+    }
+
+    return true;
+  }
+
+  /// Applies or clears variant_group / stock_source_id / variant_label.
+  static List<RawMaterial> syncVariantLinks(List<RawMaterial> items) {
     final bySubItem = <String, List<RawMaterial>>{};
     for (final item in items) {
       final sub = item.subItem?.trim().toLowerCase();
@@ -149,10 +172,10 @@ class VariantHelpers {
     }
 
     final updates = <RawMaterial>[];
+    final linkedIds = <int>{};
 
-    for (final entry in bySubItem.entries) {
-      final family = entry.value;
-      if (family.length < 2) continue;
+    for (final family in bySubItem.values) {
+      if (!shouldAutoLinkFamily(family)) continue;
 
       final source = canonicalStockSource(family);
       if (source == null || source.id == null) continue;
@@ -162,6 +185,7 @@ class VariantHelpers {
 
       for (final item in family) {
         if (item.id == null) continue;
+        linkedIds.add(item.id!);
 
         final isSource = item.id == source.id;
         final next = RawMaterial(
@@ -185,7 +209,9 @@ class VariantHelpers {
           createdAt: item.createdAt,
           menuSortOrder: item.menuSortOrder,
           variantGroup: groupName,
-          variantLabel: item.variantLabel ?? item.name,
+          variantLabel: isSource
+              ? (item.variantLabel ?? 'Regular')
+              : (item.variantLabel ?? item.name),
           stockSourceId: isSource ? null : source.id,
         );
 
@@ -197,6 +223,44 @@ class VariantHelpers {
       }
     }
 
+    for (final item in items) {
+      if (item.id == null) continue;
+      if (item.variantGroup == null && item.stockSourceId == null) continue;
+      if (linkedIds.contains(item.id)) continue;
+
+      updates.add(
+        RawMaterial(
+          id: item.id,
+          barcode: item.barcode,
+          name: item.name,
+          subItem: item.subItem,
+          qtyNeeded: item.qtyNeeded,
+          categoryId: item.categoryId,
+          unitId: item.unitId,
+          openingStock: item.openingStock,
+          currentStock: item.currentStock,
+          reorderLevel: item.reorderLevel,
+          shelfLifeDays: item.shelfLifeDays,
+          unitsPerPacket: item.unitsPerPacket,
+          entryPasswordHash: item.entryPasswordHash,
+          costPrice: item.costPrice,
+          sellingPrice: item.sellingPrice,
+          imagePath: item.imagePath,
+          listed: item.listed,
+          createdAt: item.createdAt,
+          menuSortOrder: item.menuSortOrder,
+          variantGroup: null,
+          variantLabel: null,
+          stockSourceId: null,
+        ),
+      );
+    }
+
     return updates;
+  }
+
+  @Deprecated('Use syncVariantLinks')
+  static List<RawMaterial> applyAutoVariantLinking(List<RawMaterial> items) {
+    return syncVariantLinks(items);
   }
 }

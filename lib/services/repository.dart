@@ -9,6 +9,7 @@ import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/item_import_service.dart';
+import 'package:foodstock/services/variant_helpers.dart';
 
 // ============================================================
 // PIN / PASSWORD
@@ -2454,6 +2455,18 @@ class Repository {
       }
 
       // ============================================================
+      // VARIANT LINK MAINTENANCE
+      // ============================================================
+
+      Future<void> refreshVariantLinks() async {
+            final items = await rawMaterials(includeHidden: true);
+            final updates = VariantHelpers.syncVariantLinks(items);
+            for (final item in updates) {
+                  await saveRawMaterial(item);
+            }
+      }
+
+      // ============================================================
       // STOCK MOVEMENT REPORT (opening / purchase / sales / closing)
       // ============================================================
 
@@ -2506,22 +2519,24 @@ class Repository {
             END
           ), 0) AS purchase_value,
           COALESCE(SUM(
-            CASE WHEN sl.ref_type = 'sale_deduction' THEN sl.qty_out ELSE 0 END
+            CASE
+              WHEN sl.ref_type = 'sale_deduction' THEN sl.qty_out
+              WHEN sl.ref_type = 'sale_reversal' THEN -sl.qty_in
+              ELSE 0
+            END
           ), 0) AS sales_qty,
           COALESCE(SUM(
             CASE
               WHEN sl.ref_type = 'sale_deduction'
               THEN sl.qty_out * COALESCE(sl.unit_cost, 0)
+              WHEN sl.ref_type = 'sale_reversal'
+              THEN -sl.qty_in * COALESCE(sl.unit_cost, 0)
               ELSE 0
             END
           ), 0) AS sales_value,
           COALESCE(SUM(
             CASE
-              WHEN sl.ref_type IN (
-                'adjustment',
-                'expired_wastage',
-                'sale_reversal'
-              )
+              WHEN sl.ref_type IN ('adjustment', 'expired_wastage')
               THEN sl.qty_in - sl.qty_out
               ELSE 0
             END
@@ -2603,22 +2618,6 @@ class Repository {
                         'purchase_value': purchaseValue,
                         'sales_value': salesValue,
                   };
-            }).where((row) {
-                  final openingQty =
-                      (row['opening_qty'] as num?)?.toDouble() ?? 0.0;
-                  final purchaseQty =
-                      (row['purchase_qty'] as num?)?.toDouble() ?? 0.0;
-                  final salesQty =
-                      (row['sales_qty'] as num?)?.toDouble() ?? 0.0;
-                  final adjustmentQty =
-                      (row['adjustment_qty'] as num?)?.toDouble() ?? 0.0;
-                  final closingQty =
-                      (row['closing_qty'] as num?)?.toDouble() ?? 0.0;
-                  return openingQty.abs() > 0.000001 ||
-                      purchaseQty.abs() > 0.000001 ||
-                      salesQty.abs() > 0.000001 ||
-                      adjustmentQty.abs() > 0.000001 ||
-                      closingQty.abs() > 0.000001;
             }).toList();
       }
 
