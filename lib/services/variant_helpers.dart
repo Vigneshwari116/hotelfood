@@ -1,4 +1,5 @@
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/sub_item_stock.dart';
 
 /// A family of sellable menu items that share one stock pool and appear as
 /// a single POS card with a size/portion selector.
@@ -118,22 +119,59 @@ class VariantHelpers {
     List<VariantGroup> groups,
   }) partitionForPos(List<RawMaterial> materials) {
     final linked = withSyncedLinks(materials);
+    final assigned = <int>{};
     final byGroup = <String, List<RawMaterial>>{};
     final singles = <RawMaterial>[];
 
     for (final material in linked) {
+      if (material.id == null) continue;
       final groupKey = material.variantGroup?.trim();
-      if (groupKey == null || groupKey.isEmpty) {
-        singles.add(material);
+      if (groupKey == null || groupKey.isEmpty) continue;
+      byGroup.putIfAbsent(groupKey, () => []).add(material);
+      assigned.add(material.id!);
+    }
+
+    final bySubItem = <String, List<RawMaterial>>{};
+    for (final material in linked) {
+      if (material.id == null || assigned.contains(material.id)) continue;
+      final key = SubItemStock.posGroupKey(material);
+      bySubItem.putIfAbsent(key, () => []).add(material);
+    }
+
+    for (final entry in bySubItem.entries) {
+      final variants = List<RawMaterial>.from(entry.value);
+      final isComponentFamily = variants.any(
+        (item) => SubItemStock.isComponentReference(item, null),
+      );
+      if (isComponentFamily ||
+          !SubItemStock.shouldGroupOnPos(variants)) {
+        for (final variant in variants) {
+          if (variant.id != null) assigned.add(variant.id!);
+        }
+        singles.addAll(variants);
         continue;
       }
-      byGroup.putIfAbsent(groupKey, () => []).add(material);
+      for (final variant in variants) {
+        if (variant.id != null) assigned.add(variant.id!);
+      }
+      byGroup.putIfAbsent(entry.key, () => variants);
+    }
+
+    for (final material in linked) {
+      if (material.id == null || assigned.contains(material.id)) continue;
+      singles.add(material);
     }
 
     final groups = <VariantGroup>[];
     for (final entry in byGroup.entries) {
       final variants = List<RawMaterial>.from(entry.value);
-      if (variants.length < 2 || !shouldAutoLinkFamily(variants)) {
+      final isComponentFamily = variants.any(
+        (item) => SubItemStock.isComponentReference(item, null),
+      );
+      final canGroup = !isComponentFamily &&
+          (SubItemStock.shouldGroupOnPos(variants) ||
+              shouldAutoLinkFamily(variants));
+      if (variants.length < 2 || !canGroup) {
         singles.addAll(variants);
         continue;
       }
@@ -146,10 +184,15 @@ class VariantHelpers {
         return a.salesLabel.toLowerCase().compareTo(b.salesLabel.toLowerCase());
       });
 
-      final stockSource = variants.firstWhere(
-        (v) => v.stockSourceId == null,
-        orElse: () => variants.first,
-      );
+      final stockKey = SubItemStock.stockKey(variants.first) ?? '';
+      final stockSource = SubItemStock.canonicalHolder(
+            variants,
+            stockKey: stockKey,
+          ) ??
+          variants.firstWhere(
+            (v) => v.stockSourceId == null,
+            orElse: () => variants.first,
+          );
 
       groups.add(
         VariantGroup(
@@ -243,21 +286,164 @@ class VariantHelpers {
     return matches;
   }
 
-  /// Applies or clears variant_group / stock_source_id / variant_label.
-  static List<RawMaterial> syncVariantLinks(List<RawMaterial> items) {
-    final familyKeys = <String>{};
+  static Map<int, String> _categoryNameById(List<RawMaterial> items) {
+    return {};
+  }
+
+  static RawMaterial _copyWithLinks(
+    RawMaterial item, {
+    String? variantGroup,
+    String? variantLabel,
+    int? stockSourceId,
+    bool clearVariantGroup = false,
+    bool clearVariantLabel = false,
+    bool clearStockSource = false,
+  }) {
+    return RawMaterial(
+      id: item.id,
+      barcode: item.barcode,
+      name: item.name,
+      subItem: item.subItem,
+      qtyNeeded: item.qtyNeeded,
+      categoryId: item.categoryId,
+      unitId: item.unitId,
+      openingStock: item.openingStock,
+      currentStock: item.currentStock,
+      reorderLevel: item.reorderLevel,
+      shelfLifeDays: item.shelfLifeDays,
+      unitsPerPacket: item.unitsPerPacket,
+      entryPasswordHash: item.entryPasswordHash,
+      costPrice: item.costPrice,
+      sellingPrice: item.sellingPrice,
+      imagePath: item.imagePath,
+      listed: item.listed,
+      createdAt: item.createdAt,
+      menuSortOrder: item.menuSortOrder,
+      variantGroup:
+          clearVariantGroup ? null : (variantGroup ?? item.variantGroup),
+      variantLabel:
+          clearVariantLabel ? null : (variantLabel ?? item.variantLabel),
+      stockSourceId:
+          clearStockSource ? null : (stockSourceId ?? item.stockSourceId),
+    );
+  }
+
+  /// Applies sub_item stock pools, POS variant groups, and stock_source_id.
+  static List<RawMaterial> syncVariantLinks(
+    List<RawMaterial> items, {
+    Map<int, String>? categoryNameById,
+  }) {
+    final categories = categoryNameById ?? _categoryNameById(items);
+
+    final planned = <int, RawMaterial>{};
     for (final item in items) {
-      final key = productFamilyKey(item);
-      if (key != null && key.isNotEmpty) {
-        familyKeys.add(key);
+      if (item.id != null) planned[item.id!] = item;
+    }
+
+    final stockPools = <String, List<RawMaterial>>{};
+    for (final item in items) {
+      final key = SubItemStock.stockKey(item);
+      if (key == null || key.isEmpty) continue;
+      final categoryName = categories[item.categoryId];
+      if (SubItemStock.isComponentReference(item, categoryName)) continue;
+      stockPools.putIfAbsent(key, () => []).add(item);
+    }
+
+    for (final entry in stockPools.entries) {
+      final family = entry.value;
+      if (family.length < 2) continue;
+      final source = SubItemStock.canonicalHolder(
+        family,
+        stockKey: entry.key,
+      );
+      if (source == null || source.id == null) continue;
+
+      for (final item in family) {
+        if (item.id == null) continue;
+        final isSource = item.id == source.id;
+        planned[item.id!] = _copyWithLinks(
+          planned[item.id!] ?? item,
+          stockSourceId: isSource ? null : source.id,
+          clearStockSource: isSource,
+        );
       }
     }
 
-    final updates = <RawMaterial>[];
-    final linkedIds = <int>{};
+    for (final item in items) {
+      final categoryName = categories[item.categoryId];
+      if (!SubItemStock.isComponentReference(item, categoryName)) continue;
+      final sub = item.subItem?.trim().toLowerCase() ?? '';
+      if (sub.isEmpty) continue;
+      final patty = items.where(
+        (candidate) =>
+            candidate.name.trim().toLowerCase() == sub &&
+            candidate.id != item.id,
+      );
+      final holder = patty.isNotEmpty ? patty.first : null;
+      if (holder?.id == null || item.id == null) continue;
+      planned[item.id!] = _copyWithLinks(
+        planned[item.id!] ?? item,
+        stockSourceId: holder!.id,
+      );
+    }
+
+    final posGroups = <String, List<RawMaterial>>{};
+    for (final item in planned.values) {
+      if (!item.listed) continue;
+      final key = SubItemStock.posGroupKey(item);
+      posGroups.putIfAbsent(key, () => []).add(item);
+    }
+
+    for (final entry in posGroups.entries) {
+      final family = entry.value;
+      if (family.any(
+        (item) => SubItemStock.isComponentReference(
+          item,
+          categories[item.categoryId],
+        ),
+      )) {
+        continue;
+      }
+      if (!SubItemStock.shouldGroupOnPos(family)) continue;
+
+      final stockKey = SubItemStock.stockKey(family.first) ?? '';
+      final source = SubItemStock.canonicalHolder(
+        family,
+        stockKey: stockKey,
+      );
+      if (source == null) continue;
+
+      final groupName = source.name.trim().isNotEmpty
+          ? source.name.trim()
+          : (source.subItem?.trim() ?? stockKey);
+      if (groupName.isEmpty) continue;
+
+      for (final item in family) {
+        if (item.id == null) continue;
+        final isSource = item.id == source.id;
+        final sizeLabel = item.variantLabel?.trim();
+        final derivedLabel = looksLikeSizeVariant(item) && !isSource
+            ? _sizeLabel(item)
+            : null;
+        planned[item.id!] = _copyWithLinks(
+          planned[item.id!] ?? item,
+          variantGroup: groupName,
+          variantLabel: isSource
+              ? (sizeLabel ?? 'Regular')
+              : (sizeLabel ?? derivedLabel ?? item.name),
+          stockSourceId: planned[item.id!]?.stockSourceId,
+        );
+      }
+    }
+
+    final familyKeys = <String>{};
+    for (final item in planned.values) {
+      final key = productFamilyKey(item);
+      if (key != null && key.isNotEmpty) familyKeys.add(key);
+    }
 
     for (final familyKey in familyKeys) {
-      final family = _familyForKey(familyKey, items);
+      final family = _familyForKey(familyKey, planned.values.toList());
       if (!shouldAutoLinkFamily(family)) continue;
 
       final source = canonicalStockSource(family, familyKey: familyKey);
@@ -270,79 +456,68 @@ class VariantHelpers {
 
       for (final item in family) {
         if (item.id == null) continue;
-        linkedIds.add(item.id!);
-
         final isSource = item.id == source.id;
         final sizeLabel = item.variantLabel?.trim();
         final derivedLabel = looksLikeSizeVariant(item) && !isSource
             ? _sizeLabel(item)
             : null;
-        final next = RawMaterial(
-          id: item.id,
-          barcode: item.barcode,
-          name: item.name,
-          subItem: item.subItem,
-          qtyNeeded: item.qtyNeeded,
-          categoryId: item.categoryId,
-          unitId: item.unitId,
-          openingStock: item.openingStock,
-          currentStock: item.currentStock,
-          reorderLevel: item.reorderLevel,
-          shelfLifeDays: item.shelfLifeDays,
-          unitsPerPacket: item.unitsPerPacket,
-          entryPasswordHash: item.entryPasswordHash,
-          costPrice: item.costPrice,
-          sellingPrice: item.sellingPrice,
-          imagePath: item.imagePath,
-          listed: item.listed,
-          createdAt: item.createdAt,
-          menuSortOrder: item.menuSortOrder,
+        planned[item.id!] = _copyWithLinks(
+          planned[item.id!] ?? item,
           variantGroup: groupName,
           variantLabel: isSource
               ? (sizeLabel ?? 'Regular')
               : (sizeLabel ?? derivedLabel ?? item.name),
-          stockSourceId: isSource ? null : source.id,
+          stockSourceId: isSource
+              ? null
+              : (planned[item.id!]?.stockSourceId ?? source.id),
+          clearStockSource: isSource,
         );
+      }
+    }
 
-        if (next.variantGroup != item.variantGroup ||
-            next.variantLabel != item.variantLabel ||
-            next.stockSourceId != item.stockSourceId) {
-          updates.add(next);
-        }
+    final groupedIds = <int>{};
+    for (final entry in posGroups.entries) {
+      final family = entry.value;
+      if (family.any(
+        (item) => SubItemStock.isComponentReference(
+          item,
+          categories[item.categoryId],
+        ),
+      )) {
+        continue;
+      }
+      if (!SubItemStock.shouldGroupOnPos(family)) continue;
+      for (final item in family) {
+        if (item.id != null) groupedIds.add(item.id!);
+      }
+    }
+    for (final familyKey in familyKeys) {
+      final family = _familyForKey(familyKey, planned.values.toList());
+      if (!shouldAutoLinkFamily(family)) continue;
+      for (final item in family) {
+        if (item.id != null) groupedIds.add(item.id!);
       }
     }
 
     for (final item in items) {
       if (item.id == null) continue;
-      if (item.variantGroup == null && item.stockSourceId == null) continue;
-      if (linkedIds.contains(item.id)) continue;
-
-      updates.add(
-        RawMaterial(
-          id: item.id,
-          barcode: item.barcode,
-          name: item.name,
-          subItem: item.subItem,
-          qtyNeeded: item.qtyNeeded,
-          categoryId: item.categoryId,
-          unitId: item.unitId,
-          openingStock: item.openingStock,
-          currentStock: item.currentStock,
-          reorderLevel: item.reorderLevel,
-          shelfLifeDays: item.shelfLifeDays,
-          unitsPerPacket: item.unitsPerPacket,
-          entryPasswordHash: item.entryPasswordHash,
-          costPrice: item.costPrice,
-          sellingPrice: item.sellingPrice,
-          imagePath: item.imagePath,
-          listed: item.listed,
-          createdAt: item.createdAt,
-          menuSortOrder: item.menuSortOrder,
-          variantGroup: null,
-          variantLabel: null,
-          stockSourceId: null,
-        ),
+      if (groupedIds.contains(item.id)) continue;
+      planned[item.id!] = _copyWithLinks(
+        planned[item.id!] ?? item,
+        clearVariantGroup: true,
+        clearVariantLabel: true,
       );
+    }
+
+    final updates = <RawMaterial>[];
+    for (final item in items) {
+      if (item.id == null) continue;
+      final next = planned[item.id!] ?? item;
+      if (next.variantGroup != item.variantGroup ||
+          next.variantLabel != item.variantLabel ||
+          next.stockSourceId != item.stockSourceId) {
+        updates.add(next);
+      }
     }
 
     return updates;

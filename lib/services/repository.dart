@@ -2478,7 +2478,15 @@ class Repository {
 
       Future<void> refreshVariantLinks() async {
             final items = await rawMaterials(includeHidden: true);
-            final updates = VariantHelpers.syncVariantLinks(items);
+            final categories = await this.categories(type: 'raw_material');
+            final categoryNameById = {
+                  for (final category in categories)
+                        if (category.id != null) category.id!: category.name,
+            };
+            final updates = VariantHelpers.syncVariantLinks(
+                  items,
+                  categoryNameById: categoryNameById,
+            );
             for (final item in updates) {
                   await saveRawMaterial(
                         item,
@@ -2597,7 +2605,7 @@ class Repository {
       LEFT JOIN units u ON u.id = rm.unit_id
       LEFT JOIN categories c ON c.id = rm.category_id
       LEFT JOIN period_moves pm ON pm.raw_material_id = rm.id
-      ORDER BY c.name ASC, rm.name ASC, rm.sub_item ASC
+      ORDER BY LOWER(rm.name) ASC, LOWER(rm.sub_item) ASC, rm.id ASC
       ''',
                   [
                         startIso,
@@ -3447,6 +3455,12 @@ class Repository {
                                     );
                               }
 
+                              final stockMaterialId =
+                                  await _stockMaterialIdForSale(
+                                    txn,
+                                    rawMaterialId,
+                                  );
+
                               final double requiredQty =
                                   comboQty *
                                       line.qty *
@@ -3456,9 +3470,9 @@ class Repository {
                                       );
 
                               final double existing =
-                                  totalNeeded[rawMaterialId] ?? 0.0;
+                                  totalNeeded[stockMaterialId] ?? 0.0;
 
-                              totalNeeded[rawMaterialId] =
+                              totalNeeded[stockMaterialId] =
                                   existing + requiredQty;
                         }
                   }
@@ -4165,7 +4179,8 @@ class Repository {
         AND si.combo_id IS NOT NULL
       GROUP BY
         si.combo_id,
-        si.item_name
+        si.item_name,
+        si.sub_item
 
       ORDER BY
         sale_kind ASC,

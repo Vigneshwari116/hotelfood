@@ -2041,7 +2041,10 @@ class _RawMaterialEditorDialogState
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: _fieldDecoration('Packets'),
+                  decoration: _fieldDecoration(
+                    'Opening packets',
+                    hint: 'Bags / cartons',
+                  ),
                 ),
               ),
 
@@ -2053,7 +2056,10 @@ class _RawMaterialEditorDialogState
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: _fieldDecoration('Units / packet'),
+                  decoration: _fieldDecoration(
+                    'Units / packet',
+                    hint: 'Pieces or grams per packet',
+                  ),
                 ),
                 TextField(
                   controller: _openingController,
@@ -2062,7 +2068,10 @@ class _RawMaterialEditorDialogState
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
-                  decoration: _fieldDecoration('Stock'),
+                  decoration: _fieldDecoration(
+                    'Opening stock',
+                    hint: 'Auto = packets × units/packet',
+                  ),
                 ),
               ),
 
