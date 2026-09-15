@@ -90,6 +90,50 @@ class VariantHelpers {
     return _normalizedFamilyKey(name);
   }
 
+  /// Returns [materials] with [currentStock] resolved through shared stock pools.
+  static List<RawMaterial> withEffectiveStock(List<RawMaterial> materials) {
+    final linked = withSyncedLinks(materials);
+    final byId = {
+      for (final material in linked)
+        if (material.id != null) material.id!: material,
+    };
+    return linked
+        .map(
+          (material) => _copyWithStock(
+            material,
+            stockCount(material, byId),
+          ),
+        )
+        .toList();
+  }
+
+  static RawMaterial _copyWithStock(RawMaterial item, double currentStock) {
+    return RawMaterial(
+      id: item.id,
+      barcode: item.barcode,
+      name: item.name,
+      subItem: item.subItem,
+      qtyNeeded: item.qtyNeeded,
+      categoryId: item.categoryId,
+      unitId: item.unitId,
+      openingStock: item.openingStock,
+      currentStock: currentStock,
+      reorderLevel: item.reorderLevel,
+      shelfLifeDays: item.shelfLifeDays,
+      unitsPerPacket: item.unitsPerPacket,
+      entryPasswordHash: item.entryPasswordHash,
+      costPrice: item.costPrice,
+      sellingPrice: item.sellingPrice,
+      imagePath: item.imagePath,
+      listed: item.listed,
+      createdAt: item.createdAt,
+      menuSortOrder: item.menuSortOrder,
+      variantGroup: item.variantGroup,
+      variantLabel: item.variantLabel,
+      stockSourceId: item.stockSourceId,
+    );
+  }
+
   /// Returns [materials] with variant_group / stock_source_id applied in memory.
   static List<RawMaterial> withSyncedLinks(List<RawMaterial> materials) {
     final updates = syncVariantLinks(materials);

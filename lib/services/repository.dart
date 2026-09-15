@@ -1272,6 +1272,18 @@ class Repository {
             return rows.map(RawMaterial.fromMap).toList();
       }
 
+      /// Menu/purchase display stock that follows shared [stock_source_id] pools.
+      Future<List<RawMaterial>> rawMaterialsForDisplay({
+            String? search,
+            bool includeHidden = false,
+      }) async {
+            final items = await rawMaterials(
+                  search: search,
+                  includeHidden: includeHidden,
+            );
+            return VariantHelpers.withEffectiveStock(items);
+      }
+
       Future<RawMaterial?> rawMaterialById(
           int id,
           ) async {
@@ -1921,6 +1933,11 @@ class Repository {
                         final expiry =
                         line['expiry_date'] as String?;
 
+                        final stockMaterialId = await _stockMaterialId(
+                              txn,
+                              rawMaterialId,
+                        );
+
                         final purchaseItemId = await txn.insert(
                               'purchase_items',
                               {
@@ -1940,7 +1957,7 @@ class Repository {
                         await txn.insert(
                               'stock_batches',
                               {
-                                    'raw_material_id': rawMaterialId,
+                                    'raw_material_id': stockMaterialId,
                                     'qty_remaining': qty,
                                     'rate': rate,
                                     'expiry_date':
@@ -1972,13 +1989,13 @@ class Repository {
 
                         final double newBalance = await _bumpStock(
                               txn,
-                              rawMaterialId,
+                              stockMaterialId,
                               qty,
                         );
 
                         await _writeLedger(
                               txn: txn,
-                              rawMaterialId: rawMaterialId,
+                              rawMaterialId: stockMaterialId,
                               refType: 'purchase',
                               refId: purchaseId,
                               qtyIn: qty,
@@ -2004,6 +2021,30 @@ class Repository {
         ON s.id = p.supplier_id
       ORDER BY p.purchase_date DESC
       ''',
+            );
+      }
+
+      Future<List<Map<String, dynamic>>> purchaseItems(
+            int purchaseId,
+            ) async {
+            final db = await _db;
+
+            return db.rawQuery(
+                  '''
+      SELECT
+        pi.*,
+        rm.name AS material_name,
+        rm.sub_item AS material_sub_item,
+        u.short_code AS unit
+      FROM purchase_items pi
+      JOIN raw_materials rm
+        ON rm.id = pi.raw_material_id
+      LEFT JOIN units u
+        ON u.id = rm.unit_id
+      WHERE pi.purchase_id = ?
+      ORDER BY pi.id ASC
+      ''',
+                  [purchaseId],
             );
       }
 
@@ -3500,23 +3541,30 @@ class Repository {
             return value <= 0 ? 1 : value;
       }
 
-      Future<int> _stockMaterialIdForSale(
+      Future<int> _stockMaterialId(
             AppDb txn,
-            int soldMaterialId,
+            int materialId,
             ) async {
             final rows = await txn.query(
                   'raw_materials',
                   columns: ['stock_source_id', 'id'],
                   where: 'id = ?',
-                  whereArgs: [soldMaterialId],
+                  whereArgs: [materialId],
                   limit: 1,
             );
 
-            if (rows.isEmpty) return soldMaterialId;
+            if (rows.isEmpty) return materialId;
 
             final sourceId =
                 (rows.first['stock_source_id'] as num?)?.toInt();
-            return sourceId ?? soldMaterialId;
+            return sourceId ?? materialId;
+      }
+
+      Future<int> _stockMaterialIdForSale(
+            AppDb txn,
+            int soldMaterialId,
+            ) async {
+            return _stockMaterialId(txn, soldMaterialId);
       }
 
       // ============================================================

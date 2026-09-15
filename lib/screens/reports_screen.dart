@@ -32,7 +32,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
             tabs: const [
               Tab(text: 'Stock Summary'),
               Tab(text: 'Bill-wise Sales'),
-              Tab(text: 'Purchase Bills'),
+              Tab(text: 'Bill-wise Purchase'),
               Tab(text: 'Day End'),
               Tab(text: 'Top Selling'),
             ],
@@ -928,7 +928,7 @@ class _BillWiseSalesTabState extends State<_BillWiseSalesTab> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 const Text(
-                  'Bills',
+                  'BILL-WISE REPORT',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 const SizedBox(height: 8),
@@ -1122,89 +1122,163 @@ class _PurchaseBillsTab extends StatefulWidget {
 }
 
 class _PurchaseBillsTabState extends State<_PurchaseBillsTab> {
-  List<Map<String, dynamic>> _rows = [];
+  List<Map<String, dynamic>> _bills = [];
+  Map<String, dynamic>? _selected;
+  List<Map<String, dynamic>> _lines = [];
+  bool _loading = true;
+
   @override
   void initState() {
     super.initState();
-    Repository.instance.purchaseReport().then((r) => setState(() => _rows = r));
+    _loadBills();
+  }
+
+  Future<void> _loadBills() async {
+    setState(() => _loading = true);
+    final bills = await Repository.instance.purchases();
+    if (!mounted) return;
+    setState(() {
+      _bills = bills;
+      _loading = false;
+      if (_selected != null) {
+        final id = _selected!['id'];
+        _selected = bills.cast<Map<String, dynamic>?>().firstWhere(
+              (bill) => bill?['id'] == id,
+              orElse: () => null,
+            );
+      }
+      if (_selected != null) {
+        _loadLines(_selected!['id'] as int);
+      } else {
+        _lines = [];
+      }
+    });
+  }
+
+  Future<void> _loadLines(int purchaseId) async {
+    final lines = await Repository.instance.purchaseItems(purchaseId);
+    if (!mounted) return;
+    setState(() => _lines = lines);
+  }
+
+  void _selectBill(Map<String, dynamic> bill) {
+    setState(() => _selected = bill);
+    _loadLines(bill['id'] as int);
+  }
+
+  String _formatBillDate(dynamic value) {
+    final text = value?.toString() ?? '';
+    if (text.length >= 10) return text.substring(0, 10);
+    return text;
   }
 
   @override
   Widget build(BuildContext context) {
-    final totalAmt = _rows.fold<double>(
-      0,
-      (sum, r) => sum + ((r['amount'] as num?)?.toDouble() ?? 0),
-    );
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
     return ResponsivePage(
-      child: Column(
+      maxWidth: 1200,
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'Total purchase: ₹${totalAmt.toStringAsFixed(2)}',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                ),
-              ),
-              FilledButton.icon(
-                onPressed: _rows.isEmpty
-                    ? null
-                    : () async {
-                        await ReportPdf.shareTable(
-                          title: 'Purchase Report',
-                          headers: const [
-                            'Date',
-                            'Supplier',
-                            'Item',
-                            'Qty',
-                            'Rate',
-                            'Amount',
-                          ],
-                          rows: _rows
-                              .map(
-                                (r) => [
-                                  r['purchase_date']?.toString() ?? '',
-                                  r['supplier_name']?.toString() ?? '-',
-                                  RawMaterial.staffLabelFor(
-                                    r['material_name']?.toString() ?? '',
-                                    r['material_sub_item']?.toString(),
-                                  ),
-                                  r['qty']?.toString() ?? '',
-                                  '₹${r['rate']}',
-                                  '₹${r['amount']}',
-                                ],
-                              )
-                              .toList(),
-                          totalLine:
-                              'Total purchase ₹${totalAmt.toStringAsFixed(2)}',
-                        );
-                      },
-                icon: const Icon(Icons.picture_as_pdf, size: 18),
-                label: const Text('Share PDF'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
           Expanded(
-            child: _rows.isEmpty
-                ? const Center(child: Text('No purchases yet'))
-                : ListView.separated(
-                    itemCount: _rows.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (context, i) {
-                      final r = _rows[i];
-                      return ListTile(
-                        title: Text(
-                          '${RawMaterial.staffLabelFor(r['material_name']?.toString() ?? '', r['material_sub_item']?.toString())}  •  qty ${r['qty']} @ ₹${r['rate']}',
+            flex: 5,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'BILL-WISE PURCHASE REPORT',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+                const SizedBox(height: 8),
+                Expanded(
+                  child: _bills.isEmpty
+                      ? const Center(child: Text('No purchases yet'))
+                      : ListView.separated(
+                          itemCount: _bills.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final bill = _bills[index];
+                            final selected = _selected?['id'] == bill['id'];
+                            return ListTile(
+                              selected: selected,
+                              title: Text('Bill #${bill['id']}'),
+                              subtitle: Text(
+                                _formatBillDate(bill['purchase_date']),
+                              ),
+                              trailing: Text(
+                                '₹${(bill['total_amount'] as num).toStringAsFixed(2)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              onTap: () => _selectBill(bill),
+                            );
+                          },
                         ),
-                        subtitle: Text(
-                          '${r['supplier_name'] ?? '-'}  •  ${r['purchase_date']}',
+                ),
+              ],
+            ),
+          ),
+          const VerticalDivider(width: 1),
+          Expanded(
+            flex: 6,
+            child: _selected == null
+                ? const Center(
+                    child: Text('Select a bill to see purchased items'),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'Bill #${_selected!['id']} — ${_formatBillDate(_selected!['purchase_date'])}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
                         ),
-                        trailing: Text('₹${r['amount']}'),
-                      );
-                    },
+                      ),
+                      Text(
+                        'Total ₹${(_selected!['total_amount'] as num).toStringAsFixed(2)}',
+                      ),
+                      if (_selected!['supplier_name'] != null)
+                        Text(
+                          'Supplier: ${_selected!['supplier_name']}',
+                        ),
+                      const SizedBox(height: 12),
+                      Expanded(
+                        child: _lines.isEmpty
+                            ? const Center(child: Text('No line items'))
+                            : ListView.separated(
+                                itemCount: _lines.length,
+                                separatorBuilder: (_, __) =>
+                                    const Divider(height: 1),
+                                itemBuilder: (context, index) {
+                                  final line = _lines[index];
+                                  final qty =
+                                      (line['qty'] as num?)?.toDouble() ?? 0;
+                                  final rate =
+                                      (line['rate'] as num?)?.toDouble() ?? 0;
+                                  final amount =
+                                      (line['amount'] as num?)?.toDouble() ??
+                                          qty * rate;
+                                  return ListTile(
+                                    title: Text(
+                                      RawMaterial.staffLabelFor(
+                                        line['material_name']?.toString() ??
+                                            '',
+                                        line['material_sub_item']?.toString(),
+                                      ),
+                                    ),
+                                    subtitle: Text(
+                                      'Qty $qty  •  Rate ₹${rate.toStringAsFixed(2)}  •  Amount ₹${amount.toStringAsFixed(2)}',
+                                    ),
+                                  );
+                                },
+                              ),
+                      ),
+                    ],
                   ),
           ),
         ],
