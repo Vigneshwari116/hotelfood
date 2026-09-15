@@ -17,7 +17,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 6, vsync: this);
+    _tab = TabController(length: 7, vsync: this);
   }
 
   @override
@@ -30,6 +30,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
             isScrollable: true,
             tabs: const [
               Tab(text: 'Stock Report'),
+              Tab(text: 'Stock Summary'),
               Tab(text: 'Item Sales'),
               Tab(text: 'Sales Report'),
               Tab(text: 'Day End'),
@@ -40,6 +41,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
           Expanded(
             child: TabBarView(controller: _tab, children: const [
               _StockReportTab(),
+              _StockSummaryTab(),
               _ItemSalesTab(),
               _SalesReportTab(),
               _DayEndTab(),
@@ -226,6 +228,321 @@ class _StockReportTabState extends State<_StockReportTab> {
                       style: TextStyle(color: Colors.orange.shade800, fontSize: 12),
                     ),
                   ],
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StockSummaryTab extends StatefulWidget {
+  const _StockSummaryTab();
+  @override
+  State<_StockSummaryTab> createState() => _StockSummaryTabState();
+}
+
+class _StockSummaryTabState extends State<_StockSummaryTab> {
+  DateTime _from = DateTime.now();
+  DateTime _to = DateTime.now();
+  List<Map<String, dynamic>> _rows = [];
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final rows = await Repository.instance.stockMovementReport(
+        from: _from,
+        to: _to,
+      );
+      if (!mounted) return;
+      setState(() {
+        _rows = rows;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _rows = [];
+        _error = '$e';
+        _loading = false;
+      });
+    }
+  }
+
+  void _setRange(DateTime from, DateTime to) {
+    setState(() {
+      _from = from;
+      _to = to;
+    });
+    _load();
+  }
+
+  String _formatDate(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  String _formatQty(num? value) {
+    final number = value?.toDouble() ?? 0;
+    if ((number - number.roundToDouble()).abs() < 0.000001) {
+      return number.round().toString();
+    }
+    return number.toStringAsFixed(2);
+  }
+
+  String _formatMoney(num? value) {
+    if (value == null) return '—';
+    return '₹${value.toDouble().toStringAsFixed(2)}';
+  }
+
+  Future<void> _pickFromDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _from,
+      firstDate: DateTime.now().subtract(const Duration(days: 3650)),
+      lastDate: _to,
+    );
+    if (picked != null) {
+      _setRange(picked, _to.isBefore(picked) ? picked : _to);
+    }
+  }
+
+  Future<void> _pickToDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _to,
+      firstDate: _from,
+      lastDate: DateTime.now(),
+    );
+    if (picked != null) {
+      _setRange(_from.isAfter(picked) ? picked : _from, picked);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_error!, textAlign: TextAlign.center),
+              const SizedBox(height: 12),
+              FilledButton(onPressed: _load, child: const Text('Retry')),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final openingValue = _rows.fold<double>(
+      0,
+      (sum, row) => sum + ((row['opening_value'] as num?)?.toDouble() ?? 0),
+    );
+    final purchaseValue = _rows.fold<double>(
+      0,
+      (sum, row) => sum + ((row['purchase_value'] as num?)?.toDouble() ?? 0),
+    );
+    final salesValue = _rows.fold<double>(
+      0,
+      (sum, row) => sum + ((row['sales_value'] as num?)?.toDouble() ?? 0),
+    );
+    final closingValue = _rows.fold<double>(
+      0,
+      (sum, row) => sum + ((row['closing_value'] as num?)?.toDouble() ?? 0),
+    );
+
+    return ResponsivePage(
+      maxWidth: 1400,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text(
+            'Opening + Purchases − Sales ± Adjustments = Closing stock for the selected dates.',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                icon: const Icon(Icons.calendar_today, size: 16),
+                label: Text('From ${_formatDate(_from)}'),
+                onPressed: _pickFromDate,
+              ),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.calendar_today, size: 16),
+                label: Text('To ${_formatDate(_to)}'),
+                onPressed: _pickToDate,
+              ),
+              TextButton(
+                onPressed: () {
+                  final today = DateTime.now();
+                  _setRange(today, today);
+                },
+                child: const Text('Today'),
+              ),
+              TextButton(
+                onPressed: () {
+                  final today = DateTime.now();
+                  final start = today.subtract(Duration(days: today.weekday - 1));
+                  _setRange(start, today);
+                },
+                child: const Text('This week'),
+              ),
+              TextButton(
+                onPressed: () {
+                  final today = DateTime.now();
+                  _setRange(DateTime(today.year, today.month, 1), today);
+                },
+                child: const Text('This month'),
+              ),
+              FilledButton.icon(
+                onPressed: _rows.isEmpty
+                    ? null
+                    : () async {
+                        await ReportPdf.shareTable(
+                          title: 'Stock Summary',
+                          headers: const [
+                            'Item',
+                            'Category',
+                            'Unit',
+                            'Opening',
+                            'Purchase',
+                            'Sales',
+                            'Adjustment',
+                            'Closing',
+                            'Opening value',
+                            'Closing value',
+                          ],
+                          rows: _rows
+                              .map(
+                                (row) => [
+                                  RawMaterial.staffLabelFor(
+                                    row['item_name']?.toString() ?? '',
+                                    row['sub_item']?.toString(),
+                                  ),
+                                  row['category']?.toString() ?? '-',
+                                  row['unit']?.toString() ?? '-',
+                                  _formatQty(row['opening_qty']),
+                                  _formatQty(row['purchase_qty']),
+                                  _formatQty(row['sales_qty']),
+                                  _formatQty(row['adjustment_qty']),
+                                  _formatQty(row['closing_qty']),
+                                  _formatMoney(row['opening_value']),
+                                  _formatMoney(row['closing_value']),
+                                ],
+                              )
+                              .toList(),
+                          totalLine:
+                              'Opening value ₹${openingValue.toStringAsFixed(2)}  •  Purchase ₹${purchaseValue.toStringAsFixed(2)}  •  Sales (cost) ₹${salesValue.toStringAsFixed(2)}  •  Closing value ₹${closingValue.toStringAsFixed(2)}',
+                        );
+                      },
+                icon: const Icon(Icons.picture_as_pdf, size: 18),
+                label: const Text('Share PDF'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: _rows.isEmpty
+                ? const Center(
+                    child: Text(
+                      'No stock movement in this period.\nTry a wider date range.',
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                : SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: SingleChildScrollView(
+                      child: DataTable(
+                        columns: const [
+                          DataColumn(label: Text('Item')),
+                          DataColumn(label: Text('Category')),
+                          DataColumn(label: Text('Unit')),
+                          DataColumn(label: Text('Opening'), numeric: true),
+                          DataColumn(label: Text('Purchase'), numeric: true),
+                          DataColumn(label: Text('Sales'), numeric: true),
+                          DataColumn(label: Text('Adjust'), numeric: true),
+                          DataColumn(label: Text('Closing'), numeric: true),
+                          DataColumn(label: Text('Opening ₹'), numeric: true),
+                          DataColumn(label: Text('Closing ₹'), numeric: true),
+                        ],
+                        rows: _rows.map((row) {
+                          return DataRow(
+                            cells: [
+                              DataCell(Text(
+                                RawMaterial.staffLabelFor(
+                                  row['item_name']?.toString() ?? '',
+                                  row['sub_item']?.toString(),
+                                ),
+                              )),
+                              DataCell(Text(row['category']?.toString() ?? '-')),
+                              DataCell(Text(row['unit']?.toString() ?? '-')),
+                              DataCell(Text(_formatQty(row['opening_qty']))),
+                              DataCell(Text(_formatQty(row['purchase_qty']))),
+                              DataCell(Text(_formatQty(row['sales_qty']))),
+                              DataCell(Text(_formatQty(row['adjustment_qty']))),
+                              DataCell(Text(
+                                _formatQty(row['closing_qty']),
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              )),
+                              DataCell(Text(_formatMoney(row['opening_value']))),
+                              DataCell(Text(_formatMoney(row['closing_value']))),
+                            ],
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Wrap(
+                spacing: 18,
+                runSpacing: 8,
+                children: [
+                  Text(
+                    'Opening value: ₹${openingValue.toStringAsFixed(2)}',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  Text(
+                    'Purchases: ₹${purchaseValue.toStringAsFixed(2)}',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  Text(
+                    'Sales at cost: ₹${salesValue.toStringAsFixed(2)}',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  Text(
+                    'Closing value: ₹${closingValue.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
                 ],
               ),
             ),
