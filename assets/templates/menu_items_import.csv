@@ -23,7 +23,7 @@ FRIED ITEMS,Peri Peri Chwings,Peri Peri Chwings,FRIED ITEM,1,,,pc,0,,99
 FRIED ITEMS,Thai Crispy,Thai Crispy,FRIED ITEM,1,,10,pc,0,,80
 ROLLS,Tandoori roll,chicken 65,COMBO,1,,4,pc,0,,85
 ROLLS,Panner roll,panner patty,COMBO,1,,14,pc,0,,90
-ROLLS,Chicken Roll,chicken roll,COMBO,1,,,pc,0,,
+ROLLS,Chicken Roll,chicken finger,COMBO,1,,,pc,0,,
 ROLLS,KRISPER Roll,Krisper Roll,COMBO,1,,,pc,0,,
 SAUCES,Paratha Sauce,Paratha Sauce,SAUCE/DRY STOCK,1,,,pc,0,,
 SAUCES,Tandoori Mayonnaise,Tandoori Mayonnaise,SAUCE/DRY STOCK,1,,,pc,0,,
@@ -36,11 +36,11 @@ SNACKS,French Fries,French Fries Small,SNACKS,80,,,g,0,,50
 SNACKS,CHICKEN STRIPS,CHICKEN STRIPS,COMBO,1,,50,pc,0,,85
 SNACKS,Chicken 65,Chicken 65,SNACKS,1,,,pc,0,,85
 SNACKS,Chicken Cheese Shotz,Chicken Cheese Shotz,SNACKS,1,,50,pc,0,,90
-SNACKS,Chicken Fingers,Chicken Fingers,SNACKS,3,,39,pc,0,,60
+SNACKS,Chicken Fingers,chicken finger,SNACKS,3,,39,pc,0,,60
 SNACKS,Chicken Momos,Chicken Momos,SNACKS,4,,40,pc,0,,
 SNACKS,Chicken Nuggets,Chicken Nuggets,SNACKS,4,,60,pc,0,,55
 SNACKS,Pizza Pocket,Pizza Pocket,SNACKS,4,,28,pc,0,,59
-SNACKS,Veg Finger,Veg Finger,SNACKS,3,,33,pc,0,,55
+SNACKS,Veg Finger,veg finger,SNACKS,3,,33,pc,0,,55
 SNACKS,masala fries Large,French Fries Large,SNACKS,120,,,g,0,,99
 STOCK,Burger Bun With Sesame,Bun,STOCK,1,,6,pc,0,,
 STOCK,Paratha,Paratha,STOCK,1,,1,pc,0,,
