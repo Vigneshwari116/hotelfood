@@ -1005,6 +1005,8 @@ class Repository {
                   final existing = existingRows.first;
 
                   if (fromMenuImport) {
+                        // Menu/master re-import updates catalog fields only.
+                        // Never reset transactional stock, batches, or ledger.
                         final updateMap = Map<String, Object?>.from(map)
                               ..remove('created_at')
                               ..remove('opening_stock')
@@ -1026,25 +1028,10 @@ class Repository {
                               );
                               await txn.update(
                                     'location_stock',
-                                    {
-                                          'opening_stock': rm.openingStock,
-                                          'current_stock': rm.openingStock,
-                                          'reorder_level': rm.reorderLevel,
-                                    },
+                                    {'reorder_level': rm.reorderLevel},
                                     where:
                                         'location_id = ? AND raw_material_id = ?',
                                     whereArgs: [locationId, rm.id],
-                              );
-                              await _syncRawMaterialAggregateStock(txn, rm.id!);
-                        } else {
-                              await txn.update(
-                                    'raw_materials',
-                                    {
-                                          'opening_stock': rm.openingStock,
-                                          'current_stock': rm.openingStock,
-                                    },
-                                    where: 'id = ?',
-                                    whereArgs: [rm.id],
                               );
                         }
 
@@ -2048,6 +2035,58 @@ class Repository {
             );
       }
 
+      /// Removes popcorn components from snack-style combos only.
+      Future<int> removePopcornFromSnacksComboComponents() async {
+            final db = await _db;
+
+            try {
+                  final popcornRows = await db.rawQuery(
+                        '''
+      SELECT id
+      FROM raw_materials
+      WHERE LOWER(name) LIKE '%popcorn%'
+      ''',
+                  );
+                  if (popcornRows.isEmpty) return 0;
+
+                  final popcornIds =
+                      popcornRows.map((row) => row['id'] as int).toList();
+                  final placeholders =
+                      popcornIds.map((_) => '?').join(',');
+
+                  final comboRefs = await db.rawQuery(
+                        '''
+      SELECT
+        crm.id AS combo_raw_material_id,
+        c.name AS combo_name
+      FROM combo_raw_materials crm
+      JOIN combos c ON c.id = crm.combo_id
+      WHERE crm.raw_material_id IN ($placeholders)
+      ''',
+                        popcornIds,
+                  );
+
+                  var removed = 0;
+                  for (final ref in comboRefs) {
+                        final comboName =
+                            ref['combo_name']?.toString().trim().toLowerCase() ??
+                                '';
+                        if (!comboName.contains('snack')) continue;
+
+                        await db.delete(
+                              'combo_raw_materials',
+                              where: 'id = ?',
+                              whereArgs: [ref['combo_raw_material_id']],
+                        );
+                        removed++;
+                  }
+
+                  return removed;
+            } catch (_) {
+                  return 0;
+            }
+      }
+
       // ============================================================
       // STOCK ADJUSTMENT
       // ============================================================
@@ -2658,7 +2697,7 @@ class Repository {
                   ],
             );
 
-            return rows.map((row) {
+            final computed = rows.map((row) {
                   final openingQty =
                       (row['opening_qty'] as num?)?.toDouble() ?? 0.0;
                   final purchaseQty =
@@ -2696,6 +2735,61 @@ class Repository {
                         'sales_value': salesValue > 0
                             ? salesValue
                             : salesQtyValue,
+                  };
+            }).toList();
+
+            return _applyPooledStockMovementRows(computed);
+      }
+
+      List<Map<String, dynamic>> _applyPooledStockMovementRows(
+            List<Map<String, dynamic>> rows,
+            ) {
+            if (rows.isEmpty) return rows;
+
+            final materials = rows
+                .map(
+                  (row) => RawMaterial(
+                    id: (row['id'] as num?)?.toInt(),
+                    name: row['item_name']?.toString() ?? '',
+                    subItem: row['sub_item']?.toString(),
+                    stockSourceId: null,
+                  ),
+                )
+                .where((item) => item.id != null)
+                .toList();
+
+            final linked = VariantHelpers.withSyncedLinks(materials);
+            final stockIdByMaterialId = <int, int>{
+                  for (final item in linked)
+                        if (item.id != null)
+                              item.id!: VariantHelpers.stockMaterialId(item),
+            };
+            final rowByMaterialId = <int, Map<String, dynamic>>{
+                  for (final row in rows)
+                        if (row['id'] != null) row['id'] as int: row,
+            };
+
+            return rows.map((row) {
+                  final materialId = row['id'] as int?;
+                  if (materialId == null) return row;
+
+                  final stockId = stockIdByMaterialId[materialId] ?? materialId;
+                  if (stockId == materialId) return row;
+
+                  final holderRow = rowByMaterialId[stockId];
+                  if (holderRow == null) return row;
+
+                  return {
+                        ...row,
+                        'opening_qty': holderRow['opening_qty'],
+                        'purchase_qty': holderRow['purchase_qty'],
+                        'sales_qty': holderRow['sales_qty'],
+                        'adjustment_qty': holderRow['adjustment_qty'],
+                        'closing_qty': holderRow['closing_qty'],
+                        'opening_value': holderRow['opening_value'],
+                        'closing_value': holderRow['closing_value'],
+                        'purchase_value': holderRow['purchase_value'],
+                        'sales_value': holderRow['sales_value'],
                   };
             }).toList();
       }

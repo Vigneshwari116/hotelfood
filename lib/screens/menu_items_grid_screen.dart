@@ -56,7 +56,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
 
     try {
       final results = await Future.wait([
-        Repository.instance.rawMaterials(
+        Repository.instance.rawMaterialsForDisplay(
           search: _searchController.text.trim(),
           includeHidden: true,
         ),

@@ -641,8 +641,18 @@ class ItemImportService {
 
     await _applyVariantAutoLinking();
     await _cleanupDuplicateSnacksPopcorn();
+    await _cleanupPopcornFromSnacksCombos();
 
     return result;
+  }
+
+  /// Removes Chicken Popcorn from snack-style combo definitions only.
+  Future<void> _cleanupPopcornFromSnacksCombos() async {
+    final removed =
+        await Repository.instance.removePopcornFromSnacksComboComponents();
+    if (removed > 0) {
+      // Logged via import result only when callers surface errors; silent cleanup.
+    }
   }
 
   /// Hides stray SNACKS-category popcorn rows when the FRIED ITEMS row exists.

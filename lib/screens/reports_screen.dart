@@ -304,11 +304,6 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
     return '₹${value.toDouble().toStringAsFixed(2)}';
   }
 
-  String _categoryLabel(String? name) {
-    if (name == null || name.trim().isEmpty) return '-';
-    return ItemImportService.canonicalMenuCategory(name) ?? name;
-  }
-
   Future<void> _pickFromDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -437,7 +432,6 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                           title: 'Stock Summary',
                           headers: const [
                             'Item',
-                            'Category',
                             'Unit',
                             'Opening',
                             'Purchase',
@@ -451,7 +445,6 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                                     row['item_name']?.toString() ?? '',
                                     row['sub_item']?.toString(),
                                   ),
-                                  _categoryLabel(row['category']?.toString()),
                                   row['unit']?.toString() ?? '-',
                                   _formatQty(row['opening_qty']),
                                   _formatQty(row['purchase_qty']),
@@ -491,7 +484,6 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                         ),
                         columns: const [
                           DataColumn(label: Text('Item')),
-                          DataColumn(label: Text('Category')),
                           DataColumn(label: Text('Unit')),
                           DataColumn(label: Text('Opening'), numeric: true),
                           DataColumn(label: Text('Purchase'), numeric: true),
@@ -506,9 +498,6 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                                   row['item_name']?.toString() ?? '',
                                   row['sub_item']?.toString(),
                                 ),
-                              )),
-                              DataCell(Text(
-                                _categoryLabel(row['category']?.toString()),
                               )),
                               DataCell(Text(row['unit']?.toString() ?? '-')),
                               DataCell(Text(_formatQty(row['opening_qty']))),
@@ -1272,7 +1261,7 @@ class _PurchaseBillsTabState extends State<_PurchaseBillsTab> {
                                       ),
                                     ),
                                     subtitle: Text(
-                                      'Qty $qty  •  Rate ₹${rate.toStringAsFixed(2)}  •  Amount ₹${amount.toStringAsFixed(2)}',
+                                      'Qty $qty ${line['unit'] ?? ''}  •  Rate ₹${rate.toStringAsFixed(2)}  •  Amount ₹${amount.toStringAsFixed(2)}',
                                     ),
                                   );
                                 },
