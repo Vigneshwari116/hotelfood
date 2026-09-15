@@ -2605,7 +2605,7 @@ class Repository {
       LEFT JOIN units u ON u.id = rm.unit_id
       LEFT JOIN categories c ON c.id = rm.category_id
       LEFT JOIN period_moves pm ON pm.raw_material_id = rm.id
-      ORDER BY c.name ASC, rm.name ASC, rm.sub_item ASC
+      ORDER BY LOWER(rm.name) ASC, LOWER(rm.sub_item) ASC, rm.id ASC
       ''',
                   [
                         startIso,
