@@ -176,7 +176,7 @@ void main() {
       await database.close();
     });
 
-    test('imports all rows including blank-price rolls with shared COMBO label',
+    test('imports all rows including blank-price items from client menu',
         () async {
       await openDb();
 
@@ -193,7 +193,7 @@ void main() {
       expect(
         result.errors,
         isEmpty,
-        reason: 'Shared grouping labels must not hit barcode UNIQUE failures',
+        reason: 'Client menu import must complete without row errors',
       );
 
       final items =
@@ -206,30 +206,16 @@ void main() {
         return null;
       }
 
-      final chickenRoll = findByName('Chicken Roll');
-      final krisperRoll = findByName('KRISPER Roll');
+      final vegRoll = findByName('Veg roll');
+      expect(vegRoll, isNotNull);
+      expect(vegRoll!.sellingPrice, isNull);
+      expect(vegRoll.listed, isTrue);
+      expect(vegRoll.barcode, isNull);
 
-      expect(chickenRoll, isNotNull);
-      expect(chickenRoll!.sellingPrice, isNull);
-      expect(chickenRoll.listed, isTrue);
-      expect(chickenRoll.barcode, isNull);
-
-      expect(krisperRoll, isNotNull);
-      expect(krisperRoll!.sellingPrice, isNull);
-      expect(krisperRoll.listed, isTrue);
-
-      final comboMenuItems = items.where(
-        (item) =>
-            item.name == 'Chicken Roll' ||
-            item.name == 'KRISPER Roll' ||
-            item.name == 'star burger' ||
-            item.name == 'Tandoori roll',
-      );
-      expect(comboMenuItems.length, 4);
-
-      for (final item in comboMenuItems) {
-        expect(item.barcode, isNull);
-      }
+      final pricedRoll = findByName('Chicken roll');
+      expect(pricedRoll, isNotNull);
+      expect(pricedRoll!.sellingPrice, 75);
+      expect(pricedRoll.listed, isTrue);
     });
   });
 }

@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Build location menu Excel files from the canonical client CSV seed."""
+"""Build location menu Excel files from the canonical client CSV seed.
+
+To regenerate from the client PDF instead, run:
+  python3 scripts/pdf_menu_to_excel.py <path-to-menu.pdf>
+"""
 
 import csv
 import shutil
