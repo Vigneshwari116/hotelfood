@@ -4,6 +4,33 @@ import 'package:foodstock/services/variant_helpers.dart';
 
 void main() {
   group('VariantHelpers.partitionForPos', () {
+    test('groups popcorn variants in memory even without stored variant_group', () {
+      final base = RawMaterial(
+        id: 1,
+        name: 'Chicken Popcorn',
+        sellingPrice: 75,
+      );
+      final small = RawMaterial(
+        id: 2,
+        name: 'Chicken Popcorn small',
+        subItem: 'Chicken Popcorn',
+        sellingPrice: 150,
+      );
+      final large = RawMaterial(
+        id: 3,
+        name: 'chicken popcorn large',
+        subItem: 'Chicken Popcorn',
+        sellingPrice: 200,
+      );
+
+      final result = VariantHelpers.partitionForPos([base, small, large]);
+
+      expect(result.singles, isEmpty);
+      expect(result.groups.length, 1);
+      expect(result.groups.first.variants.length, 3);
+      expect(result.groups.first.posTitle, 'Chicken Popcorn');
+    });
+
     test('groups items with the same variant_group', () {
       final pieces = RawMaterial(
         id: 1,
@@ -123,6 +150,31 @@ void main() {
       final piecesUpdate = updates.firstWhere((item) => item.id == 1);
       expect(piecesUpdate.stockSourceId, isNull);
       expect(piecesUpdate.variantGroup, 'Thai Crispy');
+    });
+
+    test('links popcorn when base item has no sub_item', () {
+      final base = RawMaterial(
+        id: 1,
+        name: 'Chicken Popcorn',
+      );
+      final large = RawMaterial(
+        id: 2,
+        name: 'chicken popcorn large',
+        subItem: 'Chicken Popcorn',
+      );
+      final small = RawMaterial(
+        id: 3,
+        name: 'Chicken Popcorn small',
+        subItem: 'Chicken Popcorn',
+      );
+
+      final updates = VariantHelpers.syncVariantLinks([base, large, small]);
+
+      expect(updates.length, 3);
+      expect(
+        updates.where((item) => item.variantGroup == 'Chicken Popcorn').length,
+        3,
+      );
     });
 
     test('links chicken popcorn small/large under the base popcorn item', () {

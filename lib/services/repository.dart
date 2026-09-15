@@ -824,6 +824,7 @@ class Repository {
                 bool fromMenuImport = false,
                 List<String>? menuExportRow,
                 int? menuSortOrder,
+                bool skipVariantRefresh = false,
           }) async {
             final db = await _db;
 
@@ -883,7 +884,7 @@ class Repository {
             // ----------------------------------------------------------
 
             if (rm.id == null) {
-                  return db.transaction((txn) async {
+                  final id = await db.transaction((txn) async {
                         final double openingStock = rm.openingStock;
                         final locationId = _stockLocationId;
 
@@ -975,13 +976,17 @@ class Repository {
                         await _syncRawMaterialAggregateStock(txn, id);
                         return id;
                   });
+                  if (!skipVariantRefresh) {
+                        await refreshVariantLinks();
+                  }
+                  return id;
             }
 
             // ----------------------------------------------------------
             // UPDATE EXISTING MATERIAL
             // ----------------------------------------------------------
 
-            return db.transaction((txn) async {
+            final updatedId = await db.transaction((txn) async {
                   final locationId = _stockLocationId;
 
                   final existingRows = await txn.query(
@@ -1143,6 +1148,10 @@ class Repository {
                   await _syncRawMaterialAggregateStock(txn, rm.id!);
                   return rm.id!;
             });
+            if (!skipVariantRefresh) {
+                  await refreshVariantLinks();
+            }
+            return updatedId;
       }
 
       Future<void> hideRawMaterial(int rawMaterialId) async {
@@ -2471,7 +2480,10 @@ class Repository {
             final items = await rawMaterials(includeHidden: true);
             final updates = VariantHelpers.syncVariantLinks(items);
             for (final item in updates) {
-                  await saveRawMaterial(item);
+                  await saveRawMaterial(
+                        item,
+                        skipVariantRefresh: true,
+                  );
             }
       }
 
