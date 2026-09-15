@@ -30,6 +30,8 @@ class ItemImportService {
     'fried item': 'Fried Items',
     'rolls': 'Rolls',
     'roll': 'Rolls',
+    'others': 'Others',
+    'other': 'Others',
     'beverages': 'Beverages',
     'bevarges': 'Beverages',
     'beverage': 'Beverages',
@@ -646,7 +648,7 @@ class ItemImportService {
     final items = await Repository.instance.rawMaterials(
       includeHidden: true,
     );
-    final updates = VariantHelpers.applyAutoVariantLinking(items);
+    final updates = VariantHelpers.syncVariantLinks(items);
     for (final item in updates) {
       await Repository.instance.saveRawMaterial(item);
     }
@@ -682,14 +684,15 @@ class ItemImportService {
     String name,
     List<Category> categories,
   ) async {
-    final key = name.trim().toLowerCase();
+    final canonical = canonicalMenuCategory(name) ?? name.trim();
+    final key = canonical.toLowerCase();
     for (final category in categories) {
       if (category.name.trim().toLowerCase() == key && category.id != null) {
         return category.id!;
       }
     }
     return Repository.instance.addCategory(
-      Category(name: name.trim(), type: 'raw_material'),
+      Category(name: canonical, type: 'raw_material'),
     );
   }
 

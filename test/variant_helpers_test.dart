@@ -67,7 +67,7 @@ void main() {
     });
   });
 
-  group('VariantHelpers.applyAutoVariantLinking', () {
+  group('VariantHelpers.syncVariantLinks', () {
     test('links bucket variants to the base item by shared sub_item', () {
       final pieces = RawMaterial(
         id: 1,
@@ -85,7 +85,7 @@ void main() {
         subItem: 'Thai Crispy',
       );
 
-      final updates = VariantHelpers.applyAutoVariantLinking([
+      final updates = VariantHelpers.syncVariantLinks([
         pieces,
         mini,
         big,
@@ -102,6 +102,50 @@ void main() {
       expect(piecesUpdate.variantGroup, 'Thai Crispy');
     });
 
+    test('links chicken popcorn small/large under the base popcorn item', () {
+      final base = RawMaterial(
+        id: 1,
+        name: 'Chicken Popcorn',
+        subItem: 'Chicken Popcorn',
+      );
+      final large = RawMaterial(
+        id: 2,
+        name: 'chicken popcorn large',
+        subItem: 'Chicken Popcorn',
+      );
+
+      final updates = VariantHelpers.syncVariantLinks([base, large]);
+
+      expect(updates.length, 2);
+      expect(
+        updates.firstWhere((item) => item.id == 2).stockSourceId,
+        1,
+      );
+    });
+
+    test('does not merge burgers that only share a patty sub_item', () {
+      final hotCrispy = RawMaterial(
+        id: 1,
+        name: 'Hot Crispy burger',
+        subItem: 'Hot Crispy Patty',
+        variantGroup: 'Hot Crispy Patty',
+        stockSourceId: null,
+      );
+      final bigJuicy = RawMaterial(
+        id: 2,
+        name: 'Big juciy burger',
+        subItem: 'Hot Crispy Patty',
+        variantGroup: 'Hot Crispy Patty',
+        stockSourceId: 1,
+      );
+
+      final updates = VariantHelpers.syncVariantLinks([hotCrispy, bigJuicy]);
+
+      expect(updates.length, 2);
+      expect(updates.every((item) => item.variantGroup == null), isTrue);
+      expect(updates.every((item) => item.stockSourceId == null), isTrue);
+    });
+
     test('does not merge distinct chicken popcorn items in different categories', () {
       final fried = RawMaterial(
         id: 1,
@@ -114,7 +158,7 @@ void main() {
         subItem: 'Chicken Popcorn Large',
       );
 
-      final updates = VariantHelpers.applyAutoVariantLinking([
+      final updates = VariantHelpers.syncVariantLinks([
         fried,
         snacks,
       ]);

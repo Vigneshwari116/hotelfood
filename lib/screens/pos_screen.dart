@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/printer_service.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/services/variant_helpers.dart';
@@ -488,7 +489,7 @@ class _PosScreenState extends State<PosScreen> {
       final categoryCombos = comboGroups.remove(category.id) ?? const [];
       if (materials.isEmpty && categoryCombos.isEmpty) continue;
       sections.add((
-        title: category.name,
+        title: _categoryLabel(category.name),
         entries: entriesFor(materials),
         combos: categoryCombos,
       ));
@@ -1357,6 +1358,7 @@ class _PosScreenState extends State<PosScreen> {
           selected: selected.id == id,
           onSelected: (_) {
             setState(() => _selectedVariantIdByGroup[group.key] = id);
+            _addRawMaterial(variant);
           },
         );
       }).toList(),
@@ -1375,6 +1377,7 @@ class _PosScreenState extends State<PosScreen> {
           groupValue: selected.id,
           onChanged: (_) {
             setState(() => _selectedVariantIdByGroup[group.key] = id);
+            _addRawMaterial(variant);
           },
           dense: true,
           visualDensity: VisualDensity.compact,
@@ -2413,8 +2416,20 @@ class _PosScreenState extends State<PosScreen> {
   // MATERIAL GRID
   // ============================================================
 
+  String _categoryLabel(String name) {
+    return ItemImportService.canonicalMenuCategory(name) ?? name;
+  }
+
+  bool _hasOthersCategory() {
+    return _categoriesWithItems.any((category) {
+      final key = category.name.trim().toLowerCase();
+      return key == 'others' || key == 'other';
+    });
+  }
+
   Widget _categoryChips() {
-    final hasOther = _categoryIdsWithItems.contains(null);
+    final hasOther =
+        _categoryIdsWithItems.contains(null) && !_hasOthersCategory();
     if (_categoriesWithItems.isEmpty && !hasOther) {
       return const SizedBox.shrink();
     }
@@ -2447,13 +2462,13 @@ class _PosScreenState extends State<PosScreen> {
           ),
           for (final category in _categoriesWithItems)
             chip(
-              label: category.name,
+              label: _categoryLabel(category.name),
               selected: _categoryId == category.id,
               onTap: () => setState(() => _categoryId = category.id),
             ),
           if (hasOther)
             chip(
-              label: 'Other',
+              label: 'Others',
               selected: _categoryId == _uncategorizedFilter,
               onTap: () => setState(() => _categoryId = _uncategorizedFilter),
             ),

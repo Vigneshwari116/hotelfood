@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:foodstock/model/models.dart';
+import '../services/item_import_service.dart';
 import '../services/report_pdf.dart';
 import '../services/repository.dart';
 import '../widgets/responsive_shell.dart';
@@ -307,6 +308,11 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
     return '₹${value.toDouble().toStringAsFixed(2)}';
   }
 
+  String _categoryLabel(String? name) {
+    if (name == null || name.trim().isEmpty) return '-';
+    return ItemImportService.canonicalMenuCategory(name) ?? name;
+  }
+
   Future<void> _pickFromDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -375,9 +381,19 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
-            'Opening + Purchases − Sales ± Adjustments = Closing stock for the selected dates.',
-            style: TextStyle(fontWeight: FontWeight.w600),
+          Text(
+            'All menu items are always listed. Pick dates to see opening, purchases, sales, and closing for that period only.',
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Period: ${_formatDate(_from)}'
+            '${_from.year == _to.year && _from.month == _to.month && _from.day == _to.day ? '' : ' → ${_formatDate(_to)}'}'
+            '  •  Opening + Purchases − Sales = Closing',
+            style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
           ),
           const SizedBox(height: 12),
           Wrap(
@@ -427,12 +443,11 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                             'Item',
                             'Category',
                             'Unit',
-                            'Opening',
-                            'Purchase',
-                            'Sales',
-                            'Adjustment',
-                            'Closing',
+                            'Opening qty',
                             'Opening value',
+                            'Purchase value',
+                            'Sales value',
+                            'Closing qty',
                             'Closing value',
                           ],
                           rows: _rows
@@ -442,14 +457,13 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                                     row['item_name']?.toString() ?? '',
                                     row['sub_item']?.toString(),
                                   ),
-                                  row['category']?.toString() ?? '-',
+                                  _categoryLabel(row['category']?.toString()),
                                   row['unit']?.toString() ?? '-',
                                   _formatQty(row['opening_qty']),
-                                  _formatQty(row['purchase_qty']),
-                                  _formatQty(row['sales_qty']),
-                                  _formatQty(row['adjustment_qty']),
-                                  _formatQty(row['closing_qty']),
                                   _formatMoney(row['opening_value']),
+                                  _formatMoney(row['purchase_value']),
+                                  _formatMoney(row['sales_value']),
+                                  _formatQty(row['closing_qty']),
                                   _formatMoney(row['closing_value']),
                                 ],
                               )
@@ -468,7 +482,7 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
             child: _rows.isEmpty
                 ? const Center(
                     child: Text(
-                      'No stock movement in this period.\nTry a wider date range.',
+                      'No menu items found for this location.',
                       textAlign: TextAlign.center,
                     ),
                   )
@@ -481,11 +495,10 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                           DataColumn(label: Text('Category')),
                           DataColumn(label: Text('Unit')),
                           DataColumn(label: Text('Opening'), numeric: true),
-                          DataColumn(label: Text('Purchase'), numeric: true),
-                          DataColumn(label: Text('Sales'), numeric: true),
-                          DataColumn(label: Text('Adjust'), numeric: true),
-                          DataColumn(label: Text('Closing'), numeric: true),
                           DataColumn(label: Text('Opening ₹'), numeric: true),
+                          DataColumn(label: Text('Purchase ₹'), numeric: true),
+                          DataColumn(label: Text('Sales ₹'), numeric: true),
+                          DataColumn(label: Text('Closing'), numeric: true),
                           DataColumn(label: Text('Closing ₹'), numeric: true),
                         ],
                         rows: _rows.map((row) {
@@ -497,18 +510,22 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                                   row['sub_item']?.toString(),
                                 ),
                               )),
-                              DataCell(Text(row['category']?.toString() ?? '-')),
+                              DataCell(Text(
+                                _categoryLabel(row['category']?.toString()),
+                              )),
                               DataCell(Text(row['unit']?.toString() ?? '-')),
                               DataCell(Text(_formatQty(row['opening_qty']))),
-                              DataCell(Text(_formatQty(row['purchase_qty']))),
-                              DataCell(Text(_formatQty(row['sales_qty']))),
-                              DataCell(Text(_formatQty(row['adjustment_qty']))),
+                              DataCell(Text(_formatMoney(row['opening_value']))),
+                              DataCell(Text(_formatMoney(row['purchase_value']))),
+                              DataCell(Text(_formatMoney(row['sales_value']))),
                               DataCell(Text(
                                 _formatQty(row['closing_qty']),
                                 style: const TextStyle(fontWeight: FontWeight.w600),
                               )),
-                              DataCell(Text(_formatMoney(row['opening_value']))),
-                              DataCell(Text(_formatMoney(row['closing_value']))),
+                              DataCell(Text(
+                                _formatMoney(row['closing_value']),
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              )),
                             ],
                           );
                         }).toList(),

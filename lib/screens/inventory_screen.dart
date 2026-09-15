@@ -15,7 +15,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 4, vsync: this);
+    _tab = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -29,7 +29,6 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
             tabs: const [
               Tab(text: 'Current Stock'),
               Tab(text: 'Stock Ledger'),
-              Tab(text: 'Stock Adjustment'),
               Tab(text: 'Expiry / Shelf Life'),
             ],
           ),
@@ -39,7 +38,6 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
               children: const [
                 _CurrentStockTab(),
                 _StockLedgerTab(),
-                _StockAdjustmentTab(),
                 _ExpiryTab(),
               ],
             ),
@@ -245,94 +243,6 @@ class _StockLedgerTabState extends State<_StockLedgerTab> {
               },
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _StockAdjustmentTab extends StatefulWidget {
-  const _StockAdjustmentTab();
-  @override
-  State<_StockAdjustmentTab> createState() => _StockAdjustmentTabState();
-}
-
-class _StockAdjustmentTabState extends State<_StockAdjustmentTab> {
-  List<RawMaterial> _materials = [];
-  RawMaterial? _selected;
-  final _qtyCtrl = TextEditingController();
-  final _reasonCtrl = TextEditingController();
-  String _direction = 'reduce'; // add | reduce (damage/loss/correction)
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    final m = await Repository.instance.rawMaterials();
-    setState(() {
-      _materials = m;
-      _selected ??= m.isNotEmpty ? m.first : null;
-    });
-  }
-
-  Future<void> _submit() async {
-    if (_selected == null) return;
-    final qty = double.tryParse(_qtyCtrl.text) ?? 0;
-    if (qty <= 0) return;
-    final delta = _direction == 'add' ? qty : -qty;
-    await Repository.instance.adjustStock(_selected!.id!, delta,
-        _reasonCtrl.text.trim().isEmpty ? _direction : _reasonCtrl.text.trim());
-    _qtyCtrl.clear();
-    _reasonCtrl.clear();
-    _load();
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Stock adjusted')));
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isMobile = MediaQuery.of(context).size.width < Breakpoints.mobile;
-    return ResponsivePage(
-      maxWidth: 600,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text('Adjust for damage, loss, wastage, or manual correction.',
-              style: TextStyle(fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          DropdownButtonFormField<RawMaterial>(
-            value: _selected,
-            decoration: const InputDecoration(labelText: 'Item', border: OutlineInputBorder()),
-            items: _materials.map((m) => DropdownMenuItem(value: m, child: Text(m.staffLabel))).toList(),
-            onChanged: (v) => setState(() => _selected = v),
-          ),
-          const SizedBox(height: 12),
-          SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'add', label: Text('Add'), icon: Icon(Icons.add)),
-              ButtonSegment(value: 'reduce', label: Text('Reduce'), icon: Icon(Icons.remove)),
-            ],
-            selected: {_direction},
-            onSelectionChanged: (s) => setState(() => _direction = s.first),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _qtyCtrl,
-            keyboardType: TextInputType.number,
-            decoration: const InputDecoration(labelText: 'Quantity', border: OutlineInputBorder()),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _reasonCtrl,
-            decoration: const InputDecoration(
-                labelText: 'Reason (damage / loss / correction)', border: OutlineInputBorder()),
-          ),
-          const SizedBox(height: 16),
-          FilledButton(onPressed: _submit, child: const Text('Apply Adjustment')),
         ],
       ),
     );
