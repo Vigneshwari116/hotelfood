@@ -501,6 +501,7 @@ class _RawMaterialMasterScreenState
       builder: (_) {
         return ComboEditorDialog(
           existing: existing,
+          categories: _categories,
           rawMaterials: allItems,
           unitName: _unitName,
           onPickImage: () {
@@ -2172,6 +2173,7 @@ class _RawMaterialEditorDialogState
 class ComboEditorDialog
     extends StatefulWidget {
   final Combo? existing;
+  final List<Category> categories;
   final List<RawMaterial> rawMaterials;
   final String Function(int?) unitName;
   final Future<String?> Function()
@@ -2180,6 +2182,7 @@ class ComboEditorDialog
   const ComboEditorDialog({
     super.key,
     this.existing,
+    required this.categories,
     required this.rawMaterials,
     required this.unitName,
     required this.onPickImage,
@@ -2204,6 +2207,8 @@ class _ComboEditorDialogState
   final List<_ComboLine>
   _lines = [];
 
+  int? _categoryId;
+
   bool _saving = false;
 
   @override
@@ -2223,6 +2228,8 @@ class _ComboEditorDialogState
       _imagePath =
           combo.imagePath;
 
+      _categoryId = combo.categoryId;
+
       for (final item
       in combo.items) {
         _lines.add(
@@ -2233,6 +2240,8 @@ class _ComboEditorDialogState
           ),
         );
       }
+    } else if (widget.categories.isNotEmpty) {
+      _categoryId = widget.categories.first.id;
     }
   }
 
@@ -2347,6 +2356,15 @@ class _ComboEditorDialogState
       return;
     }
 
+    if (_categoryId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select a category.'),
+        ),
+      );
+      return;
+    }
+
     final price =
         double.tryParse(
           _priceController.text
@@ -2402,7 +2420,7 @@ class _ComboEditorDialogState
         id: widget.existing?.id,
         name: name,
         barcode: widget.existing?.barcode,
-        categoryId: widget.existing?.categoryId,
+        categoryId: _categoryId,
         price: price,
         imagePath: _imagePath,
         isActive: widget.existing?.isActive ?? true,
@@ -2538,6 +2556,36 @@ class _ComboEditorDialogState
 
               const SizedBox(
                 height: 20,
+              ),
+
+              DropdownButtonFormField<int>(
+                value: _categoryId,
+                isExpanded: true,
+                isDense: true,
+                decoration: const InputDecoration(
+                  labelText: 'Category',
+                  border: OutlineInputBorder(),
+                  prefixIcon: Icon(Icons.category_outlined),
+                ),
+                items: widget.categories
+                    .where((category) => category.id != null)
+                    .map(
+                      (category) => DropdownMenuItem<int>(
+                        value: category.id,
+                        child: Text(
+                          category.name,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  setState(() => _categoryId = value);
+                },
+              ),
+
+              const SizedBox(
+                height: 12,
               ),
 
               // ==================================================
