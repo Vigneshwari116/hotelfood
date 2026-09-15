@@ -2454,6 +2454,175 @@ class Repository {
       }
 
       // ============================================================
+      // STOCK MOVEMENT REPORT (opening / purchase / sales / closing)
+      // ============================================================
+
+      Future<List<Map<String, dynamic>>> stockMovementReport({
+            required DateTime from,
+            required DateTime to,
+      }) async {
+            final db = await _db;
+            final locationId = _stockLocationId;
+
+            final periodStart = DateTime(from.year, from.month, from.day);
+            final periodEndExclusive = DateTime(
+                  to.year,
+                  to.month,
+                  to.day,
+            ).add(const Duration(days: 1));
+
+            final startIso = periodStart.toIso8601String();
+            final endIso = periodEndExclusive.toIso8601String();
+
+            final ledgerLocationFilter = locationId == null
+                ? ''
+                : ' AND sl.location_id = ?';
+            final ledgerLocationArgs =
+                locationId == null ? <Object>[] : <Object>[locationId];
+
+            final locationJoin = locationId == null
+                ? ''
+                : '''
+      LEFT JOIN location_stock ls
+        ON ls.raw_material_id = rm.id
+        AND ls.location_id = ?
+      ''';
+            final locationJoinArgs =
+                locationId == null ? <Object>[] : <Object>[locationId];
+
+            final rows = await db.rawQuery(
+                  '''
+      WITH period_moves AS (
+        SELECT
+          sl.raw_material_id AS raw_material_id,
+          COALESCE(SUM(
+            CASE WHEN sl.ref_type = 'purchase' THEN sl.qty_in ELSE 0 END
+          ), 0) AS purchase_qty,
+          COALESCE(SUM(
+            CASE
+              WHEN sl.ref_type = 'purchase'
+              THEN sl.qty_in * COALESCE(sl.unit_cost, 0)
+              ELSE 0
+            END
+          ), 0) AS purchase_value,
+          COALESCE(SUM(
+            CASE WHEN sl.ref_type = 'sale_deduction' THEN sl.qty_out ELSE 0 END
+          ), 0) AS sales_qty,
+          COALESCE(SUM(
+            CASE
+              WHEN sl.ref_type = 'sale_deduction'
+              THEN sl.qty_out * COALESCE(sl.unit_cost, 0)
+              ELSE 0
+            END
+          ), 0) AS sales_value,
+          COALESCE(SUM(
+            CASE
+              WHEN sl.ref_type IN (
+                'adjustment',
+                'expired_wastage',
+                'sale_reversal'
+              )
+              THEN sl.qty_in - sl.qty_out
+              ELSE 0
+            END
+          ), 0) AS adjustment_qty
+        FROM stock_ledger sl
+        WHERE sl.entry_date >= ?
+          AND sl.entry_date < ?$ledgerLocationFilter
+        GROUP BY sl.raw_material_id
+      )
+      SELECT
+        rm.id AS id,
+        rm.name AS item_name,
+        rm.sub_item AS sub_item,
+        c.name AS category,
+        u.short_code AS unit,
+        rm.cost_price AS cost_price,
+        COALESCE(
+          (
+            SELECT sl.balance_after
+            FROM stock_ledger sl
+            WHERE sl.raw_material_id = rm.id
+              AND sl.entry_date < ?$ledgerLocationFilter
+            ORDER BY sl.entry_date DESC, sl.id DESC
+            LIMIT 1
+          ),
+          ${locationId == null ? 'rm.opening_stock' : 'COALESCE(ls.opening_stock, rm.opening_stock)'},
+          0
+        ) AS opening_qty,
+        COALESCE(pm.purchase_qty, 0) AS purchase_qty,
+        COALESCE(pm.purchase_value, 0) AS purchase_value,
+        COALESCE(pm.sales_qty, 0) AS sales_qty,
+        COALESCE(pm.sales_value, 0) AS sales_value,
+        COALESCE(pm.adjustment_qty, 0) AS adjustment_qty
+      FROM raw_materials rm
+      $locationJoin
+      LEFT JOIN units u ON u.id = rm.unit_id
+      LEFT JOIN categories c ON c.id = rm.category_id
+      LEFT JOIN period_moves pm ON pm.raw_material_id = rm.id
+      WHERE rm.listed = 1
+      ORDER BY c.name ASC, rm.name ASC, rm.sub_item ASC
+      ''',
+                  [
+                        startIso,
+                        endIso,
+                        ...ledgerLocationArgs,
+                        startIso,
+                        ...ledgerLocationArgs,
+                        ...locationJoinArgs,
+                  ],
+            );
+
+            return rows.map((row) {
+                  final openingQty =
+                      (row['opening_qty'] as num?)?.toDouble() ?? 0.0;
+                  final purchaseQty =
+                      (row['purchase_qty'] as num?)?.toDouble() ?? 0.0;
+                  final salesQty =
+                      (row['sales_qty'] as num?)?.toDouble() ?? 0.0;
+                  final adjustmentQty =
+                      (row['adjustment_qty'] as num?)?.toDouble() ?? 0.0;
+                  final closingQty =
+                      openingQty + purchaseQty - salesQty + adjustmentQty;
+                  final costPrice =
+                      (row['cost_price'] as num?)?.toDouble();
+                  final purchaseValue =
+                      (row['purchase_value'] as num?)?.toDouble() ?? 0.0;
+                  final salesValue =
+                      (row['sales_value'] as num?)?.toDouble() ?? 0.0;
+
+                  return {
+                        ...row,
+                        'closing_qty': closingQty,
+                        'opening_value': costPrice == null
+                            ? null
+                            : openingQty * costPrice,
+                        'closing_value': costPrice == null
+                            ? null
+                            : closingQty * costPrice,
+                        'purchase_value': purchaseValue,
+                        'sales_value': salesValue,
+                  };
+            }).where((row) {
+                  final openingQty =
+                      (row['opening_qty'] as num?)?.toDouble() ?? 0.0;
+                  final purchaseQty =
+                      (row['purchase_qty'] as num?)?.toDouble() ?? 0.0;
+                  final salesQty =
+                      (row['sales_qty'] as num?)?.toDouble() ?? 0.0;
+                  final adjustmentQty =
+                      (row['adjustment_qty'] as num?)?.toDouble() ?? 0.0;
+                  final closingQty =
+                      (row['closing_qty'] as num?)?.toDouble() ?? 0.0;
+                  return openingQty.abs() > 0.000001 ||
+                      purchaseQty.abs() > 0.000001 ||
+                      salesQty.abs() > 0.000001 ||
+                      adjustmentQty.abs() > 0.000001 ||
+                      closingQty.abs() > 0.000001;
+            }).toList();
+      }
+
+      // ============================================================
       // EXPIRY
       // ============================================================
 
