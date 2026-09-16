@@ -115,12 +115,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
   }
 
   String _canonicalCategoryDisplayName(String name) {
-    final canonical = ItemImportService.canonicalMenuCategory(name) ?? name;
-    final lower = canonical.trim().toLowerCase();
-    if (lower == 'others' || lower == 'other' || lower == 'uncategorized') {
-      return 'Uncategorized';
-    }
-    return canonical;
+    return ItemImportService.displayCategoryName(name);
   }
 
   int _categorySortIndex(String name) {
@@ -134,6 +129,13 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
   Map<String, List<_MenuGridRow>> get _groupedRows {
     final grouped = <String, List<_MenuGridRow>>{};
     for (final row in _rows) {
+      if (ComboOnlyCategories.shouldHideStandaloneMenuItem(
+        row.item,
+        categoryNameFor: _rawCategoryName,
+        comboOnlyCategoryIds: _comboOnlyCategoryIds,
+      )) {
+        continue;
+      }
       final category = _categoryName(row.item.categoryId);
       grouped.putIfAbsent(category, () => []).add(row);
     }
@@ -176,6 +178,14 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
       if (_canonicalCategoryDisplayName(category.name) == name) {
         return category.id;
       }
+    }
+    return null;
+  }
+
+  String? _rawCategoryName(int? id) {
+    if (id == null) return null;
+    for (final category in _categories) {
+      if (category.id == id) return category.name;
     }
     return null;
   }

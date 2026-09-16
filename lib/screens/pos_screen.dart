@@ -2639,12 +2639,7 @@ class _PosScreenState extends State<PosScreen> {
   // ============================================================
 
   String _categoryLabel(String name) {
-    final canonical = ItemImportService.canonicalMenuCategory(name) ?? name;
-    final lower = canonical.trim().toLowerCase();
-    if (lower == 'others' || lower == 'other' || lower == 'uncategorized') {
-      return 'Uncategorized';
-    }
-    return canonical;
+    return ItemImportService.displayCategoryName(name);
   }
 
   bool _hasOthersCategory() {

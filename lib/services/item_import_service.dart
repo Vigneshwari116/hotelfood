@@ -148,6 +148,22 @@ class ItemImportService {
         trimmed;
   }
 
+  /// Single label for Menu Items / grid grouping (Others → Uncategorized).
+  static String displayCategoryName(String? name) {
+    final canonical = canonicalMenuCategory(name) ?? name?.trim() ?? '';
+    if (canonical.isEmpty) return 'Uncategorized';
+    final lower = canonical.toLowerCase();
+    if (lower == 'others' || lower == 'other' || lower == 'uncategorized') {
+      return 'Uncategorized';
+    }
+    return canonical;
+  }
+
+  static bool isUncategorizedCategoryName(String? name) {
+    final lower = displayCategoryName(name).toLowerCase();
+    return lower == 'uncategorized';
+  }
+
   static String? normalizeBarcode(String? value) {
     final trimmed = value?.trim() ?? '';
     if (trimmed.isEmpty) return null;
@@ -796,9 +812,16 @@ class ItemImportService {
     List<Category> categories,
   ) async {
     final canonical = canonicalMenuCategory(name) ?? name.trim();
-    final key = canonical.toLowerCase();
+    final matchNames = <String>{
+      canonical.toLowerCase(),
+      name.trim().toLowerCase(),
+    };
+    if (canonical.toLowerCase() == 'uncategorized') {
+      matchNames.addAll(['others', 'other', 'uncategorized']);
+    }
     for (final category in categories) {
-      if (category.name.trim().toLowerCase() == key && category.id != null) {
+      if (category.id == null) continue;
+      if (matchNames.contains(category.name.trim().toLowerCase())) {
         return category.id!;
       }
     }

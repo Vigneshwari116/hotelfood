@@ -10,6 +10,24 @@ void main() {
       expect(ComboOnlyCategories.isComboSaleOnlyCategoryName('Snacks'), isFalse);
     });
 
+    test('hides Burgers and Rolls standalone menu items by category name', () {
+      final burger = RawMaterial(
+        id: 10,
+        name: 'Hot Crispy burger',
+        categoryId: 1,
+        listed: true,
+      );
+
+      expect(
+        ComboOnlyCategories.shouldHideStandaloneMenuItem(
+          burger,
+          categoryNameFor: (_) => 'Burgers',
+          comboOnlyCategoryIds: const {},
+        ),
+        isTrue,
+      );
+    });
+
     test('POS hides standalone materials in Rolls but keeps combo chips', () {
       final materials = [
         RawMaterial(id: 1, name: 'Krisper roll', categoryId: 3, listed: true),
