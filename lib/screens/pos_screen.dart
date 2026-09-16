@@ -560,7 +560,7 @@ class _PosScreenState extends State<PosScreen> {
 
     if (_categoryId != null) {
       final title = _categoryId == _uncategorizedFilter
-          ? 'Other'
+          ? 'Uncategorized'
           : _categoryName(_categoryId!) ?? 'Category';
       return [
         (
@@ -598,7 +598,7 @@ class _PosScreenState extends State<PosScreen> {
     final uncategorizedCombos = comboGroups.remove(null) ?? const [];
     if (uncategorizedMaterials.isNotEmpty || uncategorizedCombos.isNotEmpty) {
       sections.add((
-        title: 'Other',
+        title: 'Uncategorized',
         entries: entriesFor(uncategorizedMaterials),
         combos: sortedCombos(uncategorizedCombos),
       ));
@@ -609,7 +609,7 @@ class _PosScreenState extends State<PosScreen> {
       final categoryCombos = comboGroups.remove(entry.key) ?? const [];
       if (materials.isEmpty && categoryCombos.isEmpty) continue;
       sections.add((
-        title: _categoryName(entry.key) ?? 'Other',
+        title: _categoryLabel(_categoryName(entry.key) ?? 'Uncategorized'),
         entries: entriesFor(materials),
         combos: sortedCombos(categoryCombos),
       ));
@@ -618,7 +618,7 @@ class _PosScreenState extends State<PosScreen> {
     for (final entry in comboGroups.entries) {
       if (entry.value.isEmpty) continue;
       sections.add((
-        title: _categoryName(entry.key) ?? 'Other',
+        title: _categoryLabel(_categoryName(entry.key) ?? 'Uncategorized'),
         entries: const [],
         combos: sortedCombos(entry.value),
       ));
@@ -2639,7 +2639,12 @@ class _PosScreenState extends State<PosScreen> {
   // ============================================================
 
   String _categoryLabel(String name) {
-    return ItemImportService.canonicalMenuCategory(name) ?? name;
+    final canonical = ItemImportService.canonicalMenuCategory(name) ?? name;
+    final lower = canonical.trim().toLowerCase();
+    if (lower == 'others' || lower == 'other' || lower == 'uncategorized') {
+      return 'Uncategorized';
+    }
+    return canonical;
   }
 
   bool _hasOthersCategory() {
@@ -2690,7 +2695,7 @@ class _PosScreenState extends State<PosScreen> {
             ),
           if (hasOther)
             chip(
-              label: 'Others',
+              label: 'Uncategorized',
               selected: _categoryId == _uncategorizedFilter,
               onTap: () => setState(() => _categoryId = _uncategorizedFilter),
             ),
