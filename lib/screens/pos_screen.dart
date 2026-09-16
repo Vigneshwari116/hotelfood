@@ -273,7 +273,10 @@ class _PosScreenState extends State<PosScreen> {
 
     return list.where((material) {
       return matchesInventorySearchQuery(
-        inventoryMaterialHaystack(material),
+        inventoryMaterialHaystack(
+          material,
+          categoryName: _categoryName(material.categoryId),
+        ),
         _search,
       );
     }).toList();
@@ -300,7 +303,10 @@ class _PosScreenState extends State<PosScreen> {
 
   bool _comboMatchesSearch(Combo combo) {
     return matchesInventorySearchQuery(
-      inventoryComboHaystack(combo),
+      inventoryComboHaystack(
+        combo,
+        categoryName: _categoryName(combo.categoryId),
+      ),
       _search,
     );
   }
@@ -309,8 +315,13 @@ class _PosScreenState extends State<PosScreen> {
     return [
       ...inventorySearchEntriesFromMaterials(
         _allMaterials.where(_isDirectSaleMaterial),
+        categoryNameFor: _categoryName,
       ),
-      for (final combo in _activeCombos) InventorySearchEntry.fromCombo(combo),
+      for (final combo in _activeCombos)
+        InventorySearchEntry.fromCombo(
+          combo,
+          categoryName: _categoryName(combo.categoryId),
+        ),
     ];
   }
 
@@ -1662,71 +1673,66 @@ class _PosScreenState extends State<PosScreen> {
     return Card(
       margin: EdgeInsets.zero,
       clipBehavior: Clip.antiAlias,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final checkoutMax = (constraints.maxHeight * 0.52).clamp(220.0, 420.0);
-          return Column(
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 8, 6),
-                child: Row(
-                  children: [
-                    const Icon(Icons.shopping_cart_outlined, size: 21),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _activePendingId == null
-                            ? 'Current Sale'
-                            : 'Token ${_pendingTokenLabel()} · Current Sale',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.bold,
-                            ),
-                      ),
-                    ),
-                    if (_cart.isNotEmpty)
-                      TextButton(
-                        onPressed: _clearCart,
-                        child: const Text('Clear'),
-                      ),
-                  ],
-                ),
-              ),
-              const Divider(height: 1),
-              Expanded(
-                child: _cart.isEmpty
-                    ? const SingleChildScrollView(
-                        padding: EdgeInsets.all(16),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.remove_shopping_cart_outlined, size: 42),
-                            SizedBox(height: 8),
-                            Text(
-                              'Cart is empty',
-                              style: TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                            SizedBox(height: 3),
-                            Text('Tap an item to add it'),
-                          ],
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 8, 6),
+            child: Row(
+              children: [
+                const Icon(Icons.shopping_cart_outlined, size: 21),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _activePendingId == null
+                        ? 'Current Sale'
+                        : 'Token ${_pendingTokenLabel()} · Current Sale',
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
                         ),
-                      )
-                    : ListView.builder(
-                        controller: _cartScrollController,
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        itemCount: _cart.length,
-                        itemBuilder: (context, index) {
-                          return _cartLine(index, _cart[index]);
-                        },
-                      ),
-              ),
-              const Divider(height: 1),
-              ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: checkoutMax),
-                child: _checkoutPanel(),
-              ),
-            ],
-          );
-        },
+                  ),
+                ),
+                if (_cart.isNotEmpty)
+                  TextButton(
+                    onPressed: _clearCart,
+                    child: const Text('Clear'),
+                  ),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+          Expanded(
+            child: _cart.isEmpty
+                ? const SingleChildScrollView(
+                    padding: EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.remove_shopping_cart_outlined, size: 42),
+                        SizedBox(height: 8),
+                        Text(
+                          'Cart is empty',
+                          style: TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        SizedBox(height: 3),
+                        Text('Tap an item to add it'),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    controller: _cartScrollController,
+                    padding: const EdgeInsets.symmetric(vertical: 4),
+                    itemCount: _cart.length,
+                    itemBuilder: (context, index) {
+                      return _cartLine(index, _cart[index]);
+                    },
+                  ),
+          ),
+          const Divider(height: 1),
+          Flexible(
+            fit: FlexFit.loose,
+            child: _checkoutPanel(),
+          ),
+        ],
       ),
     );
   }
@@ -1934,33 +1940,32 @@ class _PosScreenState extends State<PosScreen> {
               ),
             ),
           ],
-          TextField(
-            controller: _customerNameController,
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(
-              labelText: 'Customer name (optional)',
-              border: OutlineInputBorder(),
-              isDense: true,
-              prefixIcon: Icon(Icons.person_outline),
+          if (_cart.isNotEmpty) ...[
+            TextField(
+              controller: _customerNameController,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Customer name (optional)',
+                border: OutlineInputBorder(),
+                isDense: true,
+                prefixIcon: Icon(Icons.person_outline),
+              ),
+              onChanged: (_) => _refreshUi(),
             ),
-            onChanged: (_) => _refreshUi(),
-          ),
-
-          const SizedBox(height: 8),
-
-          TextField(
-            controller: _customerPhoneController,
-            keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
-              labelText: 'Mobile number (optional)',
-              border: OutlineInputBorder(),
-              isDense: true,
-              prefixIcon: Icon(Icons.phone_outlined),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _customerPhoneController,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'Mobile number (optional)',
+                border: OutlineInputBorder(),
+                isDense: true,
+                prefixIcon: Icon(Icons.phone_outlined),
+              ),
+              onChanged: (_) => _refreshUi(),
             ),
-            onChanged: (_) => _refreshUi(),
-          ),
-
-          const SizedBox(height: 8),
+            const SizedBox(height: 8),
+          ],
 
           // ------------------------------------------------------
           // PAYMENT
@@ -2372,17 +2377,22 @@ class _PosScreenState extends State<PosScreen> {
             ),
             const SizedBox(height: 8),
           ],
-          InventoryItemTypeahead(
-            controller: _searchController,
-            entries: _posSearchEntries,
-            enabled: !_loading && !_adminViewOnly,
-            hintText: 'Type name, sub item, barcode or size',
-            onSelected: _onSearchEntrySelected,
-          ),
-          const SizedBox(height: 8),
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
+              Flexible(
+                flex: 11,
+                child: InventoryItemTypeahead(
+                  controller: _searchController,
+                  entries: _posSearchEntries,
+                  enabled: !_loading && !_adminViewOnly,
+                  hintText: 'Type name, sub item, barcode or size',
+                  onSelected: _onSearchEntrySelected,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                flex: 9,
                 child: TextField(
                   controller: _barcodeController,
                   onSubmitted: _handleBarcode,

@@ -35,7 +35,10 @@ class InventorySearchEntry {
     );
   }
 
-  factory InventorySearchEntry.fromCombo(Combo combo) {
+  factory InventorySearchEntry.fromCombo(
+    Combo combo, {
+    String? categoryName,
+  }) {
     final parts = <String>[];
     for (final item in combo.items) {
       final label = item.itemNameLabel.trim();
@@ -47,7 +50,10 @@ class InventorySearchEntry {
     return InventorySearchEntry(
       primaryLabel: combo.name,
       secondaryLabel: secondary,
-      haystack: inventoryComboHaystack(combo),
+      haystack: inventoryComboHaystack(
+        combo,
+        categoryName: categoryName,
+      ),
       combo: combo,
     );
   }
@@ -92,10 +98,14 @@ String? inventoryMaterialExtra(RawMaterial material) {
   return parts.join('  •  ');
 }
 
-String inventoryComboHaystack(Combo combo) {
+String inventoryComboHaystack(
+  Combo combo, {
+  String? categoryName,
+}) {
   return [
     combo.name,
     combo.barcode ?? '',
+    categoryName ?? '',
     for (final item in combo.items) ...[
       item.materialName ?? '',
       item.materialSubItem ?? '',
