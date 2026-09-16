@@ -4,6 +4,30 @@ import 'package:foodstock/model/models.dart';
 class ComboOnlyCategories {
   ComboOnlyCategories._();
 
+  /// Categories sold only through combos (not as standalone POS/grid cards).
+  static const comboSaleOnlyCategoryNames = {'burgers', 'rolls'};
+
+  static bool isComboSaleOnlyCategoryName(String? name) {
+    final key = name?.trim().toLowerCase() ?? '';
+    return comboSaleOnlyCategoryNames.contains(key);
+  }
+
+  static bool isPosStandaloneMaterial(
+    RawMaterial material, {
+    required Set<int?> comboOnlyCategoryIds,
+    required String? Function(int? categoryId) categoryNameFor,
+  }) {
+    if (!isDirectSaleMaterial(
+      material,
+      comboOnlyCategoryIds: comboOnlyCategoryIds,
+    )) {
+      return false;
+    }
+    return !isComboSaleOnlyCategoryName(
+      categoryNameFor(material.categoryId),
+    );
+  }
+
   static Set<int?> categoryIds({
     required Iterable<RawMaterial> materials,
     required Iterable<Combo> combos,
@@ -51,6 +75,7 @@ class ComboOnlyCategories {
   static Set<int?> posVisibleCategoryIds({
     required Iterable<RawMaterial> materials,
     required Iterable<Combo> combos,
+    String? Function(int? categoryId)? categoryNameFor,
   }) {
     final comboOnly = categoryIds(materials: materials, combos: combos);
     final activeCombos = combos.where(
@@ -59,12 +84,14 @@ class ComboOnlyCategories {
     final comboCategoryIds = {
       for (final combo in activeCombos) combo.categoryId,
     };
+    final nameFor = categoryNameFor ?? (_) => null;
 
     final ids = <int?>{
       for (final material in materials)
-        if (isDirectSaleMaterial(
+        if (isPosStandaloneMaterial(
           material,
           comboOnlyCategoryIds: comboOnly,
+          categoryNameFor: nameFor,
         ))
           material.categoryId,
       ...comboCategoryIds,

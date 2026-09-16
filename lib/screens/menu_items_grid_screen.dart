@@ -5,6 +5,7 @@ import 'package:foodstock/services/combo_only_categories.dart';
 import 'package:foodstock/services/menu_item_edit_helpers.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/widgets/responsive_shell.dart';
+import 'package:foodstock/widgets/sub_item_group_field.dart';
 
 const _categoryDisplayOrder = [
   'Sauces',
@@ -54,7 +55,12 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool skipDirtyPrompt = false}) async {
+    if (!skipDirtyPrompt && _dirtyCount > 0) {
+      final leave = await _confirmLeaveIfDirty();
+      if (!leave) return;
+    }
+
     setState(() => _loading = true);
 
     try {
@@ -136,6 +142,9 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
 
   List<String> get _sortedCategories {
     final keys = _groupedRows.keys.where((categoryName) {
+      if (ComboOnlyCategories.isComboSaleOnlyCategoryName(categoryName)) {
+        return false;
+      }
       final categoryId = _categoryIdForName(categoryName);
       if (categoryId != null && _comboOnlyCategoryIds.contains(categoryId)) {
         return false;
@@ -167,6 +176,82 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
       setState(() => _changed = false);
     } else {
       setState(() {});
+    }
+  }
+
+  List<String> get _existingSubItemGroups {
+    final groups = <String>{};
+    for (final row in _rows) {
+      final label = row.subItemName.text.trim();
+      if (label.isNotEmpty) groups.add(label);
+      final sub = row.item.subItem?.trim();
+      if (sub != null && sub.isNotEmpty) groups.add(sub);
+    }
+    return groups.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  }
+
+  Future<void> _addItemInCategory(String categoryName) async {
+    if (_readOnly) return;
+
+    final nameController = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Add item to $categoryName'),
+        content: TextField(
+          controller: nameController,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+            labelText: 'Item name',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (_) => Navigator.pop(context, true),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    final name = nameController.text.trim();
+    nameController.dispose();
+    if (name.isEmpty) {
+      _showMessage('Item name cannot be empty', isError: true);
+      return;
+    }
+
+    try {
+      final categoryId = _categoryIdForName(categoryName);
+      final unitId = _units.isNotEmpty ? _units.first.id : null;
+      final id = await Repository.instance.saveRawMaterial(
+        RawMaterial(
+          name: name,
+          subItem: name,
+          categoryId: categoryId,
+          unitId: unitId,
+          listed: true,
+          createdAt: DateTime.now(),
+        ),
+      );
+      final saved = await Repository.instance.rawMaterialById(id);
+      if (saved == null || !mounted) return;
+      setState(() {
+        _rows.add(_MenuGridRow(item: saved));
+        _MenuGridRow.linkStockSourceNames(_rows, _rows.map((r) => r.item).toList());
+        _changed = true;
+      });
+      _showMessage('Added $name');
+    } catch (e) {
+      _showMessage('Failed to add item: $e', isError: true);
     }
   }
 
@@ -214,8 +299,10 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
       setState(() {});
 
       try {
-        await Repository.instance.saveRawMaterial(item);
-        row.commitSaved(item, _rows);
+        final savedId = await Repository.instance.saveRawMaterial(item);
+        final id = item.id ?? savedId;
+        final refreshed = await Repository.instance.rawMaterialById(id);
+        row.commitSaved(refreshed ?? item, _rows);
         saved++;
       } catch (e) {
         _showMessage('Failed to save ${item.name}: $e', isError: true);
@@ -227,6 +314,9 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
 
     setState(() => _savingAll = false);
     _markChanged();
+    if (_dirtyCount == 0 && _changed) {
+      setState(() => _changed = false);
+    }
 
     if (saved > 0) {
       _showMessage('Saved $saved item${saved == 1 ? '' : 's'}');
@@ -354,7 +444,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
               ),
             IconButton(
               tooltip: 'Refresh',
-              onPressed: _loading ? null : _load,
+              onPressed: _loading ? null : () => _load(),
               icon: const Icon(Icons.refresh),
             ),
           ],
@@ -387,12 +477,11 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                               isDense: true,
                             ),
                             onSubmitted: (_) => _load(),
-                            onChanged: (_) => _load(),
                           ),
                         ),
                         const SizedBox(width: 8),
                         FilledButton(
-                          onPressed: _load,
+                          onPressed: _loading ? null : () => _load(),
                           child: const Text('Search'),
                         ),
                       ],
@@ -427,6 +516,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                                   rows: rows,
                                   allRows: _rows,
                                   units: _units,
+                                  subItemGroups: _existingSubItemGroups,
                                   readOnly: _readOnly,
                                   isMobile: isMobile,
                                   onFieldCommitted: (row) {
@@ -435,6 +525,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                                   },
                                   onFieldChanged: _markChanged,
                                   onDelete: _deleteRow,
+                                  onAdd: () => _addItemInCategory(category),
                                 );
                               },
                             ),
@@ -453,22 +544,26 @@ class _CategoryGridSection extends StatelessWidget {
     required this.rows,
     required this.allRows,
     required this.units,
+    required this.subItemGroups,
     required this.readOnly,
     required this.isMobile,
     required this.onFieldCommitted,
     required this.onFieldChanged,
     required this.onDelete,
+    required this.onAdd,
   });
 
   final String category;
   final List<_MenuGridRow> rows;
   final List<_MenuGridRow> allRows;
   final List<UnitM> units;
+  final List<String> subItemGroups;
   final bool readOnly;
   final bool isMobile;
   final ValueChanged<_MenuGridRow> onFieldCommitted;
   final VoidCallback onFieldChanged;
   final ValueChanged<_MenuGridRow> onDelete;
+  final VoidCallback onAdd;
 
   static const _headers = [
     _GridColumnSpec('Barcode', width: 120),
@@ -510,7 +605,7 @@ class _CategoryGridSection extends StatelessWidget {
     _GridColumnSpec('Cost (₹)', width: 80),
     _GridColumnSpec('Sell (₹)', width: 80),
     _GridColumnSpec('Unit', width: 88),
-    _GridColumnSpec('Actions', width: 72),
+    _GridColumnSpec('Actions', width: 96),
   ];
 
   @override
@@ -541,6 +636,14 @@ class _CategoryGridSection extends StatelessWidget {
                   '${rows.length} item${rows.length == 1 ? '' : 's'}',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
+                if (!readOnly) ...[
+                  const SizedBox(width: 8),
+                  TextButton.icon(
+                    onPressed: onAdd,
+                    icon: const Icon(Icons.add, size: 18),
+                    label: const Text('Add item'),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 8),
@@ -593,8 +696,9 @@ class _CategoryGridSection extends StatelessWidget {
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
-                          _GridTextCell(
+                          _GridSubItemCell(
                             controller: row.subItemName,
+                            existingGroups: subItemGroups,
                             readOnly: readOnly,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
@@ -693,6 +797,13 @@ class _CategoryGridSection extends StatelessWidget {
                               mainAxisAlignment: MainAxisAlignment.center,
                               children: [
                                 IconButton(
+                                  tooltip: 'Edit row (inline fields)',
+                                  icon: const Icon(Icons.edit_outlined, size: 18),
+                                  onPressed: readOnly
+                                      ? null
+                                      : () => onFieldCommitted(row),
+                                ),
+                                IconButton(
                                   tooltip: 'Save row',
                                   icon: Icon(
                                     Icons.save_outlined,
@@ -774,6 +885,52 @@ class _HeaderCell extends StatelessWidget {
               message: tooltip!,
               child: text,
             ),
+    );
+  }
+}
+
+class _GridSubItemCell extends StatelessWidget {
+  const _GridSubItemCell({
+    required this.controller,
+    required this.existingGroups,
+    required this.readOnly,
+    required this.onChanged,
+    required this.onCommit,
+  });
+
+  final TextEditingController controller;
+  final List<String> existingGroups;
+  final bool readOnly;
+  final VoidCallback onChanged;
+  final VoidCallback onCommit;
+
+  @override
+  Widget build(BuildContext context) {
+    if (readOnly) {
+      return _GridTextCell(
+        controller: controller,
+        readOnly: true,
+        onChanged: onChanged,
+        onCommit: onCommit,
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(2),
+      child: SubItemGroupField(
+        existingGroups: existingGroups,
+        initialValue: controller.text,
+        onChanged: (value) {
+          controller.text = value;
+          onChanged();
+          onCommit();
+        },
+        decoration: const InputDecoration(
+          isDense: true,
+          border: OutlineInputBorder(),
+          contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+        ),
+      ),
     );
   }
 }
