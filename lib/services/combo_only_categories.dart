@@ -10,7 +10,6 @@ class ComboOnlyCategories {
   }) {
     final componentIds = <int>{};
     for (final combo in combos) {
-      if (!combo.isActive) continue;
       for (final item in combo.items) {
         if (item.rawMaterialId != null) {
           componentIds.add(item.rawMaterialId!);
