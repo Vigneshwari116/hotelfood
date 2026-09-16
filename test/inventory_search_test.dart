@@ -82,4 +82,35 @@ void main() {
       expect(entry.primaryLabel, 'Crispy Chicken Patty');
     });
   });
+
+  group('inventoryPurchaseEntriesFromMaterials', () {
+    test('collapses variant group to one purchase row', () {
+      final regular = material(
+        id: 1,
+        name: 'Chicken popcorn',
+        subItem: 'Chicken Popcorn',
+        variantGroup: 'Chicken Popcorn',
+        variantLabel: 'Regular',
+      );
+      final large = material(
+        id: 2,
+        name: 'Chicken popcorn large',
+        subItem: 'Chicken Popcorn',
+        variantGroup: 'Chicken Popcorn',
+        variantLabel: 'Large',
+      );
+
+      final entries = inventoryPurchaseEntriesFromMaterials([regular, large]);
+      expect(entries, hasLength(1));
+      expect(entries.single.primaryLabel.toLowerCase(), contains('popcorn'));
+      expect(entries.single.material?.id, isNotNull);
+    });
+
+    test('sorts purchase entries alphabetically', () {
+      final zebra = material(id: 1, name: 'Zebra chips', subItem: 'Zebra chips');
+      final apple = material(id: 2, name: 'Apple pie', subItem: 'Apple pie');
+      final entries = inventoryPurchaseEntriesFromMaterials([zebra, apple]);
+      expect(entries.map((e) => e.primaryLabel).toList(), ['Apple pie', 'Zebra chips']);
+    });
+  });
 }
