@@ -12,6 +12,20 @@ class ComboOnlyCategories {
     return comboSaleOnlyCategoryNames.contains(key);
   }
 
+  static bool shouldHideStandaloneMenuItem(
+    RawMaterial material, {
+    required String? Function(int? categoryId) categoryNameFor,
+    required Set<int?> comboOnlyCategoryIds,
+  }) {
+    if (isComboSaleOnlyCategoryName(categoryNameFor(material.categoryId))) {
+      return true;
+    }
+    return !isDirectSaleMaterial(
+      material,
+      comboOnlyCategoryIds: comboOnlyCategoryIds,
+    );
+  }
+
   static bool isPosStandaloneMaterial(
     RawMaterial material, {
     required Set<int?> comboOnlyCategoryIds,

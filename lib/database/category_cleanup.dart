@@ -1,8 +1,15 @@
 import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/services/item_import_service.dart';
 
+String _normalizeItemKey(String? name, String? subItem) {
+  final n = (name ?? '').trim().toLowerCase();
+  final s = (subItem ?? '').trim().toLowerCase();
+  final label = s.isNotEmpty ? s : n;
+  return label.replaceAll(RegExp(r'\s+'), ' ');
+}
+
 /// Merges duplicate "Others" categories into Uncategorized and removes
-/// true duplicate catalog rows (same name + sub-item in both groups).
+/// true duplicate catalog rows (same name + sub-item across groups).
 Future<int> mergeOthersCategoryIntoUncategorized(AppDb db) async {
   var removedDuplicates = 0;
 
@@ -12,91 +19,123 @@ Future<int> mergeOthersCategoryIntoUncategorized(AppDb db) async {
     where: "type = 'raw_material'",
   );
 
-  int? uncategorizedId;
-  final othersCategoryIds = <int>[];
+  final aliasCategoryIds = <int>[];
+  int? targetCategoryId;
 
   for (final row in categories) {
     final id = row['id'] as int?;
-    final name = (row['name'] as String?)?.trim().toLowerCase() ?? '';
+    final name = row['name'] as String?;
     if (id == null) continue;
-    if (name == 'uncategorized') {
-      uncategorizedId = id;
-    } else if (name == 'others' || name == 'other') {
-      othersCategoryIds.add(id);
+    if (!ItemImportService.isUncategorizedCategoryName(name)) continue;
+
+    aliasCategoryIds.add(id);
+    if (name?.trim().toLowerCase() == 'uncategorized') {
+      targetCategoryId = id;
     }
   }
 
-  if (othersCategoryIds.isEmpty) return 0;
+  if (aliasCategoryIds.isEmpty) return 0;
 
-  String normalizeKey(String? name, String? subItem) {
-    final n = (name ?? '').trim().toLowerCase();
-    final s = (subItem ?? '').trim().toLowerCase();
-    final label = s.isNotEmpty ? s : n;
-    return label.replaceAll(RegExp(r'\s+'), ' ');
-  }
+  targetCategoryId ??= aliasCategoryIds.first;
 
-  Future<Map<String, int>> existingKeysForCategory(int? categoryId) async {
-    final rows = categoryId == null
-        ? await db.query(
-            'raw_materials',
-            columns: ['id', 'name', 'sub_item'],
-            where: 'category_id IS NULL',
-          )
-        : await db.query(
-            'raw_materials',
-            columns: ['id', 'name', 'sub_item'],
-            where: 'category_id = ?',
-            whereArgs: [categoryId],
-          );
-    return {
-      for (final row in rows)
-        if (row['id'] != null)
-          normalizeKey(row['name'] as String?, row['sub_item'] as String?):
-              row['id'] as int,
-    };
-  }
-
-  final targetKeys = await existingKeysForCategory(uncategorizedId);
-
-  for (final othersId in othersCategoryIds) {
-    final othersRows = await db.query(
+  final rows = <Map<String, dynamic>>[
+    ...await db.query(
       'raw_materials',
-      columns: ['id', 'name', 'sub_item'],
-      where: 'category_id = ?',
-      whereArgs: [othersId],
-    );
+      columns: ['id', 'name', 'sub_item', 'category_id', 'listed'],
+      where: 'category_id IS NULL',
+    ),
+  ];
 
-    for (final row in othersRows) {
+  for (final categoryId in aliasCategoryIds) {
+    rows.addAll(
+      await db.query(
+        'raw_materials',
+        columns: ['id', 'name', 'sub_item', 'category_id', 'listed'],
+        where: 'category_id = ?',
+        whereArgs: [categoryId],
+      ),
+    );
+  }
+
+  final byKey = <String, List<Map<String, dynamic>>>{};
+  for (final row in rows) {
+    final key = _normalizeItemKey(
+      row['name'] as String?,
+      row['sub_item'] as String?,
+    );
+    if (key.isEmpty) continue;
+    byKey.putIfAbsent(key, () => []).add(row);
+  }
+
+  for (final group in byKey.values) {
+    if (group.length == 1) {
+      final row = group.first;
       final id = row['id'] as int?;
       if (id == null) continue;
-      final key = normalizeKey(row['name'] as String?, row['sub_item'] as String?);
-      final existingId = targetKeys[key];
-      if (existingId != null && existingId != id) {
+      if ((row['category_id'] as int?) != targetCategoryId) {
         await db.update(
           'raw_materials',
-          {'listed': 0},
+          {'category_id': targetCategoryId},
           where: 'id = ?',
           whereArgs: [id],
         );
-        removedDuplicates++;
+      }
+      continue;
+    }
+
+    group.sort(
+      (a, b) => (a['id'] as int).compareTo(b['id'] as int),
+    );
+
+    Map<String, dynamic> keeper = group.first;
+    for (final row in group) {
+      final rowCategoryId = row['category_id'] as int?;
+      if (rowCategoryId == targetCategoryId) {
+        keeper = row;
+        break;
+      }
+    }
+
+    for (final row in group) {
+      final id = row['id'] as int?;
+      if (id == null) continue;
+      if (id == keeper['id']) {
+        if ((row['category_id'] as int?) != targetCategoryId) {
+          await db.update(
+            'raw_materials',
+            {'category_id': targetCategoryId},
+            where: 'id = ?',
+            whereArgs: [id],
+          );
+        }
         continue;
       }
 
       await db.update(
         'raw_materials',
-        {'category_id': uncategorizedId},
+        {'listed': 0},
         where: 'id = ?',
         whereArgs: [id],
       );
-      targetKeys[key] = id;
+      removedDuplicates++;
     }
+  }
 
+  for (final aliasId in aliasCategoryIds) {
+    if (aliasId == targetCategoryId) continue;
     await db.delete(
       'categories',
       where: 'id = ?',
-      whereArgs: [othersId],
+      whereArgs: [aliasId],
     );
   }
+
+  await db.update(
+    'categories',
+    {'name': 'Uncategorized'},
+    where: 'id = ?',
+    whereArgs: [targetCategoryId],
+  );
 
   return removedDuplicates;
 }

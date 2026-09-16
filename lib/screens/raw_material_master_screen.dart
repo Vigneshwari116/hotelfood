@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:foodstock/model/models.dart';
+import '../services/combo_only_categories.dart';
 import '../services/item_import_service.dart';
 import '../services/repository.dart';
 import '../services/sub_item_stock.dart';
@@ -34,6 +35,7 @@ class _RawMaterialMasterScreenState
   List<Category> _categories = [];
   List<UnitM> _units = [];
   List<Combo> _combos = [];
+  Set<int?> _comboOnlyCategoryIds = {};
 
   final TextEditingController _searchController =
   TextEditingController();
@@ -102,6 +104,10 @@ class _RawMaterialMasterScreenState
         _categories = results[1] as List<Category>;
         _units = results[2] as List<UnitM>;
         _combos = results[3] as List<Combo>;
+        _comboOnlyCategoryIds = ComboOnlyCategories.categoryIds(
+          materials: _items,
+          combos: _combos,
+        );
       });
     } catch (e) {
       if (!mounted || generation != _loadGeneration) return;
@@ -124,16 +130,18 @@ class _RawMaterialMasterScreenState
   // CATEGORY NAME
   // ============================================================
 
-  String _categoryName(int? id) {
-    if (id == null) return 'Uncategorized';
-
+  String? _rawCategoryName(int? id) {
+    if (id == null) return null;
     for (final category in _categories) {
       if (category.id == id) {
         return category.name;
       }
     }
+    return null;
+  }
 
-    return 'Uncategorized';
+  String _categoryName(int? id) {
+    return ItemImportService.displayCategoryName(_rawCategoryName(id));
   }
 
   // ============================================================
@@ -784,10 +792,15 @@ class _RawMaterialMasterScreenState
     grouped = {};
 
     for (final item in _items) {
-      final category =
-      _categoryName(
-        item.categoryId,
-      );
+      if (ComboOnlyCategories.shouldHideStandaloneMenuItem(
+        item,
+        categoryNameFor: _rawCategoryName,
+        comboOnlyCategoryIds: _comboOnlyCategoryIds,
+      )) {
+        continue;
+      }
+
+      final category = _categoryName(item.categoryId);
 
       grouped.putIfAbsent(
         category,

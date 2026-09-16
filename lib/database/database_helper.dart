@@ -1582,9 +1582,6 @@ class DBHelper {
 
     if (oldVersion < 27) {
       await listSaucesCategoryForPos(SqliteAppDb(db));
-    }
-
-    if (oldVersion < 26) {
       await mergeOthersCategoryIntoUncategorized(SqliteAppDb(db));
     }
 
