@@ -11,8 +11,10 @@ import 'package:path_provider/path_provider.dart';
 import 'package:foodstock/model/models.dart';
 import '../services/item_import_service.dart';
 import '../services/repository.dart';
+import '../services/sub_item_stock.dart';
 import '../widgets/barcode_field.dart';
 import '../widgets/responsive_shell.dart';
+import '../widgets/sub_item_group_field.dart';
 import 'menu_items_grid_screen.dart';
 
 class RawMaterialMasterScreen extends StatefulWidget {
@@ -404,6 +406,9 @@ class _RawMaterialMasterScreenState
             existing: item,
             categories: _categories,
             units: _units,
+            existingGroups: SubItemStock.distinctGroupLabels(
+              _items.map((entry) => entry.subItem ?? entry.name),
+            ),
             onPickImage: () {
               return _pickAndSaveImage(
                 folder: 'raw_materials',
@@ -494,6 +499,9 @@ class _RawMaterialMasterScreenState
     // Combo picker must list every menu item, not the Items-tab search filter.
     final allItems = await Repository.instance.rawMaterials(
       includeHidden: true,
+    );
+    allItems.sort(
+      (a, b) => a.staffLabel.toLowerCase().compareTo(b.staffLabel.toLowerCase()),
     );
 
     final saved = await showDialog<bool>(
@@ -927,7 +935,7 @@ class _RawMaterialMasterScreenState
                 CrossAxisAlignment.start,
                 children: [
                   Text(
-                    item.staffLabel,
+                    item.name,
                     style:
                     const TextStyle(
                       fontWeight:
@@ -935,6 +943,18 @@ class _RawMaterialMasterScreenState
                       fontSize: 16,
                     ),
                   ),
+
+                  if (item.trimmedSubItem != null &&
+                      item.trimmedSubItem!.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Group: ${item.trimmedSubItem}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.blueGrey.shade700,
+                      ),
+                    ),
+                  ],
 
                   if (!item.listed) ...[
                     const SizedBox(height: 4),
@@ -1504,6 +1524,7 @@ class RawMaterialEditorDialog
   final RawMaterial? existing;
   final List<Category> categories;
   final List<UnitM> units;
+  final List<String> existingGroups;
   final Future<String?> Function()
   onPickImage;
 
@@ -1512,6 +1533,7 @@ class RawMaterialEditorDialog
     this.existing,
     required this.categories,
     required this.units,
+    required this.existingGroups,
     required this.onPickImage,
   });
 
@@ -1528,6 +1550,8 @@ class _RawMaterialEditorDialogState
 
   final _subItemController =
   TextEditingController();
+
+  String _subItemValue = '';
 
   final _qtyController =
   TextEditingController(text: '1');
@@ -1580,6 +1604,7 @@ class _RawMaterialEditorDialogState
 
       _subItemController.text =
           item.subItem ?? item.name;
+      _subItemValue = _subItemController.text;
       _visibleInSales = item.listed;
 
       _qtyController.text =
@@ -1633,6 +1658,7 @@ class _RawMaterialEditorDialogState
       _imagePath =
           item.imagePath;
     } else {
+      _subItemValue = '';
       if (widget.categories.isNotEmpty) {
         _categoryId =
             widget.categories.first.id;
@@ -1667,11 +1693,15 @@ class _RawMaterialEditorDialogState
   }
 
   void _copyNameToSubItem() {
+    if (widget.existing != null) return;
+    final name = _nameController.text.trim();
+    if (name.isEmpty) return;
+    setState(() {
+      _subItemValue = name;
+    });
     _subItemController.value = TextEditingValue(
-      text: _nameController.text,
-      selection: TextSelection.collapsed(
-        offset: _nameController.text.length,
-      ),
+      text: name,
+      selection: TextSelection.collapsed(offset: name.length),
     );
   }
 
@@ -1733,6 +1763,19 @@ class _RawMaterialEditorDialogState
       return;
     }
 
+    final resolvedSubItem = SubItemStock.resolveCanonicalLabel(
+      _subItemValue.trim().isEmpty ? name : _subItemValue.trim(),
+      widget.existingGroups,
+    );
+    if (resolvedSubItem.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select or enter a stock group (Sub Item).'),
+        ),
+      );
+      return;
+    }
+
     setState(() {
       _saving = true;
     });
@@ -1749,10 +1792,7 @@ class _RawMaterialEditorDialogState
             : _barcodeController.text
             .trim(),
         name: name,
-        subItem:
-        _subItemController.text.trim().isEmpty
-            ? null
-            : _subItemController.text.trim(),
+        subItem: resolvedSubItem,
         qtyNeeded:
         double.tryParse(
           _qtyController.text.trim(),
@@ -1988,12 +2028,19 @@ class _RawMaterialEditorDialogState
                     prefix: Icons.inventory_2_outlined,
                   ),
                 ),
-                TextField(
-                  controller: _subItemController,
+                SubItemGroupField(
+                  existingGroups: widget.existingGroups,
+                  initialValue: _subItemValue,
                   decoration: _fieldDecoration(
-                    'Sub Item',
+                    'Sub Item / Group',
                     prefix: Icons.subdirectory_arrow_right,
                   ),
+                  onChanged: (value) {
+                    setState(() {
+                      _subItemValue = value;
+                      _subItemController.text = value;
+                    });
+                  },
                 ),
               ),
 
@@ -2295,16 +2342,16 @@ class _ComboEditorDialogState
     }
 
     final available =
-    widget.rawMaterials
-        .where(
-          (material) =>
-      !_lines.any(
-            (line) =>
-        line.rawMaterialId ==
-            material.id,
+    List<RawMaterial>.from(
+      widget.rawMaterials.where(
+        (material) => !_lines.any(
+          (line) => line.rawMaterialId == material.id,
+        ),
       ),
-    )
-        .toList();
+    )..sort(
+        (a, b) =>
+            a.staffLabel.toLowerCase().compareTo(b.staffLabel.toLowerCase()),
+      );
 
     if (available.isEmpty) {
       ScaffoldMessenger.of(context)
@@ -2785,6 +2832,22 @@ class _ComboEditorDialogState
       int index,
       _ComboLine line,
       ) {
+    String categoryLabel(int? categoryId) {
+      if (categoryId == null) return 'Uncategorized';
+      for (final category in widget.categories) {
+        if (category.id == categoryId) {
+          return category.name;
+        }
+      }
+      return 'Uncategorized';
+    }
+
+    final sortedMaterials = List<RawMaterial>.from(widget.rawMaterials)
+      ..sort(
+        (a, b) =>
+            a.staffLabel.toLowerCase().compareTo(b.staffLabel.toLowerCase()),
+      );
+
     return Padding(
       padding:
       const EdgeInsets.only(
@@ -2809,8 +2872,7 @@ class _ComboEditorDialogState
                 border:
                 OutlineInputBorder(),
               ),
-              items: widget
-                  .rawMaterials
+              items: sortedMaterials
                   .where(
                     (material) {
                   return !_lines.any(
@@ -2829,14 +2891,12 @@ class _ComboEditorDialogState
               )
                   .map(
                     (material) {
-                  final sub =
-                      material.trimmedSubItem;
                   return DropdownMenuItem<
                       int>(
                     value:
                     material.id,
                     child: Text(
-                      material.staffLabel,
+                      '${categoryLabel(material.categoryId)} — ${material.staffLabel}',
                       overflow:
                       TextOverflow.ellipsis,
                       maxLines: 1,

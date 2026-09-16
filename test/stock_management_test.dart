@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/combo_only_categories.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/services/variant_helpers.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -370,7 +371,7 @@ void main() {
       );
 
       final holder = rows.firstWhere((row) => row['id'] == 1);
-      final variant = rows.firstWhere((row) => row['id'] == 2);
+      expect(rows.any((row) => row['id'] == 2), isFalse);
       final opening = (holder['opening_qty'] as num).toDouble();
       final purchase = (holder['purchase_qty'] as num).toDouble();
       final sales = (holder['sales_qty'] as num).toDouble();
@@ -378,7 +379,6 @@ void main() {
       final adjustment = (holder['adjustment_qty'] as num).toDouble();
 
       expect(opening + purchase - sales + adjustment, closing);
-      expect(variant['closing_qty'], holder['closing_qty']);
 
       await tearDownStockTestSession(database);
     });
@@ -407,6 +407,34 @@ void main() {
       expect(importCsv.toLowerCase(), isNot(contains('cheese shotz large')));
     });
 
+    test('approved Sheet2 seed uses confirmed grouping and pricing', () {
+      final csv = File('assets/templates/shilpa_enterprise_menu_1401.csv')
+          .readAsStringSync();
+      final rows = csv.split('\n').where((line) => line.trim().isNotEmpty);
+
+      Map<String, String> rowFor(String itemName) {
+        final line = rows.firstWhere(
+          (row) => row.split(',')[1].trim() == itemName,
+        );
+        return {
+          for (var i = 0; i < line.split(',').length; i++)
+            '$i': line.split(',')[i].trim(),
+        };
+      }
+
+      expect(rowFor('Tandoori roll')['6'], '5');
+      expect(rowFor('Chicken popcorn large')['4'], '130');
+      expect(rowFor('Chicken popcorn large')['10'], '129');
+      expect(rowFor('Veg roll')['10']?.trim(), isEmpty);
+      expect(rowFor('Krisper roll')['10'], '105');
+      expect(rowFor('Chicken 65')['2'], 'chicken 65');
+      expect(rowFor('Chicken Strips')['2'], 'chicken strips');
+      expect(rowFor('French Fries')['2'], 'Masala Fries');
+      expect(rowFor('masala fries Large')['2'], 'Masala Fries');
+      expect(rowFor('Chicken Cheese Shotz')['2'], 'Cheese Shots');
+      expect(csv.toLowerCase(), isNot(contains('snacks,chicken popcorn large')));
+    });
+
     // Test 5 is covered by menu_import_stock_preservation_test.dart; verify file exists.
     test('menu re-import stock preservation test is present', () {
       expect(
@@ -416,44 +444,84 @@ void main() {
     });
   });
 
-  group('POS burger rules', () {
-    bool isBurgersCategory(String? categoryName) {
-      final name = categoryName?.trim().toLowerCase() ?? '';
-      return name == 'burgers' || name == 'burger';
-    }
-
-    bool isDirectSaleMaterial(String? categoryName) {
-      return !isBurgersCategory(categoryName);
-    }
-
-    // Test 9
-    test('burger rows are not direct POS sale items; combos are separate', () {
-      final burger = RawMaterial(
+  group('POS combo-only category rules', () {
+    test('category is hidden when every listed item is a combo component', () {
+      final bun = RawMaterial(
         id: 1,
-        name: 'star burger',
-        subItem: 'Crispy Chicken Patty',
+        name: 'Burger Bun',
         categoryId: 10,
-        sellingPrice: 60,
+        listed: true,
       );
-
-      expect(isDirectSaleMaterial('Burgers'), isFalse);
-      expect(isDirectSaleMaterial(burger.categoryId == 10 ? 'Burgers' : null),
-          isFalse);
-
+      final patty = RawMaterial(
+        id: 2,
+        name: 'Crispy Patty',
+        categoryId: 10,
+        listed: true,
+      );
       final combo = Combo(
         id: 99,
-        name: 'Star Burger Combo',
+        name: 'Burger Combo',
         price: 150,
         categoryId: 10,
-        items: const [],
+        items: [
+          ComboItem(comboId: 99, rawMaterialId: 1, qty: 1),
+          ComboItem(comboId: 99, rawMaterialId: 2, qty: 1),
+        ],
       );
-      expect(combo.name.contains('Combo'), isTrue);
+
+      final comboOnly = ComboOnlyCategories.categoryIds(
+        materials: [bun, patty],
+        combos: [combo],
+      );
+      expect(comboOnly, {10});
       expect(
-        VariantHelpers.partitionForPos([burger]).singles.length,
-        1,
+        ComboOnlyCategories.isDirectSaleMaterial(
+          bun,
+          comboOnlyCategoryIds: comboOnly,
+        ),
+        isFalse,
       );
     });
 
+    test('mixed category stays sellable when any item is not a combo component', () {
+      final roll = RawMaterial(
+        id: 3,
+        name: 'Chicken Roll',
+        categoryId: 20,
+        listed: true,
+      );
+      final paratha = RawMaterial(
+        id: 4,
+        name: 'Paratha',
+        categoryId: 20,
+        listed: true,
+      );
+      final combo = Combo(
+        id: 100,
+        name: 'Roll Combo',
+        price: 120,
+        categoryId: 20,
+        items: [
+          ComboItem(comboId: 100, rawMaterialId: 4, qty: 1),
+        ],
+      );
+
+      final comboOnly = ComboOnlyCategories.categoryIds(
+        materials: [roll, paratha],
+        combos: [combo],
+      );
+      expect(comboOnly.contains(20), isFalse);
+      expect(
+        ComboOnlyCategories.isDirectSaleMaterial(
+          roll,
+          comboOnlyCategoryIds: comboOnly,
+        ),
+        isTrue,
+      );
+    });
+  });
+
+  group('Variant stock pooling', () {
     test('syncVariantLinks pools Krusty Bites with Chicken 65 by sub_item', () {
       final chicken65 = RawMaterial(
         id: 1,

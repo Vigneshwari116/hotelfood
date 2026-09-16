@@ -55,6 +55,7 @@ void main() {
             name TEXT NOT NULL,
             sub_item TEXT,
             qty_needed REAL NOT NULL DEFAULT 1,
+            unit_id INTEGER,
             opening_stock REAL NOT NULL DEFAULT 0,
             current_stock REAL NOT NULL DEFAULT 0,
             reorder_level REAL NOT NULL DEFAULT 0,
@@ -178,7 +179,7 @@ void main() {
     final holder = await Repository.instance.rawMaterialById(1);
     final variant = await Repository.instance.rawMaterialById(2);
     expect(holder!.currentStock, 10);
-    expect(variant!.currentStock, 0);
+    expect(variant!.currentStock, 10);
 
     final display = await Repository.instance.rawMaterialsForDisplay(
       includeHidden: true,

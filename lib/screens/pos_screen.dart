@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/combo_only_categories.dart';
 import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/printer_service.dart';
 import 'package:foodstock/services/repository.dart';
@@ -61,6 +62,8 @@ class _PosScreenState extends State<PosScreen> {
 
   /// Selected variant raw_material id per [VariantGroup.key].
   final Map<String, int> _selectedVariantIdByGroup = {};
+
+  Set<int?> _comboOnlyCategoryIds = {};
 
   bool get _adminViewOnly => _repo.isAdmin;
 
@@ -146,6 +149,11 @@ class _PosScreenState extends State<PosScreen> {
         _categories = categories;
         _locations = locations;
         _loading = false;
+        _comboOnlyCategoryIds = ComboOnlyCategories.categoryIds(
+          materials: materials,
+          combos: combos,
+        );
+        _seedDefaultVariantSelections(materials);
         if (_categoryId != null &&
             !_categoryIdsWithItems.contains(_categoryId)) {
           _categoryId = null;
@@ -176,6 +184,10 @@ class _PosScreenState extends State<PosScreen> {
       setState(() {
         _materials = materials;
         _combos = combos;
+        _comboOnlyCategoryIds = ComboOnlyCategories.categoryIds(
+          materials: materials,
+          combos: combos,
+        );
       });
     } catch (e) {
       if (!mounted) return;
@@ -203,13 +215,15 @@ class _PosScreenState extends State<PosScreen> {
     return null;
   }
 
-  bool _isBurgersCategory(int? categoryId) {
-    final name = _categoryName(categoryId)?.trim().toLowerCase() ?? '';
-    return name == 'burgers' || name == 'burger';
+  bool _isComboOnlyCategory(int? categoryId) {
+    return _comboOnlyCategoryIds.contains(categoryId);
   }
 
   bool _isDirectSaleMaterial(RawMaterial material) {
-    return !_isBurgersCategory(material.categoryId);
+    return ComboOnlyCategories.isDirectSaleMaterial(
+      material,
+      comboOnlyCategoryIds: _comboOnlyCategoryIds,
+    );
   }
 
   List<RawMaterial> get _allMaterials => _materials;
@@ -229,7 +243,7 @@ class _PosScreenState extends State<PosScreen> {
     for (final combo in _activeCombos) {
       ids.add(combo.categoryId);
     }
-    ids.removeWhere((id) => _isBurgersCategory(id));
+    ids.removeWhere((id) => _isComboOnlyCategory(id));
     return ids;
   }
 
@@ -585,8 +599,9 @@ class _PosScreenState extends State<PosScreen> {
       }
 
       if (!_isDirectSaleMaterial(material)) {
+        final categoryName = _categoryName(material.categoryId) ?? 'this category';
         _showError(
-          'Burgers are sold through combos only. Select a combo instead.',
+          'Items in $categoryName are sold through combos only. Select a combo instead.',
         );
         return;
       }
@@ -617,10 +632,7 @@ class _PosScreenState extends State<PosScreen> {
       }
     }
 
-    for (final variant in group.variants) {
-      if (variant.sellingPrice != null) return variant;
-    }
-    return group.variants.first;
+    return _defaultVariantForGroup(group);
   }
 
   double _cartQtyForVariantGroup(VariantGroup group) {
@@ -635,6 +647,16 @@ class _PosScreenState extends State<PosScreen> {
   // ============================================================
   // CART HELPERS
   // ============================================================
+
+  int _cartIndexForRawMaterial(RawMaterial material) {
+    if (material.id == null) return -1;
+    final label = _variantLabelFor(material);
+    return _cart.indexWhere(
+      (line) =>
+          line.rawMaterialId == material.id &&
+          (line.variantLabel ?? '') == label,
+    );
+  }
 
   int _cartIndexForRaw(
       int id,
@@ -662,6 +684,12 @@ class _PosScreenState extends State<PosScreen> {
     return _cart[index].qty;
   }
 
+  double _cartQtyForRawMaterial(RawMaterial material) {
+    final index = _cartIndexForRawMaterial(material);
+    if (index == -1) return 0;
+    return _cart[index].qty;
+  }
+
   double _cartQtyForRaw(
       int id,
       ) {
@@ -675,13 +703,48 @@ class _PosScreenState extends State<PosScreen> {
     return _cart[index].qty;
   }
 
+  String _variantLabelFor(RawMaterial material) {
+    return VariantHelpers.variantSelectorLabel(material);
+  }
+
+  void _onVariantTapped(VariantGroup group, RawMaterial variant) {
+    final id = variant.id;
+    if (id == null) return;
+
+    setState(() => _selectedVariantIdByGroup[group.key] = id);
+    _addRawMaterial(variant);
+  }
+
+  void _seedDefaultVariantSelections(List<RawMaterial> materials) {
+    final partition = VariantHelpers.partitionForPos(materials);
+    for (final group in partition.groups) {
+      final defaultVariant = _defaultVariantForGroup(group);
+      if (defaultVariant.id == null) continue;
+      _selectedVariantIdByGroup.putIfAbsent(
+        group.key,
+        () => defaultVariant.id!,
+      );
+    }
+  }
+
+  RawMaterial _defaultVariantForGroup(VariantGroup group) {
+    for (final variant in group.variants) {
+      if (variant.sellingPrice != null && variant.id != null) {
+        return variant;
+      }
+    }
+    return group.variants.first;
+  }
+
   // ============================================================
   // ADD RAW MATERIAL
   // ============================================================
 
   void _addRawMaterial(
-      RawMaterial material,
-      ) {
+      RawMaterial material, {
+      double qty = 1,
+      bool replaceQty = false,
+      }) {
     if (material.id == null) {
       return;
     }
@@ -693,7 +756,12 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    final index = _cartIndexForRaw(material.id!);
+    if (qty <= 0) {
+      return;
+    }
+
+    final variantLabel = _variantLabelFor(material);
+    final index = _cartIndexForRawMaterial(material);
 
     if (index == -1) {
       _cart.add(
@@ -701,7 +769,8 @@ class _PosScreenState extends State<PosScreen> {
           rawMaterialId: material.id,
           name: material.name,
           subItem: material.trimmedSubItem,
-          qty: 1,
+          variantLabel: variantLabel,
+          qty: qty,
           price: material.sellingPrice ?? 0,
         ),
       );
@@ -716,8 +785,9 @@ class _PosScreenState extends State<PosScreen> {
       comboId: old.comboId,
       name: old.name,
       subItem: old.subItem,
+      variantLabel: old.variantLabel,
       componentLabels: old.componentLabels,
-      qty: old.qty + 1,
+      qty: replaceQty ? qty : old.qty + qty,
       price: old.price,
     );
     _refreshUi();
@@ -805,6 +875,7 @@ class _PosScreenState extends State<PosScreen> {
       comboId: line.comboId,
       name: line.name,
       subItem: line.subItem,
+      variantLabel: line.variantLabel,
       componentLabels: line.componentLabels,
       qty: newQty,
       price: line.price,
@@ -1254,7 +1325,7 @@ class _PosScreenState extends State<PosScreen> {
   Widget _variantGroupCard(VariantGroup group) {
     final selected = _selectedVariant(group);
     final stock = VariantHelpers.sellableUnits(selected, _materialsById);
-    final cartQty = _cartQtyForVariantGroup(group);
+    final cartQty = _cartQtyForRawMaterial(selected);
     final imagePath = selected.imagePath ?? group.stockSource.imagePath;
     final useColumnSelector = group.variants.length >= 2;
 
@@ -1264,10 +1335,7 @@ class _PosScreenState extends State<PosScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          InkWell(
-            onTap: () => _addRawMaterial(selected),
-            child: _image(imagePath, height: 72),
-          ),
+          _image(imagePath, height: 72),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
@@ -1295,37 +1363,33 @@ class _PosScreenState extends State<PosScreen> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  InkWell(
-                    onTap: () => _addRawMaterial(selected),
-                    borderRadius: BorderRadius.circular(6),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            selected.sellingPrice == null
-                                ? 'No price'
-                                : '₹${selected.sellingPrice!.toStringAsFixed(2)}',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                              color: selected.sellingPrice == null
-                                  ? Theme.of(context).colorScheme.error
-                                  : null,
-                            ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          selected.sellingPrice == null
+                              ? 'No price'
+                              : '₹${selected.sellingPrice!.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                            color: selected.sellingPrice == null
+                                ? Theme.of(context).colorScheme.error
+                                : null,
                           ),
-                          Text(
-                            _formatStockLabel(stock),
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: stock < 0
-                                  ? Colors.red.shade700
-                                  : Colors.grey.shade700,
-                            ),
+                        ),
+                        Text(
+                          _formatStockLabel(stock),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: stock < 0
+                                ? Colors.red.shade700
+                                : Colors.grey.shade700,
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                   if (cartQty > 0)
@@ -1374,36 +1438,44 @@ class _PosScreenState extends State<PosScreen> {
         if (id == null) return const SizedBox.shrink();
         final label = VariantHelpers.variantSelectorLabel(variant);
         final isSelected = selected.id == id;
-        return ActionChip(
-          label: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ActionChip(
+              label: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              backgroundColor: isSelected
+                  ? Theme.of(context).colorScheme.primaryContainer
+                  : null,
+              side: isSelected
+                  ? BorderSide(color: Theme.of(context).colorScheme.primary)
+                  : null,
+              avatar: isSelected
+                  ? Icon(
+                      Icons.check,
+                      size: 14,
+                      color: Theme.of(context).colorScheme.primary,
+                    )
+                  : null,
+              onPressed: () => _onVariantTapped(group, variant),
             ),
-          ),
-          visualDensity: VisualDensity.compact,
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          backgroundColor: isSelected
-              ? Theme.of(context).colorScheme.primaryContainer
-              : null,
-          side: isSelected
-              ? BorderSide(color: Theme.of(context).colorScheme.primary)
-              : null,
-          avatar: isSelected
-              ? Icon(
-                  Icons.check,
-                  size: 14,
-                  color: Theme.of(context).colorScheme.primary,
-                )
-              : null,
-          onPressed: () {
-            setState(() => _selectedVariantIdByGroup[group.key] = id);
-            _addRawMaterial(variant);
-          },
+            _VariantQtyField(
+              onQtyCommitted: (qty) {
+                setState(() => _selectedVariantIdByGroup[group.key] = id);
+                _addRawMaterial(variant, qty: qty, replaceQty: true);
+              },
+            ),
+          ],
         );
       }).toList(),
     );
@@ -1419,10 +1491,7 @@ class _PosScreenState extends State<PosScreen> {
         final isSelected = selected.id == id;
         final label = VariantHelpers.variantSelectorLabel(variant);
         return InkWell(
-          onTap: () {
-            setState(() => _selectedVariantIdByGroup[group.key] = id);
-            _addRawMaterial(variant);
-          },
+          onTap: () => _onVariantTapped(group, variant),
           borderRadius: BorderRadius.circular(6),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
@@ -1449,6 +1518,12 @@ class _PosScreenState extends State<PosScreen> {
                           isSelected ? FontWeight.w600 : FontWeight.normal,
                     ),
                   ),
+                ),
+                _VariantQtyField(
+                  onQtyCommitted: (qty) {
+                    setState(() => _selectedVariantIdByGroup[group.key] = id);
+                    _addRawMaterial(variant, qty: qty);
+                  },
                 ),
               ],
             ),
@@ -1680,7 +1755,7 @@ class _PosScreenState extends State<PosScreen> {
                   .start,
               children: [
                 Text(
-                  line.name,
+                  line.displayLabel,
                   maxLines: 2,
                   overflow:
                   TextOverflow
@@ -2755,6 +2830,62 @@ class _PosGridEntry {
 
   final RawMaterial? material;
   final VariantGroup? variantGroup;
+}
+
+class _VariantQtyField extends StatefulWidget {
+  const _VariantQtyField({required this.onQtyCommitted});
+
+  final ValueChanged<double> onQtyCommitted;
+
+  @override
+  State<_VariantQtyField> createState() => _VariantQtyFieldState();
+}
+
+class _VariantQtyFieldState extends State<_VariantQtyField> {
+  final _controller = TextEditingController();
+  final _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _commit() {
+    final raw = _controller.text.trim().replaceAll(',', '.');
+    if (raw.isEmpty) return;
+    final parsed = double.tryParse(raw);
+    if (parsed == null || parsed <= 0) {
+      _controller.clear();
+      return;
+    }
+    widget.onQtyCommitted(parsed);
+    _controller.clear();
+    _focusNode.unfocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 44,
+      child: TextField(
+        controller: _controller,
+        focusNode: _focusNode,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 11),
+        decoration: const InputDecoration(
+          isDense: true,
+          hintText: 'Qty',
+          contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          border: OutlineInputBorder(),
+        ),
+        onSubmitted: (_) => _commit(),
+        onEditingComplete: _commit,
+      ),
+    );
+  }
 }
 
 class _CartQtyField extends StatefulWidget {

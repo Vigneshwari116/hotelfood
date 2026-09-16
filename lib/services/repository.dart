@@ -7,8 +7,10 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/database/database_helper.dart';
+import 'package:foodstock/database/sub_item_migration.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/item_import_service.dart';
+import 'package:foodstock/services/sub_item_stock.dart';
 import 'package:foodstock/services/variant_helpers.dart';
 
 // ============================================================
@@ -858,6 +860,20 @@ class Repository {
                   );
             }
 
+            if (rm.unitId != null && !skipVariantRefresh && !fromMenuImport) {
+                  await _assertStockGroupUnitMatches(
+                        db,
+                        rawMaterialId: rm.id,
+                        unitId: rm.unitId,
+                        subItem: rm.subItem,
+                        name: rm.name,
+                  );
+            }
+
+            if (!skipVariantRefresh && !fromMenuImport) {
+                  await _assertUniqueVariantLabel(db, rm);
+            }
+
             final map = rm.toMap()..remove('id');
             map['barcode'] = normalizeBarcodeValue(rm.barcode);
 
@@ -1282,27 +1298,50 @@ class Repository {
                         '''
       SELECT
         rm.*,
-        COALESCE(ls.current_stock, 0) AS current_stock,
+        COALESCE(
+          CASE
+            WHEN rm.stock_source_id IS NOT NULL THEN ls_source.current_stock
+            ELSE ls.current_stock
+          END,
+          0
+        ) AS current_stock,
         COALESCE(ls.opening_stock, rm.opening_stock) AS opening_stock,
         COALESCE(ls.reorder_level, rm.reorder_level) AS reorder_level
       FROM raw_materials rm
       LEFT JOIN location_stock ls
         ON ls.raw_material_id = rm.id
         AND ls.location_id = ?
+      LEFT JOIN location_stock ls_source
+        ON ls_source.raw_material_id = rm.stock_source_id
+        AND ls_source.location_id = ?
       WHERE rm.id = ?
       LIMIT 1
       ''',
-                        [locationId, id],
+                        [locationId, locationId, id],
                   );
                   if (rows.isEmpty) return null;
                   return RawMaterial.fromMap(rows.first);
             }
 
-            final rows = await db.query(
-                  'raw_materials',
-                  where: 'id = ?',
-                  whereArgs: [id],
-                  limit: 1,
+            final rows = await db.rawQuery(
+                  '''
+      SELECT
+        rm.*,
+        COALESCE(
+          CASE
+            WHEN rm.stock_source_id IS NOT NULL THEN source.current_stock
+            ELSE rm.current_stock
+          END,
+          rm.current_stock,
+          0
+        ) AS current_stock
+      FROM raw_materials rm
+      LEFT JOIN raw_materials source
+        ON source.id = rm.stock_source_id
+      WHERE rm.id = ?
+      LIMIT 1
+      ''',
+                  [id],
             );
 
             if (rows.isEmpty) {
@@ -1850,7 +1889,6 @@ class Repository {
 
                         final materialRows = await txn.query(
                               'raw_materials',
-                              columns: ['id'],
                               where: 'id = ?',
                               whereArgs: [rawMaterialId],
                               limit: 1,
@@ -1859,6 +1897,18 @@ class Repository {
                         if (materialRows.isEmpty) {
                               throw InvalidInventoryException(
                                     'Raw material ID $rawMaterialId does not exist.',
+                              );
+                        }
+
+                        final materialRow = materialRows.first;
+                        final unitId = materialRow['unit_id'] as num?;
+                        if (unitId != null) {
+                              await _assertStockGroupUnitMatches(
+                                    txn,
+                                    rawMaterialId: rawMaterialId,
+                                    unitId: unitId.toInt(),
+                                    subItem: materialRow['sub_item']?.toString(),
+                                    name: materialRow['name']?.toString() ?? '',
                               );
                         }
 
@@ -1995,8 +2045,30 @@ class Repository {
             });
       }
 
-      Future<List<Map<String, dynamic>>> purchases() async {
+      Future<List<Map<String, dynamic>>> purchases({
+            DateTime? from,
+            DateTime? to,
+      }) async {
             final db = await _db;
+
+            final where = <String>[];
+            final args = <Object>[];
+
+            if (from != null) {
+                  final start = DateTime(from.year, from.month, from.day);
+                  where.add('p.purchase_date >= ?');
+                  args.add(start.toIso8601String());
+            }
+
+            if (to != null) {
+                  final endExclusive = DateTime(
+                        to.year,
+                        to.month,
+                        to.day,
+                  ).add(const Duration(days: 1));
+                  where.add('p.purchase_date < ?');
+                  args.add(endExclusive.toIso8601String());
+            }
 
             return db.rawQuery(
                   '''
@@ -2006,9 +2078,24 @@ class Repository {
       FROM purchases p
       LEFT JOIN suppliers s
         ON s.id = p.supplier_id
-      ORDER BY p.purchase_date DESC
+      ${where.isEmpty ? '' : 'WHERE ${where.join(' AND ')}'}
+      ORDER BY p.purchase_date DESC, p.id DESC
       ''',
+                  args.isEmpty ? null : args,
             );
+      }
+
+      Future<List<String>> distinctSubItemGroups() async {
+            final items = await rawMaterials(includeHidden: true);
+            return SubItemStock.distinctGroupLabels(
+                  items.map((item) => item.subItem ?? item.name),
+            );
+      }
+
+      /// Merges case/whitespace variants of sub_item into one canonical label.
+      Future<int> normalizeSubItemGroupLabels() async {
+            final db = await _db;
+            return normalizeSubItemLabels(db);
       }
 
       Future<List<Map<String, dynamic>>> purchaseItems(
@@ -2499,15 +2586,23 @@ class Repository {
             final db = await _db;
             final locationId = _stockLocationId;
 
+            List<Map<String, dynamic>> rows;
             if (locationId != null) {
-                  return db.rawQuery(
+                  rows = await db.rawQuery(
                         '''
       SELECT
         rm.id,
         rm.name,
         rm.sub_item,
         rm.barcode,
-        COALESCE(ls.current_stock, 0) AS current_stock,
+        rm.stock_source_id,
+        COALESCE(
+          CASE
+            WHEN rm.stock_source_id IS NOT NULL THEN ls_source.current_stock
+            ELSE ls.current_stock
+          END,
+          0
+        ) AS current_stock,
         COALESCE(ls.reorder_level, rm.reorder_level) AS reorder_level,
         rm.cost_price,
         rm.selling_price,
@@ -2518,24 +2613,34 @@ class Repository {
       LEFT JOIN location_stock ls
         ON ls.raw_material_id = rm.id
         AND ls.location_id = ?
+      LEFT JOIN location_stock ls_source
+        ON ls_source.raw_material_id = rm.stock_source_id
+        AND ls_source.location_id = ?
       LEFT JOIN units u
         ON u.id = rm.unit_id
       LEFT JOIN categories c
         ON c.id = rm.category_id
       ORDER BY rm.name ASC
       ''',
-                        [locationId],
+                        [locationId, locationId],
                   );
-            }
-
-            return db.rawQuery(
-                  '''
+            } else {
+                  rows = await db.rawQuery(
+                        '''
       SELECT
         rm.id,
         rm.name,
         rm.sub_item,
         rm.barcode,
-        rm.current_stock,
+        rm.stock_source_id,
+        COALESCE(
+          CASE
+            WHEN rm.stock_source_id IS NOT NULL THEN source.current_stock
+            ELSE rm.current_stock
+          END,
+          rm.current_stock,
+          0
+        ) AS current_stock,
         rm.reorder_level,
         rm.cost_price,
         rm.selling_price,
@@ -2543,20 +2648,228 @@ class Repository {
         u.short_code AS unit,
         c.name AS category
       FROM raw_materials rm
+      LEFT JOIN raw_materials source
+        ON source.id = rm.stock_source_id
       LEFT JOIN units u
         ON u.id = rm.unit_id
       LEFT JOIN categories c
         ON c.id = rm.category_id
       ORDER BY rm.name ASC
       ''',
-            );
+                  );
+            }
+
+            return _applyPooledCurrentStockRows(rows);
+      }
+
+      List<Map<String, dynamic>> _applyPooledCurrentStockRows(
+            List<Map<String, dynamic>> rows,
+            ) {
+            if (rows.isEmpty) return rows;
+
+            final materials = rows
+                .map(
+                  (row) => RawMaterial(
+                    id: (row['id'] as num?)?.toInt(),
+                    name: row['item_name']?.toString() ??
+                        row['name']?.toString() ??
+                        '',
+                    subItem: row['sub_item']?.toString(),
+                    stockSourceId: (row['stock_source_id'] as num?)?.toInt(),
+                    currentStock: (row['current_stock'] as num?)?.toDouble() ?? 0,
+                  ),
+                )
+                .where((item) => item.id != null)
+                .toList();
+
+            final linked = VariantHelpers.withSyncedLinks(materials);
+            final stockIdByMaterialId = <int, int>{
+                  for (final item in linked)
+                        if (item.id != null)
+                              item.id!: VariantHelpers.stockMaterialId(item),
+            };
+
+            final familyByStockId = <int, List<RawMaterial>>{};
+            for (final item in linked) {
+                  if (item.id == null) continue;
+                  final stockId = stockIdByMaterialId[item.id!] ?? item.id!;
+                  familyByStockId.putIfAbsent(stockId, () => []).add(item);
+            }
+
+            final rowByMaterialId = <int, Map<String, dynamic>>{
+                  for (final row in rows)
+                        if (row['id'] != null) row['id'] as int: row,
+            };
+
+            final collapsed = <Map<String, dynamic>>[];
+            for (final row in rows) {
+                  final materialId = row['id'] as int?;
+                  if (materialId == null) {
+                        collapsed.add(row);
+                        continue;
+                  }
+
+                  final stockId = stockIdByMaterialId[materialId] ?? materialId;
+                  if (stockId != materialId) continue;
+
+                  final family = familyByStockId[stockId] ??
+                      linked.where((item) => item.id == stockId).toList();
+                  final groupLabel = SubItemStock.canonicalLabelForFamily(family);
+                  final holderRow = rowByMaterialId[stockId] ?? row;
+
+                  collapsed.add({
+                        ...holderRow,
+                        'name': groupLabel.isNotEmpty
+                            ? groupLabel
+                            : holderRow['name'],
+                        'sub_item': groupLabel.isNotEmpty
+                            ? groupLabel
+                            : holderRow['sub_item'],
+                        'current_stock': holderRow['current_stock'],
+                  });
+            }
+
+            collapsed.sort((a, b) {
+                  final nameA = RawMaterial.staffLabelFor(
+                        a['name']?.toString() ?? '',
+                        a['sub_item']?.toString(),
+                  );
+                  final nameB = RawMaterial.staffLabelFor(
+                        b['name']?.toString() ?? '',
+                        b['sub_item']?.toString(),
+                  );
+                  return nameA.toLowerCase().compareTo(nameB.toLowerCase());
+            });
+
+            return collapsed;
       }
 
       // ============================================================
       // VARIANT LINK MAINTENANCE
       // ============================================================
 
+      Future<void> _assertStockGroupUnitMatches(
+            AppDb db, {
+            required int? rawMaterialId,
+            required int? unitId,
+            required String? subItem,
+            required String name,
+      }) async {
+            if (unitId == null) return;
+
+            final probe = RawMaterial(
+                  id: rawMaterialId,
+                  name: name,
+                  subItem: subItem,
+                  unitId: unitId,
+            );
+            final stockKey = SubItemStock.stockKey(probe);
+            if (stockKey == null || stockKey.isEmpty) return;
+
+            final rows = await db.query(
+                  'raw_materials',
+                  columns: ['id', 'name', 'sub_item', 'unit_id'],
+            );
+            final family = <RawMaterial>[];
+            for (final row in rows) {
+                  final item = RawMaterial(
+                        id: row['id'] as int?,
+                        name: row['name']?.toString() ?? '',
+                        subItem: row['sub_item']?.toString(),
+                        unitId: (row['unit_id'] as num?)?.toInt(),
+                  );
+                  if (SubItemStock.stockKey(item) == stockKey) {
+                        family.add(item);
+                  }
+            }
+            if (family.length < 2) return;
+
+            final holder = SubItemStock.canonicalHolder(
+                  family,
+                  stockKey: stockKey,
+            );
+            final canonicalUnitId = holder?.unitId;
+            if (canonicalUnitId == null || canonicalUnitId == unitId) return;
+
+            final unitRows = await db.query(
+                  'units',
+                  columns: ['id', 'short_code'],
+                  where: 'id IN (?, ?)',
+                  whereArgs: [canonicalUnitId, unitId],
+            );
+            String? codeFor(int id) {
+                  for (final row in unitRows) {
+                        if ((row['id'] as num?)?.toInt() == id) {
+                              return row['short_code']?.toString();
+                        }
+                  }
+                  return null;
+            }
+
+            final canonicalUnit =
+                codeFor(canonicalUnitId) ?? 'the group unit';
+            throw InvalidInventoryException(
+                  'This stock group is tracked in $canonicalUnit — '
+                  'enter quantity in $canonicalUnit for every item in the group.',
+            );
+      }
+
+      Future<void> _assertUniqueVariantLabel(
+            AppDb db,
+            RawMaterial rm,
+            ) async {
+            if (rm.id == null && !rm.listed) return;
+
+            final label = SubItemStock.normalizeVariantLabel(
+                  VariantHelpers.variantSelectorLabel(rm),
+            );
+            if (label.isEmpty) return;
+
+            final posKey = SubItemStock.posGroupKey(rm);
+            final rows = await db.query(
+                  'raw_materials',
+                  columns: [
+                        'id',
+                        'name',
+                        'sub_item',
+                        'category_id',
+                        'variant_group',
+                        'variant_label',
+                        'listed',
+                  ],
+            );
+
+            for (final row in rows) {
+                  final id = row['id'] as int?;
+                  if (id == null || id == rm.id) continue;
+                  if ((row['listed'] as num?)?.toInt() == 0) continue;
+
+                  final sibling = RawMaterial(
+                        id: id,
+                        name: row['name']?.toString() ?? '',
+                        subItem: row['sub_item']?.toString(),
+                        categoryId: (row['category_id'] as num?)?.toInt(),
+                        variantGroup: row['variant_group']?.toString(),
+                        variantLabel: row['variant_label']?.toString(),
+                        listed: true,
+                  );
+                  if (SubItemStock.posGroupKey(sibling) != posKey) continue;
+
+                  final siblingLabel = SubItemStock.normalizeVariantLabel(
+                        VariantHelpers.variantSelectorLabel(sibling),
+                  );
+                  if (siblingLabel == label) {
+                        throw InvalidInventoryException(
+                              'Another variant in this group already uses '
+                              '"${VariantHelpers.variantSelectorLabel(rm)}". '
+                              'Choose a different size label.',
+                        );
+                  }
+            }
+      }
+
       Future<void> refreshVariantLinks() async {
+            await normalizeSubItemGroupLabels();
             final items = await rawMaterials(includeHidden: true);
             final categories = await this.categories(type: 'raw_material');
             final categoryNameById = {
@@ -2769,29 +3082,54 @@ class Repository {
                         if (row['id'] != null) row['id'] as int: row,
             };
 
-            return rows.map((row) {
+            final familyByStockId = <int, List<RawMaterial>>{};
+            for (final item in linked) {
+                  if (item.id == null) continue;
+                  final stockId = stockIdByMaterialId[item.id!] ?? item.id!;
+                  familyByStockId.putIfAbsent(stockId, () => []).add(item);
+            }
+
+            final collapsed = <Map<String, dynamic>>[];
+            for (final row in rows) {
                   final materialId = row['id'] as int?;
-                  if (materialId == null) return row;
+                  if (materialId == null) {
+                        collapsed.add(row);
+                        continue;
+                  }
 
                   final stockId = stockIdByMaterialId[materialId] ?? materialId;
-                  if (stockId == materialId) return row;
+                  if (stockId != materialId) continue;
 
-                  final holderRow = rowByMaterialId[stockId];
-                  if (holderRow == null) return row;
+                  final holderRow = rowByMaterialId[stockId] ?? row;
+                  final family = familyByStockId[stockId] ?? linked
+                      .where((item) => item.id == stockId)
+                      .toList();
+                  final groupLabel = SubItemStock.canonicalLabelForFamily(family);
 
-                  return {
-                        ...row,
-                        'opening_qty': holderRow['opening_qty'],
-                        'purchase_qty': holderRow['purchase_qty'],
-                        'sales_qty': holderRow['sales_qty'],
-                        'adjustment_qty': holderRow['adjustment_qty'],
-                        'closing_qty': holderRow['closing_qty'],
-                        'opening_value': holderRow['opening_value'],
-                        'closing_value': holderRow['closing_value'],
-                        'purchase_value': holderRow['purchase_value'],
-                        'sales_value': holderRow['sales_value'],
-                  };
-            }).toList();
+                  collapsed.add({
+                        ...holderRow,
+                        'item_name': groupLabel.isNotEmpty
+                            ? groupLabel
+                            : holderRow['item_name'],
+                        'sub_item': groupLabel.isNotEmpty
+                            ? groupLabel
+                            : holderRow['sub_item'],
+                  });
+            }
+
+            collapsed.sort((a, b) {
+                  final nameA = RawMaterial.staffLabelFor(
+                        a['item_name']?.toString() ?? '',
+                        a['sub_item']?.toString(),
+                  );
+                  final nameB = RawMaterial.staffLabelFor(
+                        b['item_name']?.toString() ?? '',
+                        b['sub_item']?.toString(),
+                  );
+                  return nameA.toLowerCase().compareTo(nameB.toLowerCase());
+            });
+
+            return collapsed;
       }
 
       // ============================================================
@@ -3788,11 +4126,18 @@ class Repository {
           ) async {
             final db = await _db;
 
-            return db.query(
-                  'sale_items',
-                  where: 'sale_id = ?',
-                  whereArgs: [saleId],
-                  orderBy: 'id ASC',
+            return db.rawQuery(
+                  '''
+      SELECT
+        si.*,
+        rm.variant_label AS material_variant_label
+      FROM sale_items si
+      LEFT JOIN raw_materials rm
+        ON rm.id = si.raw_material_id
+      WHERE si.sale_id = ?
+      ORDER BY si.id ASC
+      ''',
+                  [saleId],
             );
       }
 
@@ -3967,23 +4312,19 @@ class Repository {
             final args = <dynamic>[];
 
             if (from != null) {
-                  where.add(
-                        'sale_date >= ?',
-                  );
-
-                  args.add(
-                        from.toIso8601String(),
-                  );
+                  final start = DateTime(from.year, from.month, from.day);
+                  where.add('sale_date >= ?');
+                  args.add(start.toIso8601String());
             }
 
             if (to != null) {
-                  where.add(
-                        'sale_date <= ?',
-                  );
-
-                  args.add(
-                        to.toIso8601String(),
-                  );
+                  final endExclusive = DateTime(
+                        to.year,
+                        to.month,
+                        to.day,
+                  ).add(const Duration(days: 1));
+                  where.add('sale_date < ?');
+                  args.add(endExclusive.toIso8601String());
             }
 
             if (!includeVoided) {

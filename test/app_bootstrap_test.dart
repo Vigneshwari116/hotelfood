@@ -232,6 +232,7 @@ void main() {
 
       expect(immediate.contains('ensureLocationStockRows'), isFalse);
       expect(deferred.contains('ensureLocationStockRows'), isTrue);
+      expect(deferred.contains('refreshVariantLinks'), isTrue);
       expect(deferred.contains('writeOffExpiredStock'), isTrue);
     });
   });

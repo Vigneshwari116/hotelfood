@@ -56,6 +56,7 @@ Future<Database> openStockTestDatabase() async {
           reorder_level REAL NOT NULL DEFAULT 0,
           cost_price REAL,
           selling_price REAL,
+          image_path TEXT,
           listed INTEGER NOT NULL DEFAULT 1,
           menu_sort_order INTEGER,
           menu_export_row TEXT,

@@ -8,6 +8,8 @@ import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/database/http_app_db.dart';
 import 'package:foodstock/database/sqlite_app_db.dart';
+import 'package:foodstock/database/sub_item_migration.dart';
+import 'package:foodstock/database/sqlite_app_db.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -111,7 +113,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 23,
+      version: 24,
 
       onConfigure: (db) async {
         await db.execute(
@@ -1575,6 +1577,10 @@ class DBHelper {
           'ALTER TABLE raw_materials ADD COLUMN menu_export_row TEXT',
         );
       }
+    }
+
+    if (oldVersion < 24) {
+      await normalizeSubItemLabels(SqliteAppDb(db));
     }
 
     if (oldVersion < 23) {

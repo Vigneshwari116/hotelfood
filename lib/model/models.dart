@@ -316,6 +316,17 @@ class RawMaterial {
   /// Customer-facing label for Sales/POS tiles, cart, and receipts.
   String get salesLabel => name.trim();
 
+  /// Bill/cart line when a size variant was sold (e.g. "Chicken Popcorn — Large").
+  String soldLineLabel({String? variantLabel}) {
+    final variant = variantLabel?.trim();
+    if (variant != null &&
+        variant.isNotEmpty &&
+        variant.toLowerCase() != 'regular') {
+      return '$salesLabel — $variant';
+    }
+    return salesLabel;
+  }
+
   static String staffLabelFor(String name, String? subItem) {
     final trimmed = subItem?.trim();
     if (trimmed != null && trimmed.isNotEmpty) return trimmed;
@@ -561,6 +572,7 @@ class CartLine {
 
   final String name;
   final String? subItem;
+  final String? variantLabel;
 
   /// Combo component labels (item names) for cart/receipt detail lines.
   final List<String> componentLabels;
@@ -573,13 +585,15 @@ class CartLine {
     this.comboId,
     required this.name,
     this.subItem,
+    this.variantLabel,
     this.componentLabels = const [],
     required this.qty,
     required this.price,
   });
 
-  /// Customer-facing label for cart lines and receipts (item name only).
-  String get displayLabel => name.trim();
+  /// Customer-facing label for cart lines and receipts (item name + variant).
+  String get displayLabel =>
+      RawMaterial(name: name).soldLineLabel(variantLabel: variantLabel);
 
   double get amount {
     return qty * price;
@@ -601,6 +615,7 @@ class CartLine {
       'combo_id': comboId,
       'item_name': name,
       'sub_item': subItem,
+      'variant_label': variantLabel,
       'qty': qty,
       'price': price,
       'amount': amount,

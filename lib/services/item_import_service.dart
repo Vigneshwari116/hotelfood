@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/services/spreadsheet_export.dart';
+import 'package:foodstock/services/sub_item_stock.dart';
 import 'package:foodstock/services/variant_helpers.dart';
 import 'package:path/path.dart' as p;
 
@@ -641,6 +642,7 @@ class ItemImportService {
 
     await _applyVariantAutoLinking();
     await _cleanupDuplicateSnacksPopcorn();
+    await _dedupeDuplicateVariantLabels();
     await _cleanupPopcornFromSnacksCombos();
 
     return result;
@@ -652,6 +654,59 @@ class ItemImportService {
         await Repository.instance.removePopcornFromSnacksComboComponents();
     if (removed > 0) {
       // Logged via import result only when callers surface errors; silent cleanup.
+    }
+  }
+
+  /// Hides duplicate size labels within the same POS variant group.
+  Future<void> _dedupeDuplicateVariantLabels() async {
+    final items = await Repository.instance.rawMaterials(includeHidden: true);
+    final categories = await Repository.instance.categories(type: 'raw_material');
+    final categoryNameById = {
+      for (final category in categories)
+        if (category.id != null) category.id!: category.name,
+    };
+
+    final partition = VariantHelpers.partitionForPos(
+      items.where((item) => item.listed).toList(),
+    );
+
+    RawMaterial preferVariant(RawMaterial a, RawMaterial b) {
+      String categoryName(RawMaterial item) {
+        if (item.categoryId == null) return '';
+        return categoryNameById[item.categoryId]?.trim().toLowerCase() ?? '';
+      }
+
+      final aFried = categoryName(a).replaceAll(' ', '') == 'frieditems';
+      final bFried = categoryName(b).replaceAll(' ', '') == 'frieditems';
+      if (aFried != bFried) return aFried ? a : b;
+
+      final orderA = a.menuSortOrder ?? 1 << 30;
+      final orderB = b.menuSortOrder ?? 1 << 30;
+      if (orderA != orderB) return orderA < orderB ? a : b;
+
+      return a.name.length <= b.name.length ? a : b;
+    }
+
+    for (final group in partition.groups) {
+      final winners = <String, RawMaterial>{};
+      for (final variant in group.variants) {
+        if (variant.id == null) continue;
+        final label = SubItemStock.normalizeVariantLabel(
+          VariantHelpers.variantSelectorLabel(variant),
+        );
+        final existing = winners[label];
+        if (existing == null) {
+          winners[label] = variant;
+          continue;
+        }
+
+        final keep = preferVariant(existing, variant);
+        final drop = keep.id == existing.id ? variant : existing;
+        if (drop.id != null) {
+          await Repository.instance.hideRawMaterial(drop.id!);
+        }
+        winners[label] = keep;
+      }
     }
   }
 
