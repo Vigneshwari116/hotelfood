@@ -20,11 +20,17 @@ class InventorySearchEntry {
   final RawMaterial? material;
   final Combo? combo;
 
-  factory InventorySearchEntry.fromMaterial(RawMaterial material) {
+  factory InventorySearchEntry.fromMaterial(
+    RawMaterial material, {
+    String? categoryName,
+  }) {
     return InventorySearchEntry(
       primaryLabel: material.staffLabel,
       secondaryLabel: inventoryMaterialExtra(material),
-      haystack: inventoryMaterialHaystack(material),
+      haystack: inventoryMaterialHaystack(
+        material,
+        categoryName: categoryName,
+      ),
       material: material,
     );
   }
@@ -51,7 +57,10 @@ class InventorySearchEntry {
   bool get isCombo => combo != null;
 }
 
-String inventoryMaterialHaystack(RawMaterial material) {
+String inventoryMaterialHaystack(
+  RawMaterial material, {
+  String? categoryName,
+}) {
   return [
     material.name,
     material.trimmedSubItem ?? '',
@@ -59,6 +68,8 @@ String inventoryMaterialHaystack(RawMaterial material) {
     material.variantGroup ?? '',
     material.variantLabel ?? '',
     material.staffLabel,
+    material.salesLabel,
+    categoryName ?? '',
   ].join(' ').toLowerCase();
 }
 
@@ -119,9 +130,14 @@ List<InventorySearchEntry> filterInventorySearchEntries(
 }
 
 List<InventorySearchEntry> inventorySearchEntriesFromMaterials(
-  Iterable<RawMaterial> materials,
-) {
+  Iterable<RawMaterial> materials, {
+  String? Function(int? categoryId)? categoryNameFor,
+}) {
   return [
-    for (final material in materials) InventorySearchEntry.fromMaterial(material),
+    for (final material in materials)
+      InventorySearchEntry.fromMaterial(
+        material,
+        categoryName: categoryNameFor?.call(material.categoryId),
+      ),
   ];
 }

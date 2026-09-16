@@ -43,6 +43,7 @@ class _RawMaterialMasterScreenState
 
   bool _loading = false;
   bool _editorOpen = false;
+  int _loadGeneration = 0;
 
   bool get _readOnly => Repository.instance.isAdmin;
 
@@ -75,7 +76,7 @@ class _RawMaterialMasterScreenState
   // ============================================================
 
   Future<void> _loadAll() async {
-    if (_loading) return;
+    final generation = ++_loadGeneration;
 
     setState(() {
       _loading = true;
@@ -94,7 +95,7 @@ class _RawMaterialMasterScreenState
         Repository.instance.combosWithItems(),
       ]);
 
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
 
       setState(() {
         _items = results[0] as List<RawMaterial>;
@@ -103,7 +104,7 @@ class _RawMaterialMasterScreenState
         _combos = results[3] as List<Combo>;
       });
     } catch (e) {
-      if (!mounted) return;
+      if (!mounted || generation != _loadGeneration) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -111,7 +112,7 @@ class _RawMaterialMasterScreenState
         ),
       );
     } finally {
-      if (mounted) {
+      if (mounted && generation == _loadGeneration) {
         setState(() {
           _loading = false;
         });
@@ -757,7 +758,9 @@ class _RawMaterialMasterScreenState
 
         Expanded(
           child: _items.isEmpty
-              ? _emptyItems()
+              ? _emptyItems(
+                  search: _searchController.text.trim(),
+                )
               : RefreshIndicator(
             onRefresh: _loadAll,
             child:
@@ -1442,19 +1445,20 @@ class _RawMaterialMasterScreenState
   // EMPTY ITEMS
   // ============================================================
 
-  Widget _emptyItems() {
-    return const Center(
+  Widget _emptyItems({String search = ''}) {
+    final hasSearch = search.isNotEmpty;
+    return Center(
       child: Column(
         mainAxisSize:
         MainAxisSize.min,
         children: [
           Icon(
-            Icons.inventory_2_outlined,
+            hasSearch ? Icons.search_off_outlined : Icons.inventory_2_outlined,
             size: 60,
           ),
           SizedBox(height: 12),
           Text(
-            'No menu items yet',
+            hasSearch ? 'No items match this search' : 'No menu items yet',
             style: TextStyle(
               fontSize: 17,
               fontWeight:
@@ -1463,7 +1467,9 @@ class _RawMaterialMasterScreenState
           ),
           SizedBox(height: 5),
           Text(
-            'Add your first raw material.',
+            hasSearch
+                ? 'Try another name, sub item, or category.'
+                : 'Add your first raw material.',
           ),
         ],
       ),
