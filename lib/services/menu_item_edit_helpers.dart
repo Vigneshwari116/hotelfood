@@ -12,24 +12,31 @@ class MenuItemEditHelpers {
 
   static String? packetsTextFromStock(
     double stock,
-    double? unitsPerPacket,
-  ) {
-    if (unitsPerPacket == null ||
-        unitsPerPacket <= 0 ||
-        stock <= 0) {
+    double? unitsPerPacket, {
+    double openingPieces = 0,
+  }) {
+    if (unitsPerPacket == null || unitsPerPacket <= 0) {
       return null;
     }
-    return formatNumber(stock / unitsPerPacket);
+    final packetStock = stock - openingPieces;
+    if (packetStock <= 0) {
+      return '0';
+    }
+    return formatNumber(packetStock / unitsPerPacket);
   }
 
   static double? stockFromPacketsAndUnitsPerPacket({
     required String packetsText,
     required String unitsPerPacketText,
+    String openingPiecesText = '',
   }) {
     final packets = double.tryParse(packetsText.trim()) ?? 0;
     final unitsPerPacket = double.tryParse(unitsPerPacketText.trim()) ?? 0;
-    if (packets <= 0 || unitsPerPacket <= 0) return null;
-    return packets * unitsPerPacket;
+    final openingPieces = double.tryParse(openingPiecesText.trim()) ?? 0;
+    if (unitsPerPacket <= 0 && packets <= 0 && openingPieces <= 0) {
+      return null;
+    }
+    return (packets * unitsPerPacket) + openingPieces;
   }
 
   static RawMaterial buildForSave({
@@ -40,6 +47,7 @@ class MenuItemEditHelpers {
     required String qtyPerSaleText,
     required String packetsText,
     required String unitsPerPacketText,
+    required String openingPiecesText,
     required String stockText,
     required String costPriceText,
     required String sellingPriceText,
@@ -55,9 +63,12 @@ class MenuItemEditHelpers {
         ? null
         : double.tryParse(unitsPerPacketText.trim());
 
+    final openingPieces = double.tryParse(openingPiecesText.trim()) ?? 0;
+
     final recalculatedStock = stockFromPacketsAndUnitsPerPacket(
       packetsText: packetsText,
       unitsPerPacketText: unitsPerPacketText,
+      openingPiecesText: openingPiecesText,
     );
 
     final parsedStock = double.tryParse(stockText.trim()) ?? 0;
@@ -76,7 +87,8 @@ class MenuItemEditHelpers {
       qtyNeeded: double.tryParse(qtyPerSaleText.trim()) ?? 1,
       categoryId: existing.categoryId,
       unitId: unitId,
-      openingStock: existing.openingStock,
+      openingStock: currentStock,
+      openingPieces: openingPieces,
       currentStock: currentStock,
       reorderLevel: existing.reorderLevel,
       shelfLifeDays: existing.shelfLifeDays,

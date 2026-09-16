@@ -14,10 +14,25 @@ void main() {
       );
     });
 
-    test('packetsTextFromStock divides stock by units per packet', () {
+    test('stockFromPacketsAndUnitsPerPacket adds opening pieces', () {
       expect(
-        MenuItemEditHelpers.packetsTextFromStock(90, 15),
-        '6',
+        MenuItemEditHelpers.stockFromPacketsAndUnitsPerPacket(
+          packetsText: '1',
+          unitsPerPacketText: '20',
+          openingPiecesText: '18',
+        ),
+        38,
+      );
+    });
+
+    test('packetsTextFromStock subtracts opening pieces before dividing', () {
+      expect(
+        MenuItemEditHelpers.packetsTextFromStock(
+          38,
+          20,
+          openingPieces: 18,
+        ),
+        '1',
       );
     });
 
@@ -40,6 +55,7 @@ void main() {
         qtyPerSaleText: '1',
         packetsText: '6',
         unitsPerPacketText: '90',
+        openingPiecesText: '',
         stockText: '90',
         costPriceText: '10',
         sellingPriceText: '20',
@@ -67,13 +83,15 @@ void main() {
         qtyPerSaleText: '1',
         packetsText: '',
         unitsPerPacketText: '',
+        openingPiecesText: '5',
         stockText: '25',
         costPriceText: '',
         sellingPriceText: '15',
         unitId: null,
       );
 
-      expect(saved.currentStock, 25);
+      expect(saved.currentStock, 5);
+      expect(saved.openingPieces, 5);
       expect(saved.unitsPerPacket, isNull);
     });
   });

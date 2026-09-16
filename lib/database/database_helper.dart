@@ -114,7 +114,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 27,
+      version: 28,
 
       onConfigure: (db) async {
         await db.execute(
@@ -268,6 +268,8 @@ class DBHelper {
         image_path TEXT,
 
         opening_stock REAL NOT NULL DEFAULT 0,
+
+        opening_pieces REAL NOT NULL DEFAULT 0,
 
         current_stock REAL NOT NULL DEFAULT 0,
 
@@ -1578,6 +1580,20 @@ class DBHelper {
           'ALTER TABLE raw_materials ADD COLUMN menu_export_row TEXT',
         );
       }
+    }
+
+    if (oldVersion < 28) {
+      final materialColumns = await db.rawQuery(
+        'PRAGMA table_info(raw_materials)',
+      );
+      final materialNames =
+          materialColumns.map((c) => c['name'] as String).toSet();
+      if (!materialNames.contains('opening_pieces')) {
+        await db.execute(
+          'ALTER TABLE raw_materials ADD COLUMN opening_pieces REAL NOT NULL DEFAULT 0',
+        );
+      }
+      await runCatalogMaintenance(SqliteAppDb(db));
     }
 
     if (oldVersion < 27) {
