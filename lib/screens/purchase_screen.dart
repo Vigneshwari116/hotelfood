@@ -1188,10 +1188,10 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
               }),
               decoration: InputDecoration(
                 isDense: true,
-                labelText: 'Packets',
+                labelText: 'Packets purchased',
                 helperText: '1 packet = '
-                    '${_formatNumber(line.material!.unitsPerPacket!)} units'
-                    ' — fills Qty below',
+                    '${_formatNumber(line.material!.unitsPerPacket!)} pieces'
+                    ' — auto-fills total pieces below',
                 border: const OutlineInputBorder(),
               ),
             ),
@@ -1210,10 +1210,12 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                   keyboardType:
                   const TextInputType.numberWithOptions(decimal: true),
                   onChanged: (_) => setState(() {}),
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     isDense: true,
-                    labelText: 'Qty',
-                    border: OutlineInputBorder(),
+                    labelText: line.usesPacketPricing
+                        ? 'Total pieces'
+                        : 'Qty',
+                    border: const OutlineInputBorder(),
                   ),
                 ),
               ),

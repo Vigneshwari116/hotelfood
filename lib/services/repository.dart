@@ -9,6 +9,8 @@ import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/database/sub_item_migration.dart';
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/database/raw_material_integrity.dart';
+import 'package:foodstock/services/inventory_search.dart';
 import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/sub_item_stock.dart';
 import 'package:foodstock/services/variant_helpers.dart';
@@ -874,6 +876,22 @@ class Repository {
                   await _assertUniqueVariantLabel(db, rm);
             }
 
+            if (rm.stockSourceId != null) {
+                  final sourceRows = await db.query(
+                        'raw_materials',
+                        columns: ['id'],
+                        where: 'id = ?',
+                        whereArgs: [rm.stockSourceId],
+                        limit: 1,
+                  );
+                  if (sourceRows.isEmpty) {
+                        throw InvalidInventoryException(
+                              'The linked stock source item no longer exists. '
+                                  'Clear the stock source and save again.',
+                        );
+                  }
+            }
+
             final map = rm.toMap()..remove('id');
             map['barcode'] = normalizeBarcodeValue(rm.barcode);
 
@@ -1218,59 +1236,59 @@ class Repository {
             final locationId = _stockLocationId;
 
             final cleanSearch = search?.trim();
-            final filters = <String>[];
-            final args = <Object>[];
-            if (!includeHidden) {
-                  filters.add('(rm.listed IS NULL OR rm.listed = 1)');
-            }
-            if (cleanSearch != null && cleanSearch.isNotEmpty) {
-                  filters.add(
-                    '(rm.name LIKE ? OR rm.sub_item LIKE ? OR rm.barcode LIKE ? OR rm.barcode = ?)',
-                  );
-                  args.addAll([
-                    '%$cleanSearch%',
-                    '%$cleanSearch%',
-                    '%$cleanSearch%',
-                    cleanSearch,
-                  ]);
-            }
+            final listedFilter = includeHidden
+                ? ''
+                : ' AND (rm.listed IS NULL OR rm.listed = 1)';
 
+            List<Map<String, dynamic>> rows;
             if (locationId != null) {
-                  final rows = await db.rawQuery(
+                  rows = await db.rawQuery(
                         '''
       SELECT
         rm.*,
         COALESCE(ls.current_stock, 0) AS current_stock,
         COALESCE(ls.opening_stock, rm.opening_stock) AS opening_stock,
-        COALESCE(ls.reorder_level, rm.reorder_level) AS reorder_level
+        COALESCE(ls.reorder_level, rm.reorder_level) AS reorder_level,
+        c.name AS category_name
       FROM raw_materials rm
       LEFT JOIN location_stock ls
         ON ls.raw_material_id = rm.id
         AND ls.location_id = ?
-      ${filters.isEmpty ? '' : 'WHERE ${filters.join(' AND ')}'}
+      LEFT JOIN categories c
+        ON c.id = rm.category_id
+      WHERE 1=1$listedFilter
       ORDER BY rm.name ASC
       ''',
-                        [locationId, ...args],
+                        [locationId],
                   );
-                  return rows.map(RawMaterial.fromMap).toList();
+            } else {
+                  rows = await db.rawQuery(
+                        '''
+      SELECT
+        rm.*,
+        c.name AS category_name
+      FROM raw_materials rm
+      LEFT JOIN categories c
+        ON c.id = rm.category_id
+      WHERE 1=1${includeHidden ? '' : ' AND (rm.listed IS NULL OR rm.listed = 1)'}
+      ORDER BY rm.name ASC
+      ''',
+                  );
             }
 
-            final legacyFilters = <String>[];
-            if (!includeHidden) {
-                  legacyFilters.add('(listed IS NULL OR listed = 1)');
-            }
             if (cleanSearch != null && cleanSearch.isNotEmpty) {
-                  legacyFilters.add(
-                    '(name LIKE ? OR sub_item LIKE ? OR barcode LIKE ? OR barcode = ?)',
-                  );
+                  rows = rows.where((row) {
+                        final haystack = [
+                          row['name'],
+                          row['sub_item'],
+                          row['barcode'],
+                          row['category_name'],
+                          row['variant_group'],
+                          row['variant_label'],
+                        ].join(' ').toLowerCase();
+                        return matchesInventorySearchQuery(haystack, cleanSearch);
+                  }).toList();
             }
-
-            final rows = await db.query(
-                  'raw_materials',
-                  where: legacyFilters.isEmpty ? null : legacyFilters.join(' AND '),
-                  whereArgs: args.isEmpty ? null : args,
-                  orderBy: 'name ASC',
-            );
 
             return rows.map(RawMaterial.fromMap).toList();
       }
@@ -1461,6 +1479,19 @@ class Repository {
                                   'already been used in a sale.',
                         );
                   }
+
+                  // Clear pooled-stock links that pointed at this row so
+                  // surviving items are not left with a dangling stock_source_id.
+                  await txn.update(
+                        'raw_materials',
+                        {
+                              'stock_source_id': null,
+                              'variant_group': null,
+                              'variant_label': null,
+                        },
+                        where: 'stock_source_id = ?',
+                        whereArgs: [rawMaterialId],
+                  );
 
                   await txn.delete(
                         'stock_ledger',
@@ -2868,6 +2899,16 @@ class Repository {
             }
       }
 
+      Future<RawMaterialIntegrityReport> repairOrphanedReferences() async {
+            final db = await _db;
+            return repairOrphanedRawMaterialReferences(db);
+      }
+
+      Future<Map<String, int>> auditOrphanedReferences() async {
+            final db = await _db;
+            return auditOrphanedRawMaterialReferences(db);
+      }
+
       Future<void> refreshVariantLinks() async {
             await normalizeSubItemGroupLabels();
             final items = await rawMaterials(includeHidden: true);
@@ -3985,11 +4026,29 @@ class Repository {
                   limit: 1,
             );
 
-            if (rows.isEmpty) return materialId;
+            if (rows.isEmpty) {
+                  throw InvalidInventoryException(
+                        'Raw material does not exist.',
+                  );
+            }
 
             final sourceId =
                 (rows.first['stock_source_id'] as num?)?.toInt();
-            return sourceId ?? materialId;
+            if (sourceId == null || sourceId == materialId) {
+                  return materialId;
+            }
+
+            final sourceRows = await txn.query(
+                  'raw_materials',
+                  columns: ['id'],
+                  where: 'id = ?',
+                  whereArgs: [sourceId],
+                  limit: 1,
+            );
+            if (sourceRows.isEmpty) {
+                  return materialId;
+            }
+            return sourceId;
       }
 
       Future<int> _stockMaterialIdForSale(
