@@ -301,6 +301,25 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
     return number.toStringAsFixed(2);
   }
 
+  String _formatQtyWithUnit(num? value, String? unitCode) {
+    final qty = _formatQty(value);
+    final unit = unitCode?.trim().toLowerCase() ?? '';
+    if (unit.isEmpty) return qty;
+    switch (unit) {
+      case 'g':
+        return '$qty grams';
+      case 'kg':
+        return '$qty kg';
+      case 'pc':
+      case 'pcs':
+        return '$qty pieces';
+      case 'box':
+        return '$qty boxes';
+      default:
+        return '$qty $unitCode';
+    }
+  }
+
   String _formatMoney(num? value) {
     if (value == null) return '—';
     return '₹${value.toDouble().toStringAsFixed(2)}';
@@ -502,11 +521,29 @@ class _StockSummaryTabState extends State<_StockSummaryTab> {
                                 ),
                               )),
                               DataCell(Text(row['unit']?.toString() ?? '-')),
-                              DataCell(Text(_formatQty(row['opening_qty']))),
-                              DataCell(Text(_formatQty(row['purchase_qty']))),
-                              DataCell(Text(_formatQty(row['sales_qty']))),
                               DataCell(Text(
-                                _formatQty(row['closing_qty']),
+                                _formatQtyWithUnit(
+                                  row['opening_qty'],
+                                  row['unit']?.toString(),
+                                ),
+                              )),
+                              DataCell(Text(
+                                _formatQtyWithUnit(
+                                  row['purchase_qty'],
+                                  row['unit']?.toString(),
+                                ),
+                              )),
+                              DataCell(Text(
+                                _formatQtyWithUnit(
+                                  row['sales_qty'],
+                                  row['unit']?.toString(),
+                                ),
+                              )),
+                              DataCell(Text(
+                                _formatQtyWithUnit(
+                                  row['closing_qty'],
+                                  row['unit']?.toString(),
+                                ),
                                 style: const TextStyle(fontWeight: FontWeight.w600),
                               )),
                             ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/combo_only_categories.dart';
 import 'package:foodstock/services/menu_item_edit_helpers.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/widgets/responsive_shell.dart';
@@ -28,6 +29,8 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
 
   List<Category> _categories = [];
   List<UnitM> _units = [];
+  List<Combo> _combos = [];
+  Set<int?> _comboOnlyCategoryIds = {};
   final List<_MenuGridRow> _rows = [];
 
   bool _loading = true;
@@ -62,6 +65,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
         ),
         Repository.instance.categories(type: 'raw_material'),
         Repository.instance.units(),
+        Repository.instance.combosWithItems(),
       ]);
 
       if (!mounted) return;
@@ -74,6 +78,11 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
       final items = results[0] as List<RawMaterial>;
       _categories = results[1] as List<Category>;
       _units = results[2] as List<UnitM>;
+      _combos = results[3] as List<Combo>;
+      _comboOnlyCategoryIds = ComboOnlyCategories.categoryIds(
+        materials: items,
+        combos: _combos,
+      );
 
       for (final item in items) {
         _rows.add(_MenuGridRow(item: item));
@@ -126,13 +135,27 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
   }
 
   List<String> get _sortedCategories {
-    final keys = _groupedRows.keys.toList();
+    final keys = _groupedRows.keys.where((categoryName) {
+      final categoryId = _categoryIdForName(categoryName);
+      if (categoryId != null && _comboOnlyCategoryIds.contains(categoryId)) {
+        return false;
+      }
+      return true;
+    }).toList();
     keys.sort((a, b) {
       final byOrder = _categorySortIndex(a).compareTo(_categorySortIndex(b));
       if (byOrder != 0) return byOrder;
       return a.compareTo(b);
     });
     return keys;
+  }
+
+  int? _categoryIdForName(String name) {
+    for (final category in _categories) {
+      if (category.name == name) return category.id;
+    }
+    if (name.toLowerCase() == 'uncategorized') return null;
+    return null;
   }
 
   int get _dirtyCount => _rows.where((row) => row.isDirty).length;
@@ -256,6 +279,49 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
     return true;
   }
 
+  Future<void> _deleteRow(_MenuGridRow row) async {
+    if (_readOnly || row.item.id == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete item?'),
+        content: Text(
+          'Remove "${row.item.name}" from the menu? '
+          'Items with purchase or sale history will be hidden instead.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+
+    try {
+      await Repository.instance.deleteRawMaterial(row.item.id!);
+      setState(() {
+        _rows.remove(row);
+        row.dispose();
+      });
+      _showMessage('Deleted ${row.item.name}');
+    } catch (_) {
+      await Repository.instance.hideRawMaterial(row.item.id!);
+      if (!mounted) return;
+      setState(() {
+        _rows.remove(row);
+        row.dispose();
+      });
+      _showMessage('Hidden ${row.item.name} (has history)');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isMobile =
@@ -321,6 +387,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                               isDense: true,
                             ),
                             onSubmitted: (_) => _load(),
+                            onChanged: (_) => _load(),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -367,6 +434,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                                     _saveRow(row);
                                   },
                                   onFieldChanged: _markChanged,
+                                  onDelete: _deleteRow,
                                 );
                               },
                             ),
@@ -389,6 +457,7 @@ class _CategoryGridSection extends StatelessWidget {
     required this.isMobile,
     required this.onFieldCommitted,
     required this.onFieldChanged,
+    required this.onDelete,
   });
 
   final String category;
@@ -399,6 +468,7 @@ class _CategoryGridSection extends StatelessWidget {
   final bool isMobile;
   final ValueChanged<_MenuGridRow> onFieldCommitted;
   final VoidCallback onFieldChanged;
+  final ValueChanged<_MenuGridRow> onDelete;
 
   static const _headers = [
     _GridColumnSpec('Barcode', width: 120),
@@ -416,10 +486,10 @@ class _CategoryGridSection extends StatelessWidget {
       tooltip: 'Size/portion label on the POS selector (e.g. Large, Mini Bucket)',
     ),
     _GridColumnSpec(
-      'Stock\nSource',
+      'Pooled stock\nholder',
       width: 120,
       tooltip:
-          'Which item holds the shared stock pool (leave blank when this item owns stock)',
+          'Name of the item that holds shared stock for this row (blank = this item owns stock)',
     ),
     _GridColumnSpec(
       'Qty/Sale\n(per order)',
@@ -432,7 +502,7 @@ class _CategoryGridSection extends StatelessWidget {
       tooltip: 'Number of supplier purchase packets currently in stock',
     ),
     _GridColumnSpec(
-      'Units/Packet\n(from supplier)',
+      'Pieces/Packet\n(from supplier)',
       width: 96,
       tooltip: 'Pieces contained in one purchase packet from the supplier',
     ),
@@ -440,6 +510,7 @@ class _CategoryGridSection extends StatelessWidget {
     _GridColumnSpec('Cost (₹)', width: 80),
     _GridColumnSpec('Sell (₹)', width: 80),
     _GridColumnSpec('Unit', width: 88),
+    _GridColumnSpec('Actions', width: 72),
   ];
 
   @override
@@ -615,6 +686,40 @@ class _CategoryGridSection extends StatelessWidget {
                               onFieldChanged();
                               onFieldCommitted(row);
                             },
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                IconButton(
+                                  tooltip: 'Save row',
+                                  icon: Icon(
+                                    Icons.save_outlined,
+                                    size: 18,
+                                    color: row.isDirty
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Colors.grey,
+                                  ),
+                                  onPressed: readOnly || row.saving
+                                      ? null
+                                      : () => onFieldCommitted(row),
+                                ),
+                                IconButton(
+                                  tooltip: 'Delete row',
+                                  icon: Icon(
+                                    Icons.delete_outline,
+                                    size: 18,
+                                    color: readOnly
+                                        ? Colors.grey
+                                        : Colors.red.shade700,
+                                  ),
+                                  onPressed: readOnly
+                                      ? null
+                                      : () => onDelete(row),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
