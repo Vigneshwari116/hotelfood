@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/combo_only_categories.dart';
+import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/menu_item_edit_helpers.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/widgets/responsive_shell.dart';
@@ -106,9 +107,20 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
   String _categoryName(int? id) {
     if (id == null) return 'Uncategorized';
     for (final category in _categories) {
-      if (category.id == id) return category.name;
+      if (category.id == id) {
+        return _canonicalCategoryDisplayName(category.name);
+      }
     }
     return 'Uncategorized';
+  }
+
+  String _canonicalCategoryDisplayName(String name) {
+    final canonical = ItemImportService.canonicalMenuCategory(name) ?? name;
+    final lower = canonical.trim().toLowerCase();
+    if (lower == 'others' || lower == 'other' || lower == 'uncategorized') {
+      return 'Uncategorized';
+    }
+    return canonical;
   }
 
   int _categorySortIndex(String name) {
@@ -159,10 +171,12 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
   }
 
   int? _categoryIdForName(String name) {
+    if (_canonicalCategoryDisplayName(name) == 'Uncategorized') return null;
     for (final category in _categories) {
-      if (category.name == name) return category.id;
+      if (_canonicalCategoryDisplayName(category.name) == name) {
+        return category.id;
+      }
     }
-    if (name.toLowerCase() == 'uncategorized') return null;
     return null;
   }
 
@@ -242,33 +256,6 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
       _showMessage('Added $trimmed');
     } catch (e) {
       _showMessage('Failed to add item: $e', isError: true);
-    }
-  }
-
-  Future<void> _saveRow(_MenuGridRow row) async {
-    if (_readOnly || row.saving || !row.isDirty) return;
-
-    final item = row.buildItem(_rows);
-    if (item.name.trim().isEmpty) {
-      _showMessage('Item name cannot be empty', isError: true);
-      return;
-    }
-
-    row.saving = true;
-    setState(() {});
-
-    try {
-      await Repository.instance.saveRawMaterial(item);
-      final refreshed =
-          await Repository.instance.rawMaterialById(item.id!);
-      row.commitSaved(refreshed ?? item, _rows);
-      _markChanged();
-      _showMessage('Saved ${item.name}');
-    } catch (e) {
-      _showMessage('Failed to save ${item.name}: $e', isError: true);
-    } finally {
-      row.saving = false;
-      if (mounted) setState(() {});
     }
   }
 
@@ -480,9 +467,9 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
-                      'Qty/Sale = pieces per customer order. '
-                      'Units/Packet = pieces in one supplier purchase packet. '
-                      'These are different fields — do not swap them.',
+                      'Pieces per packet is set once per item. Enter opening packets; '
+                      'total stock = opening packets × pieces per packet (auto). '
+                      'Pieces sold per customer = qty per POS order.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: Theme.of(context).colorScheme.primary,
                           ),
@@ -504,17 +491,12 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                                 return _CategoryGridSection(
                                   category: category,
                                   rows: rows,
-                                  allRows: _rows,
-                                  units: _units,
                                   variantGroups: _existingVariantGroups,
                                   variantLabels: _existingVariantLabels,
                                   stockSourceNames: _existingStockSourceNames,
                                   readOnly: _readOnly,
                                   isMobile: isMobile,
-                                  onFieldCommitted: (row) {
-                                    _markChanged();
-                                    _saveRow(row);
-                                  },
+                                  onFieldCommitted: (_) => _markChanged(),
                                   onFieldChanged: _markChanged,
                                   onDelete: _deleteRow,
                                   onAdd: () => _addItemInCategory(category),
@@ -534,8 +516,6 @@ class _CategoryGridSection extends StatelessWidget {
   const _CategoryGridSection({
     required this.category,
     required this.rows,
-    required this.allRows,
-    required this.units,
     required this.variantGroups,
     required this.variantLabels,
     required this.stockSourceNames,
@@ -549,8 +529,6 @@ class _CategoryGridSection extends StatelessWidget {
 
   final String category;
   final List<_MenuGridRow> rows;
-  final List<_MenuGridRow> allRows;
-  final List<UnitM> units;
   final List<String> variantGroups;
   final List<String> variantLabels;
   final List<String> stockSourceNames;
@@ -562,46 +540,49 @@ class _CategoryGridSection extends StatelessWidget {
   final VoidCallback onAdd;
 
   static const _headers = [
-    _GridColumnSpec('Barcode', width: 120),
-    _GridColumnSpec('Actions', width: 112),
-    _GridColumnSpec('Item name', width: 140),
-    _GridColumnSpec('Sub-item name', width: 140),
+    _GridColumnSpec('Barcode', width: 64),
+    _GridColumnSpec('Item name', width: 96),
+    _GridColumnSpec('Sub-item name', width: 96),
     _GridColumnSpec(
       'Variant\nGroup',
-      width: 100,
+      width: 72,
       tooltip:
           'Items with the same group appear as one POS card with a size selector',
     ),
     _GridColumnSpec(
       'Variant\nLabel',
-      width: 88,
+      width: 64,
       tooltip: 'Size/portion label on the POS selector (e.g. Large, Mini Bucket)',
     ),
     _GridColumnSpec(
-      'Pooled stock\nholder',
-      width: 120,
+      'Stock\nsource',
+      width: 80,
       tooltip:
-          'Name of the item that holds shared stock for this row (blank = this item owns stock)',
+          'Item that holds shared stock for this row (blank = this item owns stock)',
     ),
     _GridColumnSpec(
-      'Qty/Sale\n(per order)',
-      width: 88,
+      'Pieces per\npacket',
+      width: 68,
+      tooltip: 'Pieces in one supplier purchase packet (e.g. 1 packet of buns = 12)',
+    ),
+    _GridColumnSpec(
+      'Opening\npackets',
+      width: 68,
+      tooltip: 'How many purchase packets are currently in stock',
+    ),
+    _GridColumnSpec(
+      'Total\nstock',
+      width: 60,
+      tooltip: 'Auto: opening packets × pieces per packet',
+    ),
+    _GridColumnSpec(
+      'Pieces sold\nfor customer',
+      width: 72,
       tooltip: 'Pieces sold per customer order (POS quantity multiplier)',
     ),
-    _GridColumnSpec(
-      'Packets',
-      width: 72,
-      tooltip: 'Number of supplier purchase packets currently in stock',
-    ),
-    _GridColumnSpec(
-      'Pieces/Packet\n(from supplier)',
-      width: 96,
-      tooltip: 'Pieces contained in one purchase packet from the supplier',
-    ),
-    _GridColumnSpec('Stock\n(pieces)', width: 88),
-    _GridColumnSpec('Cost (₹)', width: 80),
-    _GridColumnSpec('Sell (₹)', width: 80),
-    _GridColumnSpec('Unit', width: 88),
+    _GridColumnSpec('Cost (₹)', width: 56),
+    _GridColumnSpec('Sell (₹)', width: 56),
+    _GridColumnSpec('', width: 36),
   ];
 
   @override
@@ -686,52 +667,6 @@ class _CategoryGridSection extends StatelessWidget {
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
-                          Padding(
-                            padding: const EdgeInsets.all(2),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                IconButton(
-                                  tooltip: 'Save row',
-                                  visualDensity: VisualDensity.compact,
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(
-                                    minWidth: 32,
-                                    minHeight: 32,
-                                  ),
-                                  icon: Icon(
-                                    Icons.save_outlined,
-                                    size: 18,
-                                    color: row.isDirty
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Colors.grey,
-                                  ),
-                                  onPressed: readOnly || row.saving
-                                      ? null
-                                      : () => onFieldCommitted(row),
-                                ),
-                                IconButton(
-                                  tooltip: 'Delete row',
-                                  visualDensity: VisualDensity.compact,
-                                  padding: EdgeInsets.zero,
-                                  constraints: const BoxConstraints(
-                                    minWidth: 32,
-                                    minHeight: 32,
-                                  ),
-                                  icon: Icon(
-                                    Icons.delete_outline,
-                                    size: 18,
-                                    color: readOnly
-                                        ? Colors.grey
-                                        : Colors.red.shade700,
-                                  ),
-                                  onPressed: readOnly
-                                      ? null
-                                      : () => onDelete(row),
-                                ),
-                              ],
-                            ),
-                          ),
                           _GridTextCell(
                             controller: row.itemName,
                             readOnly: readOnly,
@@ -775,12 +710,15 @@ class _CategoryGridSection extends StatelessWidget {
                             onCommit: () => onFieldCommitted(row),
                           ),
                           _GridTextCell(
-                            controller: row.qtyPerSale,
+                            controller: row.unitsPerPacket,
                             readOnly: readOnly,
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
                             ),
-                            onChanged: onFieldChanged,
+                            onChanged: () {
+                              row.recalculateStockFromPackets();
+                              onFieldChanged();
+                            },
                             onCommit: () => onFieldCommitted(row),
                           ),
                           _GridTextCell(
@@ -796,19 +734,13 @@ class _CategoryGridSection extends StatelessWidget {
                             onCommit: () => onFieldCommitted(row),
                           ),
                           _GridTextCell(
-                            controller: row.unitsPerPacket,
-                            readOnly: readOnly,
-                            keyboardType: const TextInputType.numberWithOptions(
-                              decimal: true,
-                            ),
-                            onChanged: () {
-                              row.recalculateStockFromPackets();
-                              onFieldChanged();
-                            },
+                            controller: row.stock,
+                            readOnly: true,
+                            onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
                           _GridTextCell(
-                            controller: row.stock,
+                            controller: row.qtyPerSale,
                             readOnly: readOnly,
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
@@ -834,15 +766,26 @@ class _CategoryGridSection extends StatelessWidget {
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
-                          _GridUnitCell(
-                            unitId: row.unitId,
-                            units: units,
-                            readOnly: readOnly,
-                            onChanged: (value) {
-                              row.unitId = value;
-                              onFieldChanged();
-                              onFieldCommitted(row);
-                            },
+                          Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: IconButton(
+                              tooltip: 'Delete row',
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 28,
+                                minHeight: 28,
+                              ),
+                              icon: Icon(
+                                Icons.delete_outline,
+                                size: 18,
+                                color: readOnly
+                                    ? Colors.grey
+                                    : Colors.red.shade700,
+                              ),
+                              onPressed:
+                                  readOnly ? null : () => onDelete(row),
+                            ),
                           ),
                         ],
                       ),
@@ -1009,47 +952,6 @@ class _GridTextCell extends StatelessWidget {
         onChanged: (_) => onChanged(),
         onEditingComplete: onCommit,
         onSubmitted: (_) => onCommit(),
-      ),
-    );
-  }
-}
-
-class _GridUnitCell extends StatelessWidget {
-  const _GridUnitCell({
-    required this.unitId,
-    required this.units,
-    required this.readOnly,
-    required this.onChanged,
-  });
-
-  final int? unitId;
-  final List<UnitM> units;
-  final bool readOnly;
-  final ValueChanged<int?> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.all(2),
-      child: DropdownButtonFormField<int>(
-        initialValue: unitId,
-        isExpanded: true,
-        decoration: const InputDecoration(
-          isDense: true,
-          border: OutlineInputBorder(),
-          contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        ),
-        style: Theme.of(context).textTheme.bodySmall,
-        items: units
-            .where((unit) => unit.id != null)
-            .map(
-              (unit) => DropdownMenuItem<int>(
-                value: unit.id,
-                child: Text(unit.shortCode),
-              ),
-            )
-            .toList(),
-        onChanged: readOnly ? null : onChanged,
       ),
     );
   }
