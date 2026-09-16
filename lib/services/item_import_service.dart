@@ -59,20 +59,12 @@ class ItemImportService {
     'stock',
   };
 
-  static const hiddenGroupingTags = {
-    'sauce/dry stock',
-    'sauces',
-  };
+  static const hiddenGroupingTags = <String>{};
 
   static const hiddenByDefaultNames = {
     'paratha',
     'bun',
     'burger bun with sesame',
-    'bbq seasoning',
-    'tandoori mayonnaise',
-    'cp marinade',
-    'eggless mayonnaise',
-    'paratha sauce',
   };
 
   static bool isGroupingTag(String? value) {
@@ -131,9 +123,6 @@ class ItemImportService {
       if (hiddenByDefaultNames.contains(label)) return true;
     }
 
-    final categoryName = category?.trim().toLowerCase() ?? '';
-    if (categoryName == 'sauces') return true;
-
     return false;
   }
 
@@ -146,6 +135,22 @@ class ItemImportService {
     return menuCategoryAliases[collapsed] ??
         menuCategoryAliases[aliasKey] ??
         trimmed;
+  }
+
+  /// Single label for Menu Items / grid grouping (Others → Uncategorized).
+  static String displayCategoryName(String? name) {
+    final canonical = canonicalMenuCategory(name) ?? name?.trim() ?? '';
+    if (canonical.isEmpty) return 'Uncategorized';
+    final lower = canonical.toLowerCase();
+    if (lower == 'others' || lower == 'other' || lower == 'uncategorized') {
+      return 'Uncategorized';
+    }
+    return canonical;
+  }
+
+  static bool isUncategorizedCategoryName(String? name) {
+    final lower = displayCategoryName(name).toLowerCase();
+    return lower == 'uncategorized';
   }
 
   static String? normalizeBarcode(String? value) {
@@ -796,9 +801,16 @@ class ItemImportService {
     List<Category> categories,
   ) async {
     final canonical = canonicalMenuCategory(name) ?? name.trim();
-    final key = canonical.toLowerCase();
+    final matchNames = <String>{
+      canonical.toLowerCase(),
+      name.trim().toLowerCase(),
+    };
+    if (canonical.toLowerCase() == 'uncategorized') {
+      matchNames.addAll(['others', 'other', 'uncategorized']);
+    }
     for (final category in categories) {
-      if (category.name.trim().toLowerCase() == key && category.id != null) {
+      if (category.id == null) continue;
+      if (matchNames.contains(category.name.trim().toLowerCase())) {
         return category.id!;
       }
     }

@@ -6,6 +6,7 @@ import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/combo_only_categories.dart';
 import 'package:foodstock/services/inventory_search.dart';
 import 'package:foodstock/services/item_import_service.dart';
+import 'package:foodstock/services/pos_free_addons.dart';
 import 'package:foodstock/services/printer_service.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/services/variant_helpers.dart';
@@ -215,6 +216,27 @@ class _PosScreenState extends State<PosScreen> {
       }
     }
     return null;
+  }
+
+  bool _isFreePosAddOn(RawMaterial material) {
+    return PosFreeAddons.isFreeAddOn(
+      material,
+      categoryNameFor: _categoryName,
+    );
+  }
+
+  bool _isFreePosCartLine(CartLine line) {
+    return PosFreeAddons.isFreeAddOnCartLine(
+      line,
+      materialsById: _materialsById,
+      categoryNameFor: _categoryName,
+    );
+  }
+
+  String? _materialPriceLabel(RawMaterial material) {
+    if (_isFreePosAddOn(material)) return null;
+    if (material.sellingPrice == null) return 'No price';
+    return '₹${material.sellingPrice!.toStringAsFixed(2)}';
   }
 
   bool _isComboOnlyCategory(int? categoryId) {
@@ -811,7 +833,7 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    if (material.sellingPrice == null) {
+    if (!_isFreePosAddOn(material) && material.sellingPrice == null) {
       _showError(
         'Set a selling price for "${material.name}" in Menu Items before selling it.',
       );
@@ -833,7 +855,9 @@ class _PosScreenState extends State<PosScreen> {
           subItem: material.trimmedSubItem,
           variantLabel: variantLabel,
           qty: qty,
-          price: material.sellingPrice ?? 0,
+          price: _isFreePosAddOn(material)
+              ? 0
+              : (material.sellingPrice ?? 0),
         ),
       );
       _refreshUi();
@@ -1394,20 +1418,23 @@ class _PosScreenState extends State<PosScreen> {
                       height: 5,
                     ),
 
-                    Text(
-                      material.sellingPrice == null
-                          ? 'No price'
-                          : '₹${material.sellingPrice!.toStringAsFixed(2)}',
-                      style:
-                      TextStyle(
-                        fontWeight:
-                        FontWeight
-                            .w600,
-                        fontSize: 14,
-                        color: material.sellingPrice == null
-                            ? Theme.of(context).colorScheme.error
-                            : null,
-                      ),
+                    Builder(
+                      builder: (context) {
+                        final priceLabel = _materialPriceLabel(material);
+                        if (priceLabel == null) {
+                          return const SizedBox.shrink();
+                        }
+                        return Text(
+                          priceLabel,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 14,
+                            color: material.sellingPrice == null
+                                ? Theme.of(context).colorScheme.error
+                                : null,
+                          ),
+                        );
+                      },
                     ),
                     Text(
                       _formatStockLabel(stock),
@@ -1502,17 +1529,24 @@ class _PosScreenState extends State<PosScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          selected.sellingPrice == null
-                              ? 'No price'
-                              : '₹${selected.sellingPrice!.toStringAsFixed(2)}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                            color: selected.sellingPrice == null
-                                ? Theme.of(context).colorScheme.error
-                                : null,
-                          ),
+                        Builder(
+                          builder: (context) {
+                            final priceLabel =
+                                _materialPriceLabel(selected);
+                            if (priceLabel == null) {
+                              return const SizedBox.shrink();
+                            }
+                            return Text(
+                              priceLabel,
+                              style: TextStyle(
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                                color: selected.sellingPrice == null
+                                    ? Theme.of(context).colorScheme.error
+                                    : null,
+                              ),
+                            );
+                          },
                         ),
                         Text(
                           _formatStockLabel(stock),
@@ -1908,8 +1942,10 @@ class _PosScreenState extends State<PosScreen> {
                     ),
                   ),
                 Text(
-                  '₹${line.price.toStringAsFixed(2)} × '
-                      '${_formatQty(line.qty)}',
+                  _isFreePosCartLine(line)
+                      ? '${_formatQty(line.qty)} (free add-on)'
+                      : '₹${line.price.toStringAsFixed(2)} × '
+                          '${_formatQty(line.qty)}',
                   style:
                   const TextStyle(
                     fontSize: 12,
@@ -1969,16 +2005,21 @@ class _PosScreenState extends State<PosScreen> {
             width: 70,
             child:
             Text(
-              '₹${line.amount.toStringAsFixed(2)}',
+              _isFreePosCartLine(line)
+                  ? '—'
+                  : '₹${line.amount.toStringAsFixed(2)}',
               textAlign:
               TextAlign
                   .right,
               style:
-              const TextStyle(
+              TextStyle(
                 fontWeight:
                 FontWeight
                     .bold,
                 fontSize: 13,
+                color: _isFreePosCartLine(line)
+                    ? Colors.grey.shade600
+                    : null,
               ),
             ),
           ),
@@ -2639,12 +2680,7 @@ class _PosScreenState extends State<PosScreen> {
   // ============================================================
 
   String _categoryLabel(String name) {
-    final canonical = ItemImportService.canonicalMenuCategory(name) ?? name;
-    final lower = canonical.trim().toLowerCase();
-    if (lower == 'others' || lower == 'other' || lower == 'uncategorized') {
-      return 'Uncategorized';
-    }
-    return canonical;
+    return ItemImportService.displayCategoryName(name);
   }
 
   bool _hasOthersCategory() {

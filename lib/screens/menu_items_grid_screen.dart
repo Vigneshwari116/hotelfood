@@ -55,12 +55,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
     super.dispose();
   }
 
-  Future<void> _load({bool skipDirtyPrompt = false}) async {
-    if (!skipDirtyPrompt && _dirtyCount > 0) {
-      final leave = await _confirmLeaveIfDirty();
-      if (!leave) return;
-    }
-
+  Future<void> _load() async {
     setState(() => _loading = true);
 
     try {
@@ -115,12 +110,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
   }
 
   String _canonicalCategoryDisplayName(String name) {
-    final canonical = ItemImportService.canonicalMenuCategory(name) ?? name;
-    final lower = canonical.trim().toLowerCase();
-    if (lower == 'others' || lower == 'other' || lower == 'uncategorized') {
-      return 'Uncategorized';
-    }
-    return canonical;
+    return ItemImportService.displayCategoryName(name);
   }
 
   int _categorySortIndex(String name) {
@@ -134,6 +124,13 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
   Map<String, List<_MenuGridRow>> get _groupedRows {
     final grouped = <String, List<_MenuGridRow>>{};
     for (final row in _rows) {
+      if (ComboOnlyCategories.shouldHideStandaloneMenuItem(
+        row.item,
+        categoryNameFor: _rawCategoryName,
+        comboOnlyCategoryIds: _comboOnlyCategoryIds,
+      )) {
+        continue;
+      }
       final category = _categoryName(row.item.categoryId);
       grouped.putIfAbsent(category, () => []).add(row);
     }
@@ -176,6 +173,14 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
       if (_canonicalCategoryDisplayName(category.name) == name) {
         return category.id;
       }
+    }
+    return null;
+  }
+
+  String? _rawCategoryName(int? id) {
+    if (id == null) return null;
+    for (final category in _categories) {
+      if (category.id == id) return category.name;
     }
     return null;
   }
@@ -259,11 +264,14 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
     }
   }
 
-  Future<void> _saveAllDirty() async {
+  Future<void> _saveRows(List<_MenuGridRow> rows) async {
     if (_readOnly || _savingAll) return;
 
-    final dirtyRows = _rows.where((row) => row.isDirty).toList();
-    if (dirtyRows.isEmpty) return;
+    final dirtyRows = rows.where((row) => row.isDirty).toList();
+    if (dirtyRows.isEmpty) {
+      _showMessage('No changes to save');
+      return;
+    }
 
     setState(() => _savingAll = true);
 
@@ -296,7 +304,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
     }
 
     if (saved > 0) {
-      _showMessage('Saved $saved item${saved == 1 ? '' : 's'}');
+      _showMessage('Saved');
     }
   }
 
@@ -308,42 +316,6 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
         backgroundColor: isError ? Colors.red.shade700 : null,
       ),
     );
-  }
-
-  Future<bool> _confirmLeaveIfDirty() async {
-    if (_dirtyCount == 0) return true;
-
-    final action = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Unsaved changes'),
-        content: Text(
-          'You have $_dirtyCount unsaved change${_dirtyCount == 1 ? '' : 's'}. '
-          'Save before leaving?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, 'discard'),
-            child: const Text('Discard'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, 'cancel'),
-            child: const Text('Keep editing'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, 'save'),
-            child: const Text('Save all'),
-          ),
-        ],
-      ),
-    );
-
-    if (action == 'cancel' || action == null) return false;
-    if (action == 'save') {
-      await _saveAllDirty();
-      return _dirtyCount == 0;
-    }
-    return true;
   }
 
   Future<void> _deleteRow(_MenuGridRow row) async {
@@ -394,31 +366,10 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
     final isMobile =
         MediaQuery.of(context).size.width < Breakpoints.mobile;
 
-    return PopScope(
-      canPop: _dirtyCount == 0,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
-        final leave = await _confirmLeaveIfDirty();
-        if (leave && context.mounted) {
-          Navigator.of(context).pop(_changed);
-        }
-      },
-      child: Scaffold(
+    return Scaffold(
         appBar: AppBar(
           title: const Text('Menu Items Grid'),
           actions: [
-            if (!_readOnly && _dirtyCount > 0)
-              TextButton.icon(
-                onPressed: _savingAll ? null : _saveAllDirty,
-                icon: _savingAll
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.save_outlined),
-                label: Text('Save all ($_dirtyCount)'),
-              ),
             IconButton(
               tooltip: 'Refresh',
               onPressed: _loading ? null : () => _load(),
@@ -497,10 +448,12 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                                   stockSourceNames: _existingStockSourceNames,
                                   readOnly: _readOnly,
                                   isMobile: isMobile,
+                                  saving: _savingAll,
                                   onFieldCommitted: (_) => _markChanged(),
                                   onFieldChanged: _markChanged,
                                   onDelete: _deleteRow,
                                   onAdd: () => _addItemInCategory(category),
+                                  onSave: () => _saveRows(rows),
                                 );
                               },
                             ),
@@ -508,7 +461,6 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                   ),
                 ],
               ),
-      ),
     );
   }
 }
@@ -522,10 +474,12 @@ class _CategoryGridSection extends StatelessWidget {
     required this.stockSourceNames,
     required this.readOnly,
     required this.isMobile,
+    required this.saving,
     required this.onFieldCommitted,
     required this.onFieldChanged,
     required this.onDelete,
     required this.onAdd,
+    required this.onSave,
   });
 
   final String category;
@@ -535,54 +489,61 @@ class _CategoryGridSection extends StatelessWidget {
   final List<String> stockSourceNames;
   final bool readOnly;
   final bool isMobile;
+  final bool saving;
   final ValueChanged<_MenuGridRow> onFieldCommitted;
   final VoidCallback onFieldChanged;
   final ValueChanged<_MenuGridRow> onDelete;
   final VoidCallback onAdd;
+  final VoidCallback onSave;
+
+  int get _dirtyInSection => rows.where((row) => row.isDirty).length;
 
   static const _headers = [
-    _GridColumnSpec('Barcode', width: 64),
-    _GridColumnSpec('Item name', width: 96),
-    _GridColumnSpec('Sub-item name', width: 96),
+    _GridColumnSpec('Barcode', width: 72),
+    _GridColumnSpec('Item name', width: 152, wrapText: true),
+    _GridColumnSpec('Sub-item name', width: 152, wrapText: true),
     _GridColumnSpec(
-      'Variant\nGroup',
-      width: 72,
+      'Variant Group',
+      width: 136,
+      menuWidth: 260,
       tooltip:
           'Items with the same group appear as one POS card with a size selector',
     ),
     _GridColumnSpec(
-      'Variant\nLabel',
-      width: 64,
+      'Variant Label',
+      width: 112,
+      menuWidth: 220,
       tooltip: 'Size/portion label on the POS selector (e.g. Large, Mini Bucket)',
     ),
     _GridColumnSpec(
-      'Stock\nsource',
-      width: 80,
+      'Stock source',
+      width: 144,
+      menuWidth: 260,
       tooltip:
           'Item that holds shared stock for this row (blank = this item owns stock)',
     ),
     _GridColumnSpec(
       'Pieces per\npacket',
-      width: 68,
+      width: 72,
       tooltip: 'Pieces in one supplier purchase packet (e.g. 1 packet of buns = 12)',
     ),
     _GridColumnSpec(
       'Opening\npackets',
-      width: 68,
+      width: 72,
       tooltip: 'How many purchase packets are currently in stock',
     ),
     _GridColumnSpec(
       'Total\nstock',
-      width: 60,
+      width: 64,
       tooltip: 'Auto: opening packets × pieces per packet',
     ),
     _GridColumnSpec(
       'Pieces sold\nfor customer',
-      width: 72,
+      width: 76,
       tooltip: 'Pieces sold per customer order (POS quantity multiplier)',
     ),
-    _GridColumnSpec('Cost (₹)', width: 56),
-    _GridColumnSpec('Sell (₹)', width: 56),
+    _GridColumnSpec('Cost (₹)', width: 60),
+    _GridColumnSpec('Sell (₹)', width: 60),
     _GridColumnSpec('', width: 36),
   ];
 
@@ -616,6 +577,25 @@ class _CategoryGridSection extends StatelessWidget {
                 ),
                 if (!readOnly) ...[
                   const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: saving ? null : onSave,
+                    icon: saving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.save_outlined, size: 18),
+                    label: Text(
+                      _dirtyInSection > 0
+                          ? 'Save ($_dirtyInSection)'
+                          : 'Save',
+                    ),
+                  ),
+                  const SizedBox(width: 4),
                   TextButton.icon(
                     onPressed: onAdd,
                     icon: const Icon(Icons.add, size: 18),
@@ -671,12 +651,14 @@ class _CategoryGridSection extends StatelessWidget {
                           _GridTextCell(
                             controller: row.itemName,
                             readOnly: readOnly,
+                            wrapText: true,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
                           _GridTextCell(
                             controller: row.subItemName,
                             readOnly: readOnly,
+                            wrapText: true,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
@@ -709,6 +691,7 @@ class _CategoryGridSection extends StatelessWidget {
                                 .toList(),
                             readOnly: readOnly,
                             allowEmpty: true,
+                            menuWidth: _headers[5].menuWidth,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
@@ -809,11 +792,15 @@ class _GridColumnSpec {
     this.label, {
     required this.width,
     this.tooltip,
+    this.menuWidth,
+    this.wrapText = false,
   });
 
   final String label;
   final double width;
   final String? tooltip;
+  final double? menuWidth;
+  final bool wrapText;
 }
 
 class _HeaderCell extends StatelessWidget {
@@ -938,6 +925,7 @@ class _GridSelectCell extends StatelessWidget {
     required this.onChanged,
     required this.onCommit,
     this.allowEmpty = false,
+    this.menuWidth,
   });
 
   final TextEditingController controller;
@@ -946,6 +934,9 @@ class _GridSelectCell extends StatelessWidget {
   final VoidCallback onChanged;
   final VoidCallback onCommit;
   final bool allowEmpty;
+  final double? menuWidth;
+
+  String _labelFor(String value) => value.isEmpty ? '—' : value;
 
   @override
   Widget build(BuildContext context) {
@@ -970,25 +961,51 @@ class _GridSelectCell extends StatelessWidget {
       });
 
     final selected = choices.contains(current) ? current : (allowEmpty ? '' : null);
+    final resolvedMenuWidth = menuWidth ??
+        choices.fold<double>(
+          180,
+          (width, value) {
+            final label = _labelFor(value);
+            final estimated = label.length * 8.0 + 48;
+            return estimated > width ? estimated : width;
+          },
+        );
 
     return Padding(
       padding: const EdgeInsets.all(2),
       child: DropdownButtonFormField<String>(
-        initialValue: selected,
+        key: ValueKey('${controller.hashCode}-$current-${choices.length}'),
         isExpanded: true,
+        initialValue: selected,
         decoration: const InputDecoration(
           isDense: true,
           border: OutlineInputBorder(),
-          contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         ),
         style: Theme.of(context).textTheme.bodySmall,
+        selectedItemBuilder: (context) => choices
+            .map(
+              (value) => Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _labelFor(value),
+                  maxLines: 2,
+                  overflow: TextOverflow.visible,
+                  softWrap: true,
+                ),
+              ),
+            )
+            .toList(),
         items: choices
             .map(
               (value) => DropdownMenuItem<String>(
                 value: value,
-                child: Text(
-                  value.isEmpty ? '—' : value,
-                  overflow: TextOverflow.ellipsis,
+                child: SizedBox(
+                  width: resolvedMenuWidth,
+                  child: Text(
+                    _labelFor(value),
+                    softWrap: true,
+                  ),
                 ),
               ),
             )
@@ -1011,6 +1028,7 @@ class _GridTextCell extends StatelessWidget {
     required this.onChanged,
     required this.onCommit,
     this.keyboardType,
+    this.wrapText = false,
   });
 
   final TextEditingController controller;
@@ -1018,6 +1036,7 @@ class _GridTextCell extends StatelessWidget {
   final VoidCallback onChanged;
   final VoidCallback onCommit;
   final TextInputType? keyboardType;
+  final bool wrapText;
 
   @override
   Widget build(BuildContext context) {
@@ -1029,11 +1048,13 @@ class _GridTextCell extends StatelessWidget {
         enabled: !readOnly,
         keyboardType: keyboardType,
         textInputAction: TextInputAction.done,
+        minLines: wrapText ? 1 : 1,
+        maxLines: wrapText ? 3 : 1,
         style: Theme.of(context).textTheme.bodySmall,
         decoration: const InputDecoration(
           isDense: true,
           border: OutlineInputBorder(),
-          contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         ),
         onChanged: (_) => onChanged(),
         onEditingComplete: onCommit,

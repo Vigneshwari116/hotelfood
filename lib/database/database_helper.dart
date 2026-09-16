@@ -114,7 +114,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 26,
+      version: 27,
 
       onConfigure: (db) async {
         await db.execute(
@@ -1580,7 +1580,8 @@ class DBHelper {
       }
     }
 
-    if (oldVersion < 26) {
+    if (oldVersion < 27) {
+      await listSaucesCategoryForPos(SqliteAppDb(db));
       await mergeOthersCategoryIntoUncategorized(SqliteAppDb(db));
     }
 
