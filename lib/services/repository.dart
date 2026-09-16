@@ -1278,15 +1278,14 @@ class Repository {
 
             if (cleanSearch != null && cleanSearch.isNotEmpty) {
                   rows = rows.where((row) {
-                        final haystack = [
-                          row['name'],
-                          row['sub_item'],
-                          row['barcode'],
-                          row['category_name'],
-                          row['variant_group'],
-                          row['variant_label'],
-                        ].join(' ').toLowerCase();
-                        return matchesInventorySearchQuery(haystack, cleanSearch);
+                        final material = RawMaterial.fromMap(row);
+                        return matchesInventorySearchQuery(
+                          inventoryMaterialHaystack(
+                            material,
+                            categoryName: row['category_name']?.toString(),
+                          ),
+                          cleanSearch,
+                        );
                   }).toList();
             }
 

@@ -62,8 +62,8 @@ void main() {
       expect(matches.first.primaryLabel, popcorn.staffLabel);
     });
 
-    test('finds material by category name on POS haystack', () {
-      final roll = material(id: 2, name: 'Krisper Roll', subItem: 'Krisper Roll');
+    test('finds material by category name on haystack', () {
+      final roll = material(id: 2, name: 'Krisper roll', subItem: 'chicken strips');
       final haystack = inventoryMaterialHaystack(roll, categoryName: 'Rolls');
       expect(matchesInventorySearchQuery(haystack, 'krisper roll'), isTrue);
       expect(matchesInventorySearchQuery(haystack, 'rolls krisper'), isTrue);
