@@ -5,7 +5,6 @@ import 'package:foodstock/services/combo_only_categories.dart';
 import 'package:foodstock/services/menu_item_edit_helpers.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/widgets/responsive_shell.dart';
-import 'package:foodstock/widgets/sub_item_group_field.dart';
 
 const _categoryDisplayOrder = [
   'Sauces',
@@ -179,52 +178,43 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
     }
   }
 
-  List<String> get _existingSubItemGroups {
-    final groups = <String>{};
+  List<String> _distinctFieldValues(String? Function(_MenuGridRow row) read) {
+    final values = <String>{};
     for (final row in _rows) {
-      final label = row.subItemName.text.trim();
-      if (label.isNotEmpty) groups.add(label);
-      final sub = row.item.subItem?.trim();
-      if (sub != null && sub.isNotEmpty) groups.add(sub);
+      final value = read(row).trim();
+      if (value.isNotEmpty) values.add(value);
     }
-    return groups.toList()..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return values.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
   }
+
+  List<String> get _existingVariantGroups => _distinctFieldValues(
+        (row) => row.variantGroup.text.isNotEmpty
+            ? row.variantGroup.text
+            : (row.item.variantGroup ?? ''),
+      );
+
+  List<String> get _existingVariantLabels => _distinctFieldValues(
+        (row) => row.variantLabel.text.isNotEmpty
+            ? row.variantLabel.text
+            : (row.item.variantLabel ?? ''),
+      );
+
+  List<String> get _existingStockSourceNames => _distinctFieldValues(
+        (row) => row.itemName.text,
+      );
 
   Future<void> _addItemInCategory(String categoryName) async {
     if (_readOnly) return;
 
-    final nameController = TextEditingController();
-    final confirmed = await showDialog<bool>(
+    final name = await showDialog<String>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Add item to $categoryName'),
-        content: TextField(
-          controller: nameController,
-          autofocus: true,
-          textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            labelText: 'Item name',
-            border: OutlineInputBorder(),
-          ),
-          onSubmitted: (_) => Navigator.pop(context, true),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Add'),
-          ),
-        ],
-      ),
+      builder: (context) => _AddItemNameDialog(categoryName: categoryName),
     );
-    if (confirmed != true || !mounted) return;
+    if (name == null || !mounted) return;
 
-    final name = nameController.text.trim();
-    nameController.dispose();
-    if (name.isEmpty) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) {
       _showMessage('Item name cannot be empty', isError: true);
       return;
     }
@@ -234,8 +224,8 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
       final unitId = _units.isNotEmpty ? _units.first.id : null;
       final id = await Repository.instance.saveRawMaterial(
         RawMaterial(
-          name: name,
-          subItem: name,
+          name: trimmed,
+          subItem: trimmed,
           categoryId: categoryId,
           unitId: unitId,
           listed: true,
@@ -249,7 +239,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
         _MenuGridRow.linkStockSourceNames(_rows, _rows.map((r) => r.item).toList());
         _changed = true;
       });
-      _showMessage('Added $name');
+      _showMessage('Added $trimmed');
     } catch (e) {
       _showMessage('Failed to add item: $e', isError: true);
     }
@@ -516,7 +506,9 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                                   rows: rows,
                                   allRows: _rows,
                                   units: _units,
-                                  subItemGroups: _existingSubItemGroups,
+                                  variantGroups: _existingVariantGroups,
+                                  variantLabels: _existingVariantLabels,
+                                  stockSourceNames: _existingStockSourceNames,
                                   readOnly: _readOnly,
                                   isMobile: isMobile,
                                   onFieldCommitted: (row) {
@@ -544,7 +536,9 @@ class _CategoryGridSection extends StatelessWidget {
     required this.rows,
     required this.allRows,
     required this.units,
-    required this.subItemGroups,
+    required this.variantGroups,
+    required this.variantLabels,
+    required this.stockSourceNames,
     required this.readOnly,
     required this.isMobile,
     required this.onFieldCommitted,
@@ -557,7 +551,9 @@ class _CategoryGridSection extends StatelessWidget {
   final List<_MenuGridRow> rows;
   final List<_MenuGridRow> allRows;
   final List<UnitM> units;
-  final List<String> subItemGroups;
+  final List<String> variantGroups;
+  final List<String> variantLabels;
+  final List<String> stockSourceNames;
   final bool readOnly;
   final bool isMobile;
   final ValueChanged<_MenuGridRow> onFieldCommitted;
@@ -567,6 +563,7 @@ class _CategoryGridSection extends StatelessWidget {
 
   static const _headers = [
     _GridColumnSpec('Barcode', width: 120),
+    _GridColumnSpec('Actions', width: 112),
     _GridColumnSpec('Item name', width: 140),
     _GridColumnSpec('Sub-item name', width: 140),
     _GridColumnSpec(
@@ -605,7 +602,6 @@ class _CategoryGridSection extends StatelessWidget {
     _GridColumnSpec('Cost (₹)', width: 80),
     _GridColumnSpec('Sell (₹)', width: 80),
     _GridColumnSpec('Unit', width: 88),
-    _GridColumnSpec('Actions', width: 96),
   ];
 
   @override
@@ -650,7 +646,7 @@ class _CategoryGridSection extends StatelessWidget {
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: SizedBox(
-                width: isMobile ? tableWidth : null,
+                width: tableWidth,
                 child: Table(
                   defaultVerticalAlignment: TableCellVerticalAlignment.middle,
                   columnWidths: {
@@ -690,34 +686,91 @@ class _CategoryGridSection extends StatelessWidget {
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
+                          Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                IconButton(
+                                  tooltip: 'Save row',
+                                  visualDensity: VisualDensity.compact,
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 32,
+                                    minHeight: 32,
+                                  ),
+                                  icon: Icon(
+                                    Icons.save_outlined,
+                                    size: 18,
+                                    color: row.isDirty
+                                        ? Theme.of(context).colorScheme.primary
+                                        : Colors.grey,
+                                  ),
+                                  onPressed: readOnly || row.saving
+                                      ? null
+                                      : () => onFieldCommitted(row),
+                                ),
+                                IconButton(
+                                  tooltip: 'Delete row',
+                                  visualDensity: VisualDensity.compact,
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 32,
+                                    minHeight: 32,
+                                  ),
+                                  icon: Icon(
+                                    Icons.delete_outline,
+                                    size: 18,
+                                    color: readOnly
+                                        ? Colors.grey
+                                        : Colors.red.shade700,
+                                  ),
+                                  onPressed: readOnly
+                                      ? null
+                                      : () => onDelete(row),
+                                ),
+                              ],
+                            ),
+                          ),
                           _GridTextCell(
                             controller: row.itemName,
                             readOnly: readOnly,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
-                          _GridSubItemCell(
+                          _GridTextCell(
                             controller: row.subItemName,
-                            existingGroups: subItemGroups,
                             readOnly: readOnly,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
-                          _GridTextCell(
+                          _GridSelectCell(
                             controller: row.variantGroup,
+                            options: variantGroups,
                             readOnly: readOnly,
+                            allowEmpty: true,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
-                          _GridTextCell(
+                          _GridSelectCell(
                             controller: row.variantLabel,
+                            options: variantLabels,
                             readOnly: readOnly,
+                            allowEmpty: true,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
-                          _GridTextCell(
+                          _GridSelectCell(
                             controller: row.stockSourceName,
+                            options: stockSourceNames
+                                .where(
+                                  (name) =>
+                                      name.toLowerCase() !=
+                                      row.itemName.text.trim().toLowerCase(),
+                                )
+                                .toList(),
                             readOnly: readOnly,
+                            allowEmpty: true,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
@@ -791,47 +844,6 @@ class _CategoryGridSection extends StatelessWidget {
                               onFieldCommitted(row);
                             },
                           ),
-                          Padding(
-                            padding: const EdgeInsets.all(2),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                IconButton(
-                                  tooltip: 'Edit row (inline fields)',
-                                  icon: const Icon(Icons.edit_outlined, size: 18),
-                                  onPressed: readOnly
-                                      ? null
-                                      : () => onFieldCommitted(row),
-                                ),
-                                IconButton(
-                                  tooltip: 'Save row',
-                                  icon: Icon(
-                                    Icons.save_outlined,
-                                    size: 18,
-                                    color: row.isDirty
-                                        ? Theme.of(context).colorScheme.primary
-                                        : Colors.grey,
-                                  ),
-                                  onPressed: readOnly || row.saving
-                                      ? null
-                                      : () => onFieldCommitted(row),
-                                ),
-                                IconButton(
-                                  tooltip: 'Delete row',
-                                  icon: Icon(
-                                    Icons.delete_outline,
-                                    size: 18,
-                                    color: readOnly
-                                        ? Colors.grey
-                                        : Colors.red.shade700,
-                                  ),
-                                  onPressed: readOnly
-                                      ? null
-                                      : () => onDelete(row),
-                                ),
-                              ],
-                            ),
-                          ),
                         ],
                       ),
                     ),
@@ -889,20 +901,22 @@ class _HeaderCell extends StatelessWidget {
   }
 }
 
-class _GridSubItemCell extends StatelessWidget {
-  const _GridSubItemCell({
+class _GridSelectCell extends StatelessWidget {
+  const _GridSelectCell({
     required this.controller,
-    required this.existingGroups,
+    required this.options,
     required this.readOnly,
     required this.onChanged,
     required this.onCommit,
+    this.allowEmpty = false,
   });
 
   final TextEditingController controller;
-  final List<String> existingGroups;
+  final List<String> options;
   final bool readOnly;
   final VoidCallback onChanged;
   final VoidCallback onCommit;
+  final bool allowEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -915,21 +929,47 @@ class _GridSubItemCell extends StatelessWidget {
       );
     }
 
+    final current = controller.text.trim();
+    final choices = <String>{
+      if (allowEmpty) '',
+      ...options,
+    }.toList()
+      ..sort((a, b) {
+        if (a.isEmpty) return -1;
+        if (b.isEmpty) return 1;
+        return a.toLowerCase().compareTo(b.toLowerCase());
+      });
+
+    final selected = choices.contains(current) ? current : (allowEmpty ? '' : null);
+
     return Padding(
       padding: const EdgeInsets.all(2),
-      child: SubItemGroupField(
-        existingGroups: existingGroups,
-        initialValue: controller.text,
+      child: DropdownButtonFormField<String>(
+        initialValue: selected,
+        isExpanded: true,
+        decoration: const InputDecoration(
+          isDense: true,
+          border: OutlineInputBorder(),
+          contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        ),
+        style: Theme.of(context).textTheme.bodySmall,
+        items: choices
+            .map(
+              (value) => DropdownMenuItem<String>(
+                value: value,
+                child: Text(
+                  value.isEmpty ? '—' : value,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            )
+            .toList(),
         onChanged: (value) {
+          if (value == null) return;
           controller.text = value;
           onChanged();
           onCommit();
         },
-        decoration: const InputDecoration(
-          isDense: true,
-          border: OutlineInputBorder(),
-          contentPadding: EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-        ),
       ),
     );
   }
@@ -1207,5 +1247,61 @@ class _MenuGridRow {
     stock.dispose();
     costPrice.dispose();
     sellingPrice.dispose();
+  }
+}
+
+class _AddItemNameDialog extends StatefulWidget {
+  const _AddItemNameDialog({required this.categoryName});
+
+  final String categoryName;
+
+  @override
+  State<_AddItemNameDialog> createState() => _AddItemNameDialogState();
+}
+
+class _AddItemNameDialogState extends State<_AddItemNameDialog> {
+  late final TextEditingController _nameController;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    Navigator.pop(context, _nameController.text.trim());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text('Add item to ${widget.categoryName}'),
+      content: TextField(
+        controller: _nameController,
+        autofocus: true,
+        textCapitalization: TextCapitalization.sentences,
+        decoration: const InputDecoration(
+          labelText: 'Item name',
+          border: OutlineInputBorder(),
+        ),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('Add'),
+        ),
+      ],
+    );
   }
 }
