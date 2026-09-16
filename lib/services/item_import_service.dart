@@ -4,6 +4,8 @@ import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:flutter/services.dart';
+import 'package:foodstock/database/category_cleanup.dart';
+import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/services/spreadsheet_export.dart';
@@ -170,6 +172,7 @@ class ItemImportService {
     'barcode',
     'qty_per_sale',
     'packets',
+    'opening_pieces',
     'units_per_packet',
     'unit',
     'opening stock',
@@ -280,6 +283,7 @@ class ItemImportService {
         cell(row['barcode']),
         cell(row['qty_per_sale']),
         cell(row['packets']),
+        cell(row['opening_pieces']),
         cell(row['units_per_packet']),
         cell(row['unit']),
         cell(row['opening_stock']),
@@ -472,6 +476,12 @@ class ItemImportService {
 
         final packetsRaw = _first(map, const ['packets', 'packet']);
         final packets = _number(packetsRaw);
+        final openingPieces = _number(_first(map, const [
+          'openingpieces',
+          'openingpiece',
+          'loosepieces',
+          'opening pieces',
+        ]));
         final unitName = _first(map, const ['unit', 'uom']);
         int? unitId;
         if (unitName.isNotEmpty) {
@@ -499,9 +509,12 @@ class ItemImportService {
         if (stock == null &&
             packets != null &&
             unitsPerPacket != null) {
-          stock = packets * unitsPerPacket;
+          stock = (packets * unitsPerPacket) + (openingPieces ?? 0);
         }
         stock ??= 0;
+        final resolvedOpeningPieces = openingPieces ??
+            existingItem?.openingPieces ??
+            0;
 
         final barcodeRaw = _first(map, const ['barcode', 'code', 'barcodeno', 'grouping']);
         final trimmedBarcode = barcodeRaw?.trim() ?? '';
@@ -558,6 +571,7 @@ class ItemImportService {
             categoryId: categoryId,
             unitId: unitId,
             openingStock: stock,
+            openingPieces: resolvedOpeningPieces,
             currentStock: stock,
             reorderLevel: existingItem?.reorderLevel ?? 0,
             shelfLifeDays: existingItem?.shelfLifeDays,
@@ -598,6 +612,7 @@ class ItemImportService {
           categoryId: saved.categoryId,
           unitId: saved.unitId,
           openingStock: saved.openingStock,
+          openingPieces: saved.openingPieces,
           currentStock: saved.currentStock,
           reorderLevel: saved.reorderLevel,
           shelfLifeDays: saved.shelfLifeDays,
@@ -646,7 +661,7 @@ class ItemImportService {
     }
 
     await _applyVariantAutoLinking();
-    await _cleanupDuplicateSnacksPopcorn();
+    await _runCatalogMaintenance();
     await _dedupeDuplicateVariantLabels();
     await _cleanupPopcornFromSnacksCombos();
 
@@ -715,39 +730,9 @@ class ItemImportService {
     }
   }
 
-  /// Hides stray SNACKS-category popcorn rows when the FRIED ITEMS row exists.
-  Future<void> _cleanupDuplicateSnacksPopcorn() async {
-    final items = await Repository.instance.rawMaterials(includeHidden: true);
-    final categories = await Repository.instance.categories(type: 'raw_material');
-    final categoryNameById = {
-      for (final category in categories)
-        if (category.id != null) category.id!: category.name,
-    };
-
-    bool isPopcornLarge(RawMaterial item) {
-      final name = item.name.trim().toLowerCase();
-      return name.contains('popcorn') && name.contains('large');
-    }
-
-    String categoryName(RawMaterial item) {
-      if (item.categoryId == null) return '';
-      return categoryNameById[item.categoryId]?.trim().toLowerCase() ?? '';
-    }
-
-    final friedPopcorn = items.where(
-      (item) =>
-          isPopcornLarge(item) &&
-          categoryName(item).replaceAll(' ', '') == 'frieditems',
-    );
-    if (friedPopcorn.isEmpty) return;
-
-    for (final item in items) {
-      if (item.id == null || !item.listed) continue;
-      if (!isPopcornLarge(item)) continue;
-      final category = categoryName(item);
-      if (category != 'snacks') continue;
-      await Repository.instance.hideRawMaterial(item.id!);
-    }
+  Future<void> _runCatalogMaintenance() async {
+    final db = await DBHelper.instance.appDb;
+    await runCatalogMaintenance(db);
   }
 
   Future<void> _applyVariantAutoLinking() async {

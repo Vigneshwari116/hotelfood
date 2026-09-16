@@ -2650,6 +2650,7 @@ class Repository {
         ON u.id = rm.unit_id
       LEFT JOIN categories c
         ON c.id = rm.category_id
+      WHERE (rm.listed IS NULL OR rm.listed = 1)
       ORDER BY rm.name ASC
       ''',
                         [locationId, locationId],
@@ -2684,6 +2685,7 @@ class Repository {
         ON u.id = rm.unit_id
       LEFT JOIN categories c
         ON c.id = rm.category_id
+      WHERE (rm.listed IS NULL OR rm.listed = 1)
       ORDER BY rm.name ASC
       ''',
                   );
@@ -4471,7 +4473,15 @@ class Repository {
         COALESCE(rm.sub_item, '') AS sub_item,
         COALESCE(rm.barcode, '') AS barcode,
         rm.qty_needed AS qty_per_sale,
-        '' AS packets,
+        CASE
+          WHEN rm.units_per_packet IS NOT NULL
+            AND rm.units_per_packet > 0
+            AND (COALESCE(ls.current_stock, rm.current_stock) - rm.opening_pieces) > 0
+          THEN (COALESCE(ls.current_stock, rm.current_stock) - rm.opening_pieces)
+            / rm.units_per_packet
+          ELSE 0
+        END AS packets,
+        rm.opening_pieces AS opening_pieces,
         rm.units_per_packet AS units_per_packet,
         COALESCE(u.short_code, '') AS unit,
         COALESCE(ls.opening_stock, 0) AS opening_stock,
@@ -4498,7 +4508,15 @@ class Repository {
         COALESCE(rm.sub_item, '') AS sub_item,
         COALESCE(rm.barcode, '') AS barcode,
         rm.qty_needed AS qty_per_sale,
-        '' AS packets,
+        CASE
+          WHEN rm.units_per_packet IS NOT NULL
+            AND rm.units_per_packet > 0
+            AND (COALESCE(ls.current_stock, rm.current_stock) - rm.opening_pieces) > 0
+          THEN (COALESCE(ls.current_stock, rm.current_stock) - rm.opening_pieces)
+            / rm.units_per_packet
+          ELSE 0
+        END AS packets,
+        rm.opening_pieces AS opening_pieces,
         rm.units_per_packet AS units_per_packet,
         COALESCE(u.short_code, '') AS unit,
         COALESCE(ls.opening_stock, 0) AS opening_stock,

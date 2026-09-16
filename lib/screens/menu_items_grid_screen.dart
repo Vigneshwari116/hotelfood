@@ -418,8 +418,9 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
-                      'Pieces per packet is set once per item. Enter opening packets; '
-                      'total stock = opening packets × pieces per packet (auto). '
+                      'Pieces per packet is set once per item. Enter opening packets and '
+                      'opening pieces; total stock = (opening packets × pieces per packet) '
+                      '+ opening pieces (auto, in pieces). '
                       'Pieces sold per customer = qty per POS order. '
                       'Variant Group / Label: type a new name or pick from the list.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -533,9 +534,14 @@ class _CategoryGridSection extends StatelessWidget {
       tooltip: 'How many purchase packets are currently in stock',
     ),
     _GridColumnSpec(
+      'Opening\npieces',
+      width: 72,
+      tooltip: 'Loose pieces outside packets (added to total stock)',
+    ),
+    _GridColumnSpec(
       'Total\nstock',
       width: 64,
-      tooltip: 'Auto: opening packets × pieces per packet',
+      tooltip: 'Auto: (opening packets × pieces per packet) + opening pieces',
     ),
     _GridColumnSpec(
       'Pieces sold\nfor customer',
@@ -709,6 +715,18 @@ class _CategoryGridSection extends StatelessWidget {
                           ),
                           _GridTextCell(
                             controller: row.packets,
+                            readOnly: readOnly,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            onChanged: () {
+                              row.recalculateStockFromPackets();
+                              onFieldChanged();
+                            },
+                            onCommit: () => onFieldCommitted(row),
+                          ),
+                          _GridTextCell(
+                            controller: row.openingPieces,
                             readOnly: readOnly,
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
@@ -1089,8 +1107,14 @@ class _MenuGridRow {
       text: MenuItemEditHelpers.packetsTextFromStock(
             item.currentStock,
             item.unitsPerPacket,
+            openingPieces: item.openingPieces,
           ) ??
           '',
+    );
+    openingPieces = TextEditingController(
+      text: item.openingPieces == 0
+          ? ''
+          : MenuItemEditHelpers.formatNumber(item.openingPieces),
     );
     costPrice = TextEditingController(
       text: item.costPrice == null
@@ -1118,6 +1142,7 @@ class _MenuGridRow {
   late final TextEditingController stockSourceName;
   late final TextEditingController qtyPerSale;
   late final TextEditingController packets;
+  late final TextEditingController openingPieces;
   late final TextEditingController unitsPerPacket;
   late final TextEditingController stock;
   late final TextEditingController costPrice;
@@ -1154,6 +1179,7 @@ class _MenuGridRow {
       stockSourceName.text,
       qtyPerSale.text,
       packets.text,
+      openingPieces.text,
       unitsPerPacket.text,
       stock.text,
       costPrice.text,
@@ -1168,6 +1194,7 @@ class _MenuGridRow {
     final recalculated = MenuItemEditHelpers.stockFromPacketsAndUnitsPerPacket(
       packetsText: packets.text,
       unitsPerPacketText: unitsPerPacket.text,
+      openingPiecesText: openingPieces.text,
     );
     if (recalculated == null) return;
 
@@ -1197,6 +1224,7 @@ class _MenuGridRow {
       qtyPerSaleText: qtyPerSale.text,
       packetsText: packets.text,
       unitsPerPacketText: unitsPerPacket.text,
+      openingPiecesText: openingPieces.text,
       stockText: stock.text,
       costPriceText: costPrice.text,
       sellingPriceText: sellingPrice.text,
@@ -1222,8 +1250,12 @@ class _MenuGridRow {
     packets.text = MenuItemEditHelpers.packetsTextFromStock(
           saved.currentStock,
           saved.unitsPerPacket,
+          openingPieces: saved.openingPieces,
         ) ??
         '';
+    openingPieces.text = saved.openingPieces == 0
+        ? ''
+        : MenuItemEditHelpers.formatNumber(saved.openingPieces);
     costPrice.text = saved.costPrice == null
         ? ''
         : MenuItemEditHelpers.formatNumber(saved.costPrice!);
@@ -1252,6 +1284,7 @@ class _MenuGridRow {
     stockSourceName.dispose();
     qtyPerSale.dispose();
     packets.dispose();
+    openingPieces.dispose();
     unitsPerPacket.dispose();
     stock.dispose();
     costPrice.dispose();

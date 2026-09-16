@@ -174,6 +174,7 @@ class RawMaterial {
   final int? unitId;
 
   final double openingStock;
+  final double openingPieces;
   final double currentStock;
   final double reorderLevel;
 
@@ -212,6 +213,7 @@ class RawMaterial {
     this.categoryId,
     this.unitId,
     this.openingStock = 0,
+    this.openingPieces = 0,
     this.currentStock = 0,
     this.reorderLevel = 0,
     this.shelfLifeDays,
@@ -240,6 +242,8 @@ class RawMaterial {
       unitId: map['unit_id'] as int?,
       openingStock:
       (map['opening_stock'] as num?)?.toDouble() ?? 0,
+      openingPieces:
+      (map['opening_pieces'] as num?)?.toDouble() ?? 0,
       currentStock:
       (map['current_stock'] as num?)?.toDouble() ?? 0,
       reorderLevel:
@@ -276,6 +280,7 @@ class RawMaterial {
       'category_id': categoryId,
       'unit_id': unitId,
       'opening_stock': openingStock,
+      'opening_pieces': openingPieces,
       'current_stock': currentStock,
       'reorder_level': reorderLevel,
       'shelf_life_days': shelfLifeDays,
