@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/database/raw_material_integrity.dart';
+import 'package:foodstock/database/sqlite_app_db.dart';
 import 'package:foodstock/services/inventory_search.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -49,7 +49,8 @@ void main() {
         'created_at': now,
       });
 
-      final report = await repairOrphanedRawMaterialReferences(database);
+      final appDb = SqliteAppDb(database);
+      final report = await repairOrphanedRawMaterialReferences(appDb);
       expect(report.clearedInvalidStockSources, 1);
       expect(report.removedOrphanComboComponents, 1);
       expect(report.removedOrphanStockBatches, 1);
@@ -82,7 +83,7 @@ void main() {
       });
       await seedLocationStock(database, 10, stock: 0);
 
-      await repairOrphanedRawMaterialReferences(database);
+      await repairOrphanedRawMaterialReferences(SqliteAppDb(database));
 
       await Repository.instance.recordPurchase(
         date: DateTime.now(),
