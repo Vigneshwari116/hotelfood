@@ -238,15 +238,10 @@ class _PosScreenState extends State<PosScreen> {
       .toList();
 
   Set<int?> get _categoryIdsWithItems {
-    final ids = {
-      for (final material in _allMaterials)
-        if (_isDirectSaleMaterial(material)) material.categoryId,
-    };
-    for (final combo in _activeCombos) {
-      ids.add(combo.categoryId);
-    }
-    ids.removeWhere((id) => _isComboOnlyCategory(id));
-    return ids;
+    return ComboOnlyCategories.posVisibleCategoryIds(
+      materials: _allMaterials,
+      combos: _activeCombos,
+    );
   }
 
   List<Category> get _categoriesWithItems {

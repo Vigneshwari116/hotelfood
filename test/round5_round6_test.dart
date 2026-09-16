@@ -251,5 +251,45 @@ void main() {
         isTrue,
       );
     });
+
+    test('posVisibleCategoryIds keeps chip when combo-only category has combos', () {
+      final materials = [
+        RawMaterial(id: 1, name: 'Bun', categoryId: 5, listed: true),
+        RawMaterial(id: 2, name: 'Patty', categoryId: 5, listed: true),
+      ];
+      final combos = [
+        Combo(
+          id: 1,
+          name: 'Big juicy burger',
+          price: 129,
+          categoryId: 5,
+          items: [
+            ComboItem(comboId: 1, rawMaterialId: 1, qty: 1),
+            ComboItem(comboId: 1, rawMaterialId: 2, qty: 1),
+          ],
+        ),
+      ];
+
+      final visible = ComboOnlyCategories.posVisibleCategoryIds(
+        materials: materials,
+        combos: combos,
+      );
+
+      expect(visible, {5});
+    });
+
+    test('posVisibleCategoryIds hides empty combo-only categories', () {
+      final materials = [
+        RawMaterial(id: 1, name: 'Bun', categoryId: 5, listed: true),
+        RawMaterial(id: 2, name: 'Patty', categoryId: 5, listed: true),
+      ];
+
+      final visible = ComboOnlyCategories.posVisibleCategoryIds(
+        materials: materials,
+        combos: const [],
+      );
+
+      expect(visible, isEmpty);
+    });
   });
 }

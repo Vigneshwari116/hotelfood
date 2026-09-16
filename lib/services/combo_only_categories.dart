@@ -46,4 +46,34 @@ class ComboOnlyCategories {
   }) {
     return !comboOnlyCategoryIds.contains(material.categoryId);
   }
+
+  /// Category filter chips on POS — combo-only categories stay visible when they
+  /// still have active combos (e.g. Burgers), but hide when empty.
+  static Set<int?> posVisibleCategoryIds({
+    required Iterable<RawMaterial> materials,
+    required Iterable<Combo> combos,
+  }) {
+    final comboOnly = categoryIds(materials: materials, combos: combos);
+    final activeCombos = combos.where(
+      (combo) => combo.isActive && combo.id != null && combo.items.isNotEmpty,
+    );
+    final comboCategoryIds = {
+      for (final combo in activeCombos) combo.categoryId,
+    };
+
+    final ids = <int?>{
+      for (final material in materials)
+        if (isDirectSaleMaterial(
+          material,
+          comboOnlyCategoryIds: comboOnly,
+        ))
+          material.categoryId,
+      ...comboCategoryIds,
+    };
+
+    ids.removeWhere(
+      (id) => comboOnly.contains(id) && !comboCategoryIds.contains(id),
+    );
+    return ids;
+  }
 }
