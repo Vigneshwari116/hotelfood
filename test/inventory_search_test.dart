@@ -10,6 +10,7 @@ void main() {
     String? barcode,
     String? variantGroup,
     String? variantLabel,
+    int? stockSourceId,
   }) {
     return RawMaterial.fromMap({
       'id': id,
@@ -18,6 +19,7 @@ void main() {
       'barcode': barcode,
       'variant_group': variantGroup,
       'variant_label': variantLabel,
+      'stock_source_id': stockSourceId,
       'opening_stock': 0,
       'current_stock': 10,
       'created_at': DateTime.now().toIso8601String(),
@@ -111,6 +113,40 @@ void main() {
       final apple = material(id: 2, name: 'Apple pie', subItem: 'Apple pie');
       final entries = inventoryPurchaseEntriesFromMaterials([zebra, apple]);
       expect(entries.map((e) => e.primaryLabel).toList(), ['Apple pie', 'Zebra chips']);
+    });
+
+    test('dedupes variants that share one stock pool', () {
+      final base = material(
+        id: 1,
+        name: 'Chicken Popcorn',
+        subItem: 'Chicken Popcorn',
+        variantGroup: 'Chicken Popcorn',
+        variantLabel: 'Regular',
+      );
+      final large = material(
+        id: 2,
+        name: 'chicken popcorn large',
+        subItem: 'Chicken Popcorn',
+        stockSourceId: 1,
+      );
+
+      final entries = inventoryPurchaseEntriesFromMaterials([base, large]);
+      expect(entries, hasLength(1));
+      expect(entries.single.material?.id, 1);
+      expect(
+        filterInventorySearchEntries(entries, 'chicken pop large'),
+        hasLength(1),
+      );
+    });
+
+    test('does not repeat staff label as secondary line', () {
+      final lollipops = material(
+        id: 3,
+        name: 'chicken lollipops',
+        subItem: 'chicken lollipops',
+      );
+      final entry = InventorySearchEntry.fromMaterial(lollipops);
+      expect(entry.secondaryLabel, isNull);
     });
   });
 }

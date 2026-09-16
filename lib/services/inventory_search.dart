@@ -80,14 +80,14 @@ String inventoryMaterialHaystack(
 }
 
 String? inventoryMaterialExtra(RawMaterial material) {
-  final name = material.staffLabel.toLowerCase();
+  final staff = material.staffLabel.toLowerCase();
   final parts = <String>[];
   final variant = VariantHelpers.variantSelectorLabel(material).trim();
-  if (variant.isNotEmpty) {
+  if (variant.isNotEmpty && variant.toLowerCase() != staff) {
     parts.add(variant);
   }
   final sub = material.trimmedSubItem;
-  if (sub != null && sub.toLowerCase() != name) {
+  if (sub != null && sub.toLowerCase() != staff) {
     parts.add(sub);
   }
   final barcode = material.barcode?.trim();
@@ -157,18 +157,37 @@ List<InventorySearchEntry> inventoryPurchaseEntriesFromMaterials(
   Iterable<RawMaterial> materials, {
   String? Function(int? categoryId)? categoryNameFor,
 }) {
-  final list = materials.toList();
+  final list = VariantHelpers.withSyncedLinks(materials.toList());
+  final byId = {
+    for (final material in list)
+      if (material.id != null) material.id!: material,
+  };
+  final poolByStockId = <int, List<RawMaterial>>{};
+  for (final material in list) {
+    if (material.id == null) continue;
+    final stockId = VariantHelpers.stockMaterialId(material);
+    poolByStockId.putIfAbsent(stockId, () => []).add(material);
+  }
+
   final partition = VariantHelpers.partitionForPos(list);
   final entries = <InventorySearchEntry>[];
+  final coveredStockIds = <int>{};
 
-  for (final group in partition.groups) {
-    final holder = group.stockSource;
+  void addPoolEntry({
+    required RawMaterial holder,
+    required String primaryLabel,
+    required List<RawMaterial> pool,
+  }) {
+    final stockId = VariantHelpers.stockMaterialId(holder);
+    if (coveredStockIds.contains(stockId)) return;
+    coveredStockIds.add(stockId);
+
     final haystack = [
-      group.posTitle,
+      primaryLabel,
       holder.name,
       holder.trimmedSubItem ?? '',
       holder.barcode ?? '',
-      for (final variant in group.variants) ...[
+      for (final variant in pool) ...[
         variant.name,
         variant.variantLabel ?? '',
         variant.staffLabel,
@@ -178,19 +197,37 @@ List<InventorySearchEntry> inventoryPurchaseEntriesFromMaterials(
 
     entries.add(
       InventorySearchEntry(
-        primaryLabel: group.posTitle,
+        primaryLabel: primaryLabel,
         haystack: haystack,
         material: holder,
       ),
     );
   }
 
+  for (final group in partition.groups) {
+    addPoolEntry(
+      holder: group.stockSource,
+      primaryLabel: group.posTitle,
+      pool: group.variants,
+    );
+  }
+
+  final singlesByStockId = <int, List<RawMaterial>>{};
   for (final single in partition.singles) {
-    entries.add(
-      InventorySearchEntry.fromMaterial(
-        single,
-        categoryName: categoryNameFor?.call(single.categoryId),
-      ),
+    if (single.id == null) continue;
+    final stockId = VariantHelpers.stockMaterialId(single);
+    singlesByStockId.putIfAbsent(stockId, () => []).add(single);
+  }
+
+  for (final pool in singlesByStockId.values) {
+    final stockId = VariantHelpers.stockMaterialId(pool.first);
+    if (coveredStockIds.contains(stockId)) continue;
+
+    final holder = byId[stockId] ?? pool.first;
+    addPoolEntry(
+      holder: holder,
+      primaryLabel: holder.staffLabel,
+      pool: poolByStockId[stockId] ?? pool,
     );
   }
 
