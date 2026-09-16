@@ -18,7 +18,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 5, vsync: this);
+    _tab = TabController(length: 6, vsync: this);
   }
 
   @override
@@ -33,6 +33,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
               Tab(text: 'Stock Summary'),
               Tab(text: 'Bill-wise Sales'),
               Tab(text: 'Bill-wise Purchase'),
+              Tab(text: 'Item Sales'),
               Tab(text: 'Day End'),
               Tab(text: 'Top Selling'),
             ],
@@ -42,6 +43,7 @@ class _ReportsScreenState extends State<ReportsScreen> with SingleTickerProvider
               _StockSummaryTab(),
               _BillWiseSalesTab(),
               _PurchaseBillsTab(),
+              _ItemSalesTab(),
               _DayEndTab(),
               _TopSellingTab(),
             ]),

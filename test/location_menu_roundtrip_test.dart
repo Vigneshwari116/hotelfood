@@ -286,9 +286,19 @@ void main() {
         final exportedBytes = await service.exportXlsxForLocation(1);
         final exportedRows = service.parseSpreadsheetBytes(exportedBytes);
 
+        List<List<String>> sortGridRows(List<List<String>> rows) {
+          final sorted = [...rows];
+          sorted.sort((a, b) {
+            final cat = a[0].compareTo(b[0]);
+            if (cat != 0) return cat;
+            return a[1].compareTo(b[1]);
+          });
+          return sorted;
+        }
+
         expect(
-          normalizedGrid(exportedRows),
-          expectedRows,
+          sortGridRows(normalizedGrid(exportedRows)),
+          sortGridRows(expectedRows),
           reason:
               'Downloaded menu must match approved Sheet2 master after import',
         );

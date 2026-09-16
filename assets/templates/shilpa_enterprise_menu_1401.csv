@@ -2,17 +2,17 @@ category,item_name,sub_item,barcode,qty_per_sale,packets,units_per_packet,unit,o
 SAUCES,BBQ Seasoning,BBQ Seasoning,,1,,,pc,0,,0
 OTHERS,Burger Bun With Sesame,Burger Bun With Sesame,,1,,6,pc,0,,0
 SAUCES,CP Marinade,CP Marinade,,1,,,pc,0,,0
-SNACKS,Chicken 65,Chicken 65,,8,1,90,pc,0,,85
-SNACKS,Chicken Cheese Shotz,Chicken Cheese Shotz,,6,1,50,pc,0,,99
+SNACKS,Chicken 65,chicken 65,,8,1,90,pc,0,,85
+SNACKS,Chicken Cheese Shotz,Cheese Shots,,6,1,50,pc,0,,99
 SNACKS,Chicken Fingers,chicken finger,,3,1,39,pc,0,,60
 SNACKS,Chicken Nuggets,Chicken Nuggets,,4,1,60,pc,0,,55
 FRIED ITEMS,Chicken Popcorn,Chicken Popcorn,,80,1,550,g,0,,75
-FRIED ITEMS,Chicken Strips,Chicken Strips,,3,1,27,pc,0,,109
+FRIED ITEMS,Chicken Strips,chicken strips,,3,1,27,pc,0,,109
 FRIED ITEMS,Chilli Burst,Chilli Burst,,1,1,10,pc,0,,80
 BURGERS,star burger,Crispy Chicken Patty,,1,,20,pc,0,,60
 FRIED ITEMS,Crunchy Masala,Crunchy Masala,,1,1,10,pc,0,,80
 SAUCES,Eggless Mayonnaise,Eggless Mayonnaise,,1,,,pc,0,,0
-SNACKS,French Fries,French Fries,,70,1,2500,g,0,,50
+SNACKS,French Fries,Masala Fries,,70,1,2500,g,0,,50
 BURGERS,Hot Crispy burger,Hot Crispy Patty,,1,,5,pc,0,,110
 FRIED ITEMS,Krusty Bites,chicken 65,,1,1,90,pc,0,,90
 BURGERS,Paneer Delight burger,Paneer Patty,,1,,14,pc,0,,90
@@ -38,12 +38,12 @@ FRIED ITEMS,Mini Bucket,Crunchy Masala,,5,1,10,pc,0,,385
 FRIED ITEMS,Big Buckets,Crunchy Masala,,10,1,10,pc,0,,765
 FRIED ITEMS,Mini Bucket,Chilli Burst,,5,1,10,pc,0,,385
 FRIED ITEMS,Big Buckets,Chilli Burst,,10,1,10,pc,0,,765
-SNACKS,masala fries Large,French Fries,,150,1,2500,g,0,,99
+SNACKS,masala fries Large,Masala Fries,,150,1,2500,g,0,,99
 OTHERS,water 1/2 liter,water,,1,,24,pc,0,,10
 OTHERS,cool drinks glass,cool drinks,,1,,24,pc,0,,15
 OTHERS,pepsi 300 ml,pepsi,,1,,24,pc,0,,20
 ROLLS,Chicken roll,chicken finger,,2,,39,pc,0,,75
-ROLLS,Krisper roll,chicken strips,,1.5,,,pc,0,,109
+ROLLS,Krisper roll,chicken strips,,1.5,,,pc,0,,105
 ROLLS,Veg roll,veg finger,,2,,33,pc,0,,
 BURGERS,Big juciy burger,Hot Crispy Patty,,1,,5,pc,0,,129
 FRIED ITEMS,Chicken popcorn large,Chicken Popcorn,,130,1,550,g,0,,129

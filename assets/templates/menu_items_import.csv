@@ -20,7 +20,7 @@ FRIED ITEMS,Mini Bucket,Chilli Burst,FRIED ITEM,5,,10,pc,,,385
 FRIED ITEMS,Big Buckets,Chilli Burst,FRIED ITEM,10,,10,pc,,,765
 FRIED ITEMS,Chicken Popcorn,Chicken Popcorn,FRIED ITEM,80,,550,g,0,,75
 FRIED ITEMS,Chicken popcorn large,Chicken Popcorn,FRIED ITEM,130,,550,g,0,,129
-FRIED ITEMS,Chicken Strips,Chicken Strips,FRIED ITEM,3,,27,pc,0,,109
+FRIED ITEMS,Chicken Strips,chicken strips,FRIED ITEM,3,,27,pc,0,,109
 FRIED ITEMS,Chilli Burst,Chilli Burst,FRIED ITEM,1,,10,pc,0,,80
 FRIED ITEMS,Crunchy Masala,Crunchy Masala,FRIED ITEM,1,,10,pc,,,80
 FRIED ITEMS,Krusty Bites,chicken 65,FRIED ITEM,1,,90,pc,0,,90
@@ -29,7 +29,7 @@ FRIED ITEMS,Thai Crispy,Thai Crispy,FRIED ITEM,1,,10,pc,0,,80
 ROLLS,Tandoori roll,chicken 65,COMBO,1,,5,pc,0,,85
 ROLLS,Panner roll,panner patty,COMBO,1,,14,pc,0,,90
 ROLLS,Chicken roll,chicken finger,COMBO,2,,39,pc,0,,75
-ROLLS,Krisper roll,chicken strips,COMBO,1.5,,,pc,0,,109
+ROLLS,Krisper roll,chicken strips,COMBO,1.5,,,pc,0,,105
 ROLLS,Veg roll,veg finger,COMBO,2,,33,pc,0,,
 SAUCES,Paratha Sauce,Paratha Sauce,SAUCE/DRY STOCK,1,,,pc,0,,
 SAUCES,Tandoori Mayonnaise,Tandoori Mayonnaise,SAUCE/DRY STOCK,1,,,pc,0,,
@@ -38,14 +38,14 @@ SAUCES,CP Marinade,CP Marinade,SAUCE/DRY STOCK,1,,,pc,0,,
 SAUCES,Eggless Mayonnaise,Eggless Mayonnaise,SAUCE/DRY STOCK,1,,,pc,0,,
 SAUCES,PACKING COVER,PACKING COVER,SAUCE/DRY STOCK,1,,,pc,0,,
 SAUCES,SNACK BOX,SNACK BOX,SAUCE/DRY STOCK,1,,,pc,0,,
-SNACKS,French Fries,French Fries,SNACKS,70,,2500,g,0,,50
-SNACKS,Chicken 65,Chicken 65,SNACKS,8,,90,pc,0,,85
-SNACKS,Chicken Cheese Shotz,Chicken Cheese Shotz,SNACKS,6,,50,pc,0,,99
+SNACKS,French Fries,Masala Fries,SNACKS,70,,2500,g,0,,50
+SNACKS,Chicken 65,chicken 65,SNACKS,8,,90,pc,0,,85
+SNACKS,Chicken Cheese Shotz,Cheese Shots,SNACKS,6,,50,pc,0,,99
 SNACKS,Chicken Fingers,chicken finger,SNACKS,3,,39,pc,0,,60
 SNACKS,Chicken Momos,Chicken Momos,SNACKS,4,,40,pc,0,,
 SNACKS,Chicken Nuggets,Chicken Nuggets,SNACKS,4,,60,pc,0,,55
 SNACKS,Pizza Pocket,Pizza Pocket,SNACKS,4,,28,pc,0,,59
 SNACKS,Veg Finger,veg finger,SNACKS,3,,33,pc,0,,55
-SNACKS,masala fries Large,French Fries,SNACKS,150,,2500,g,0,,99
+SNACKS,masala fries Large,Masala Fries,SNACKS,150,,2500,g,0,,99
 STOCK,Burger Bun With Sesame,Bun,STOCK,1,,6,pc,0,,
 STOCK,Paratha,Paratha,STOCK,1,,1,pc,0,,

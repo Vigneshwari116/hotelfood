@@ -56,18 +56,31 @@ class SubItemStock {
       return family.first.trimmedSubItem ?? family.first.name.trim();
     }
 
-    for (final item in family) {
-      if (normalizeGroupKey(item.name) == stockKeyValue) {
-        return item.name.trim();
-      }
-    }
-
+    final subLabels = <String>{};
     for (final item in family) {
       final sub = item.subItem?.trim();
       if (sub != null &&
           sub.isNotEmpty &&
           normalizeGroupKey(sub) == stockKeyValue) {
-        return sub;
+        subLabels.add(sub);
+      }
+    }
+    if (subLabels.isNotEmpty) {
+      final sorted = subLabels.toList()
+        ..sort((a, b) {
+          final byLower = a.toLowerCase().compareTo(b.toLowerCase());
+          if (byLower != 0) return byLower;
+          return a.compareTo(b);
+        });
+      for (final label in sorted) {
+        if (label.toLowerCase() == stockKeyValue) return label;
+      }
+      return sorted.first;
+    }
+
+    for (final item in family) {
+      if (normalizeGroupKey(item.name) == stockKeyValue) {
+        return item.name.trim();
       }
     }
 

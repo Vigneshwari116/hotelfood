@@ -406,6 +406,34 @@ void main() {
       expect(importCsv.toLowerCase(), isNot(contains('cheese shotz large')));
     });
 
+    test('approved Sheet2 seed uses confirmed grouping and pricing', () {
+      final csv = File('assets/templates/shilpa_enterprise_menu_1401.csv')
+          .readAsStringSync();
+      final rows = csv.split('\n').where((line) => line.trim().isNotEmpty);
+
+      Map<String, String> rowFor(String itemName) {
+        final line = rows.firstWhere(
+          (row) => row.split(',')[1].trim() == itemName,
+        );
+        return {
+          for (var i = 0; i < line.split(',').length; i++)
+            '$i': line.split(',')[i].trim(),
+        };
+      }
+
+      expect(rowFor('Tandoori roll')['6'], '5');
+      expect(rowFor('Chicken popcorn large')['4'], '130');
+      expect(rowFor('Chicken popcorn large')['10'], '129');
+      expect(rowFor('Veg roll')['10']?.trim(), isEmpty);
+      expect(rowFor('Krisper roll')['10'], '105');
+      expect(rowFor('Chicken 65')['2'], 'chicken 65');
+      expect(rowFor('Chicken Strips')['2'], 'chicken strips');
+      expect(rowFor('French Fries')['2'], 'Masala Fries');
+      expect(rowFor('masala fries Large')['2'], 'Masala Fries');
+      expect(rowFor('Chicken Cheese Shotz')['2'], 'Cheese Shots');
+      expect(csv.toLowerCase(), isNot(contains('snacks,chicken popcorn large')));
+    });
+
     // Test 5 is covered by menu_import_stock_preservation_test.dart; verify file exists.
     test('menu re-import stock preservation test is present', () {
       expect(
