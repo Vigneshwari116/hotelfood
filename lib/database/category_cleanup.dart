@@ -1,4 +1,5 @@
 import 'package:foodstock/database/app_db.dart';
+import 'package:foodstock/services/item_import_service.dart';
 
 /// Merges duplicate "Others" categories into Uncategorized and removes
 /// true duplicate catalog rows (same name + sub-item in both groups).
@@ -98,4 +99,29 @@ Future<int> mergeOthersCategoryIntoUncategorized(AppDb db) async {
   }
 
   return removedDuplicates;
+}
+
+/// Makes Sauces category items visible on Sales/POS (free add-ons, not hidden).
+Future<int> listSaucesCategoryForPos(AppDb db) async {
+  final categories = await db.query(
+    'categories',
+    columns: ['id', 'name'],
+    where: "type = 'raw_material'",
+  );
+
+  var updated = 0;
+  for (final row in categories) {
+    final id = row['id'] as int?;
+    if (id == null) continue;
+    final canonical =
+        ItemImportService.canonicalMenuCategory(row['name'] as String?) ?? '';
+    if (canonical.toLowerCase() != 'sauces') continue;
+    updated += await db.update(
+      'raw_materials',
+      {'listed': 1},
+      where: 'category_id = ?',
+      whereArgs: [id],
+    );
+  }
+  return updated;
 }

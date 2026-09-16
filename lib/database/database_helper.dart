@@ -114,7 +114,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 26,
+      version: 27,
 
       onConfigure: (db) async {
         await db.execute(
@@ -1578,6 +1578,10 @@ class DBHelper {
           'ALTER TABLE raw_materials ADD COLUMN menu_export_row TEXT',
         );
       }
+    }
+
+    if (oldVersion < 27) {
+      await listSaucesCategoryForPos(SqliteAppDb(db));
     }
 
     if (oldVersion < 26) {
