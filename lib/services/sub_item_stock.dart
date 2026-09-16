@@ -47,6 +47,49 @@ class SubItemStock {
     return labels;
   }
 
+  /// Maps raw_material row ids to the canonical sub_item label when a family
+  /// has case/whitespace duplicates that should share one stock pool.
+  static Map<int, String> canonicalLabelUpdatesForRows(
+    Iterable<Map<String, dynamic>> rows,
+  ) {
+    final byKey = <String, List<Map<String, dynamic>>>{};
+    for (final row in rows) {
+      final sub = row['sub_item']?.toString().trim();
+      final name = row['name']?.toString().trim() ?? '';
+      final label = (sub == null || sub.isEmpty) ? name : sub;
+      if (label.isEmpty) continue;
+      byKey.putIfAbsent(normalizeGroupKey(label), () => []).add(row);
+    }
+
+    final updates = <int, String>{};
+    for (final familyRows in byKey.values) {
+      if (familyRows.length < 2) continue;
+
+      final family = familyRows
+          .map(
+            (row) => RawMaterial(
+              id: row['id'] as int?,
+              name: row['name']?.toString() ?? '',
+              subItem: row['sub_item']?.toString(),
+            ),
+          )
+          .toList();
+      final canonical = canonicalLabelForFamily(family);
+      if (canonical.isEmpty) continue;
+
+      for (final row in familyRows) {
+        final id = row['id'] as int?;
+        if (id == null) continue;
+        final stored = row['sub_item']?.toString() ?? '';
+        if (stored != canonical) {
+          updates[id] = canonical;
+        }
+      }
+    }
+
+    return updates;
+  }
+
   /// Picks one display label for a pool of items that share a stock key.
   static String canonicalLabelForFamily(List<RawMaterial> family) {
     if (family.isEmpty) return '';

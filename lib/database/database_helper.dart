@@ -8,6 +8,8 @@ import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/database/http_app_db.dart';
 import 'package:foodstock/database/sqlite_app_db.dart';
+import 'package:foodstock/database/sub_item_migration.dart';
+import 'package:foodstock/database/sqlite_app_db.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -1578,66 +1580,7 @@ class DBHelper {
     }
 
     if (oldVersion < 24) {
-      // Normalize sub_item labels so case/whitespace variants share one stock pool.
-      final rows = await db.query(
-        'raw_materials',
-        columns: ['id', 'name', 'sub_item', 'menu_sort_order'],
-      );
-      final byKey = <String, List<Map<String, dynamic>>>{};
-      for (final row in rows) {
-        final sub = row['sub_item']?.toString().trim();
-        final name = row['name']?.toString().trim() ?? '';
-        final label = (sub == null || sub.isEmpty) ? name : sub;
-        if (label.isEmpty) continue;
-        final key = label.trim().toLowerCase();
-        byKey.putIfAbsent(key, () => []).add(row);
-      }
-
-      for (final family in byKey.values) {
-        if (family.length < 2) continue;
-
-        family.sort((a, b) {
-          final orderA = (a['menu_sort_order'] as num?)?.toInt() ?? 1 << 30;
-          final orderB = (b['menu_sort_order'] as num?)?.toInt() ?? 1 << 30;
-          final byOrder = orderA.compareTo(orderB);
-          if (byOrder != 0) return byOrder;
-          final nameA = a['name']?.toString() ?? '';
-          final nameB = b['name']?.toString() ?? '';
-          return nameA.toLowerCase().compareTo(nameB.toLowerCase());
-        });
-
-        final key = (family.first['sub_item']?.toString() ??
-                family.first['name']?.toString() ??
-                '')
-            .trim()
-            .toLowerCase();
-        var canonical =
-            family.first['sub_item']?.toString().trim() ?? '';
-        if (canonical.isEmpty) {
-          canonical = family.first['name']?.toString().trim() ?? '';
-        }
-
-        for (final row in family) {
-          final name = row['name']?.toString().trim().toLowerCase() ?? '';
-          if (name == key) {
-            canonical = row['name']?.toString().trim() ?? canonical;
-            break;
-          }
-        }
-
-        for (final row in family) {
-          final id = row['id'] as int?;
-          if (id == null) continue;
-          final current = row['sub_item']?.toString().trim() ?? '';
-          if (current == canonical) continue;
-          await db.update(
-            'raw_materials',
-            {'sub_item': canonical},
-            where: 'id = ?',
-            whereArgs: [id],
-          );
-        }
-      }
+      await normalizeSubItemLabels(SqliteAppDb(db));
     }
 
     if (oldVersion < 23) {

@@ -1153,6 +1153,33 @@ class _BillWiseSalesTabState extends State<_BillWiseSalesTab> {
                   onThisMonth: _setThisMonth,
                 ),
                 const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: FilledButton.icon(
+                    onPressed: _bills.isEmpty
+                        ? null
+                        : () async {
+                            await ReportPdf.shareTable(
+                              title: 'Bill-wise Sales',
+                              headers: const ['Bill', 'Date', 'Amount'],
+                              rows: _bills
+                                  .map(
+                                    (bill) => [
+                                      'Bill #${bill['id']}',
+                                      _formatBillDate(bill['sale_date']),
+                                      '₹${(bill['total'] as num).toStringAsFixed(2)}',
+                                    ],
+                                  )
+                                  .toList(),
+                              totalLine:
+                                  '${_bills.length} bill(s)  •  Total ₹${_rangeTotal.toStringAsFixed(2)}',
+                            );
+                          },
+                    icon: const Icon(Icons.picture_as_pdf, size: 18),
+                    label: const Text('Share PDF'),
+                  ),
+                ),
+                const SizedBox(height: 8),
                 Expanded(
                   child: _bills.isEmpty
                       ? const Center(child: Text('No sales in this date range'))
@@ -1526,6 +1553,33 @@ class _PurchaseBillsTabState extends State<_PurchaseBillsTab> {
                   onToday: _setToday,
                   onThisWeek: _setThisWeek,
                   onThisMonth: _setThisMonth,
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: FilledButton.icon(
+                    onPressed: _bills.isEmpty
+                        ? null
+                        : () async {
+                            await ReportPdf.shareTable(
+                              title: 'Bill-wise Purchase',
+                              headers: const ['Bill', 'Date', 'Amount'],
+                              rows: _bills
+                                  .map(
+                                    (bill) => [
+                                      'Bill #${bill['id']}',
+                                      _formatBillDate(bill['purchase_date']),
+                                      '₹${(bill['total_amount'] as num).toStringAsFixed(2)}',
+                                    ],
+                                  )
+                                  .toList(),
+                              totalLine:
+                                  '${_bills.length} bill(s)  •  Total ₹${_rangeTotal.toStringAsFixed(2)}',
+                            );
+                          },
+                    icon: const Icon(Icons.picture_as_pdf, size: 18),
+                    label: const Text('Share PDF'),
+                  ),
                 ),
                 const SizedBox(height: 8),
                 Expanded(

@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/database/database_helper.dart';
+import 'package:foodstock/database/sub_item_migration.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/sub_item_stock.dart';
@@ -1283,27 +1284,50 @@ class Repository {
                         '''
       SELECT
         rm.*,
-        COALESCE(ls.current_stock, 0) AS current_stock,
+        COALESCE(
+          CASE
+            WHEN rm.stock_source_id IS NOT NULL THEN ls_source.current_stock
+            ELSE ls.current_stock
+          END,
+          0
+        ) AS current_stock,
         COALESCE(ls.opening_stock, rm.opening_stock) AS opening_stock,
         COALESCE(ls.reorder_level, rm.reorder_level) AS reorder_level
       FROM raw_materials rm
       LEFT JOIN location_stock ls
         ON ls.raw_material_id = rm.id
         AND ls.location_id = ?
+      LEFT JOIN location_stock ls_source
+        ON ls_source.raw_material_id = rm.stock_source_id
+        AND ls_source.location_id = ?
       WHERE rm.id = ?
       LIMIT 1
       ''',
-                        [locationId, id],
+                        [locationId, locationId, id],
                   );
                   if (rows.isEmpty) return null;
                   return RawMaterial.fromMap(rows.first);
             }
 
-            final rows = await db.query(
-                  'raw_materials',
-                  where: 'id = ?',
-                  whereArgs: [id],
-                  limit: 1,
+            final rows = await db.rawQuery(
+                  '''
+      SELECT
+        rm.*,
+        COALESCE(
+          CASE
+            WHEN rm.stock_source_id IS NOT NULL THEN source.current_stock
+            ELSE rm.current_stock
+          END,
+          rm.current_stock,
+          0
+        ) AS current_stock
+      FROM raw_materials rm
+      LEFT JOIN raw_materials source
+        ON source.id = rm.stock_source_id
+      WHERE rm.id = ?
+      LIMIT 1
+      ''',
+                  [id],
             );
 
             if (rows.isEmpty) {
@@ -2046,60 +2070,7 @@ class Repository {
       /// Merges case/whitespace variants of sub_item into one canonical label.
       Future<int> normalizeSubItemGroupLabels() async {
             final db = await _db;
-            final rows = await db.query(
-                  'raw_materials',
-                  columns: ['id', 'name', 'sub_item', 'menu_sort_order'],
-            );
-            if (rows.isEmpty) return 0;
-
-            final byKey = <String, List<Map<String, dynamic>>>{};
-            for (final row in rows) {
-                  final sub = row['sub_item']?.toString().trim();
-                  final name = row['name']?.toString().trim() ?? '';
-                  final label = (sub == null || sub.isEmpty) ? name : sub;
-                  if (label.isEmpty) continue;
-                  byKey
-                      .putIfAbsent(
-                        SubItemStock.normalizeGroupKey(label),
-                        () => [],
-                      )
-                      .add(row);
-            }
-
-            var updated = 0;
-            for (final familyRows in byKey.values) {
-                  if (familyRows.length < 2) continue;
-
-                  final family = familyRows
-                      .map(
-                        (row) => RawMaterial(
-                          id: row['id'] as int?,
-                          name: row['name']?.toString() ?? '',
-                          subItem: row['sub_item']?.toString(),
-                          menuSortOrder:
-                              (row['menu_sort_order'] as num?)?.toInt(),
-                        ),
-                      )
-                      .toList();
-                  final canonical = SubItemStock.canonicalLabelForFamily(family);
-                  if (canonical.isEmpty) continue;
-
-                  for (final row in familyRows) {
-                        final id = row['id'] as int?;
-                        if (id == null) continue;
-                        final current = row['sub_item']?.toString().trim() ?? '';
-                        if (current == canonical) continue;
-                        await db.update(
-                              'raw_materials',
-                              {'sub_item': canonical},
-                              where: 'id = ?',
-                              whereArgs: [id],
-                        );
-                        updated++;
-                  }
-            }
-
-            return updated;
+            return normalizeSubItemLabels(db);
       }
 
       Future<List<Map<String, dynamic>>> purchaseItems(
