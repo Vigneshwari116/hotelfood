@@ -283,10 +283,23 @@ void main() {
         RawMaterial(id: 1, name: 'Bun', categoryId: 5, listed: true),
         RawMaterial(id: 2, name: 'Patty', categoryId: 5, listed: true),
       ];
+      final combos = [
+        Combo(
+          id: 1,
+          name: 'Retired burger',
+          price: 129,
+          categoryId: 5,
+          isActive: false,
+          items: [
+            ComboItem(comboId: 1, rawMaterialId: 1, qty: 1),
+            ComboItem(comboId: 1, rawMaterialId: 2, qty: 1),
+          ],
+        ),
+      ];
 
       final visible = ComboOnlyCategories.posVisibleCategoryIds(
         materials: materials,
-        combos: const [],
+        combos: combos,
       );
 
       expect(visible, isEmpty);

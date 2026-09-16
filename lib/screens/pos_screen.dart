@@ -131,7 +131,7 @@ class _PosScreenState extends State<PosScreen> {
     try {
       await _repo.refreshVariantLinks();
       final materials = await _repo.rawMaterials();
-      final combos = await _repo.combosWithItems(activeOnly: true);
+      final combos = await _repo.combosWithItems(activeOnly: false);
       final categories = await _repo.categories(type: 'raw_material');
       List<Map<String, dynamic>> locations = [];
 
@@ -179,7 +179,7 @@ class _PosScreenState extends State<PosScreen> {
   Future<void> _refreshStock() async {
     try {
       final materials = await _repo.rawMaterials();
-      final combos = await _repo.combosWithItems(activeOnly: true);
+      final combos = await _repo.combosWithItems(activeOnly: false);
 
       if (!mounted) return;
 
@@ -240,7 +240,7 @@ class _PosScreenState extends State<PosScreen> {
   Set<int?> get _categoryIdsWithItems {
     return ComboOnlyCategories.posVisibleCategoryIds(
       materials: _allMaterials,
-      combos: _activeCombos,
+      combos: _combos,
     );
   }
 

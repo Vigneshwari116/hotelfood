@@ -22,7 +22,6 @@ void main() {
         'id': 3,
         'name': 'Rolls',
         'type': 'raw_material',
-        'created_at': now,
       });
       await database.insert('raw_materials', {
         'id': 1,

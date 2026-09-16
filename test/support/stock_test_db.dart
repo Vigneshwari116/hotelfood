@@ -54,6 +54,7 @@ Future<Database> openStockTestDatabase() async {
           opening_stock REAL NOT NULL DEFAULT 0,
           current_stock REAL NOT NULL DEFAULT 0,
           reorder_level REAL NOT NULL DEFAULT 0,
+          units_per_packet REAL,
           cost_price REAL,
           selling_price REAL,
           image_path TEXT,
@@ -180,6 +181,21 @@ Future<Database> openStockTestDatabase() async {
           combo_id INTEGER NOT NULL,
           raw_material_id INTEGER NOT NULL,
           qty REAL NOT NULL DEFAULT 1
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE pending_order_items (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          pending_order_id INTEGER NOT NULL,
+          raw_material_id INTEGER,
+          combo_id INTEGER,
+          item_name TEXT NOT NULL,
+          sub_item TEXT,
+          component_labels TEXT,
+          qty REAL NOT NULL,
+          price REAL NOT NULL,
+          amount REAL NOT NULL
         )
       ''');
     },
