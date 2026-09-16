@@ -114,6 +114,60 @@ void main() {
 
       await tearDownStockTestSession(database);
     });
+
+    test('recordPurchase rejects mismatched unit with InvalidInventoryException', () async {
+      final database = await openStockTestDatabase();
+      bindStockTestSession(database);
+
+      final now = DateTime.now().toIso8601String();
+      await database.insert('raw_materials', {
+        'name': 'Chicken Popcorn',
+        'sub_item': 'Chicken Popcorn',
+        'unit_id': 1,
+        'current_stock': 100,
+        'opening_stock': 100,
+        'created_at': now,
+      });
+      await database.insert('raw_materials', {
+        'name': 'Chicken popcorn large',
+        'sub_item': 'Chicken Popcorn',
+        'unit_id': 1,
+        'stock_source_id': 1,
+        'current_stock': 0,
+        'opening_stock': 0,
+        'created_at': now,
+      });
+      await seedLocationStock(database, 1, stock: 100);
+      await seedLocationStock(database, 2);
+      await database.update(
+        'raw_materials',
+        {'unit_id': 2},
+        where: 'id = ?',
+        whereArgs: [2],
+      );
+
+      await expectLater(
+        Repository.instance.recordPurchase(
+          date: DateTime.now(),
+          lines: [
+            {
+              'raw_material_id': 2,
+              'qty': 10,
+              'rate': 1,
+            },
+          ],
+        ),
+        throwsA(
+          isA<InvalidInventoryException>().having(
+            (error) => error.message,
+            'message',
+            contains('tracked in g'),
+          ),
+        ),
+      );
+
+      await tearDownStockTestSession(database);
+    });
   });
 
   group('inventory pooled stock (13b)', () {
