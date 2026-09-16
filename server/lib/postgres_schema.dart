@@ -52,6 +52,7 @@ const postgresSchemaStatements = <String>[
     unit_id INTEGER REFERENCES units (id),
     image_path TEXT,
     opening_stock DOUBLE PRECISION NOT NULL DEFAULT 0,
+    opening_pieces DOUBLE PRECISION NOT NULL DEFAULT 0,
     current_stock DOUBLE PRECISION NOT NULL DEFAULT 0,
     reorder_level DOUBLE PRECISION NOT NULL DEFAULT 0,
     shelf_life_days INTEGER,
@@ -261,6 +262,75 @@ const postgresSchemaStatements = <String>[
   'ALTER TABLE raw_materials ADD COLUMN IF NOT EXISTS variant_group TEXT',
   'ALTER TABLE raw_materials ADD COLUMN IF NOT EXISTS variant_label TEXT',
   'ALTER TABLE raw_materials ADD COLUMN IF NOT EXISTS stock_source_id INTEGER',
+  'ALTER TABLE raw_materials ADD COLUMN IF NOT EXISTS opening_pieces DOUBLE PRECISION NOT NULL DEFAULT 0',
+  '''
+  WITH ranked AS (
+    SELECT id,
+      ROW_NUMBER() OVER (
+        PARTITION BY category_id,
+          lower(trim(name)),
+          lower(trim(coalesce(nullif(trim(sub_item), ''), name)))
+        ORDER BY
+          listed DESC,
+          abs(current_stock) DESC,
+          CASE WHEN units_per_packet IS NOT NULL THEN 0 ELSE 1 END,
+          id ASC
+      ) AS rn
+    FROM raw_materials
+    WHERE listed = 1
+  )
+  UPDATE raw_materials SET listed = 0
+  WHERE id IN (SELECT id FROM ranked WHERE rn > 1)
+  ''',
+  '''
+  WITH ranked AS (
+    SELECT id,
+      ROW_NUMBER() OVER (
+        PARTITION BY category_id, lower(trim(name))
+        ORDER BY
+          CASE
+            WHEN variant_group IS NOT NULL AND trim(variant_group) <> '' THEN 0
+            ELSE 1
+          END,
+          CASE WHEN lower(coalesce(variant_label, '')) = 'regular' THEN 0 ELSE 1 END,
+          id ASC
+      ) AS rn
+    FROM raw_materials
+    WHERE listed = 1
+  )
+  UPDATE raw_materials SET listed = 0
+  WHERE id IN (SELECT id FROM ranked WHERE rn > 1)
+  ''',
+  '''
+  UPDATE raw_materials snacks
+  SET listed = 0
+  WHERE snacks.listed = 1
+    AND lower(snacks.name) LIKE '%popcorn%'
+    AND lower(snacks.name) LIKE '%large%'
+    AND EXISTS (
+      SELECT 1
+      FROM raw_materials fried
+      JOIN categories fried_cat ON fried_cat.id = fried.category_id
+      WHERE fried.listed = 1
+        AND lower(fried.name) LIKE '%popcorn%'
+        AND lower(fried.name) LIKE '%large%'
+        AND lower(fried_cat.name) LIKE '%fried%'
+    )
+    AND EXISTS (
+      SELECT 1 FROM categories snack_cat
+      WHERE snack_cat.id = snacks.category_id
+        AND lower(snack_cat.name) LIKE '%snack%'
+    )
+  ''',
+  '''
+  UPDATE raw_materials rm
+  SET category_id = fried_cat.id
+  FROM categories fried_cat
+  WHERE fried_cat.type = 'raw_material'
+    AND lower(fried_cat.name) LIKE '%fried%'
+    AND rm.category_id IS NULL
+    AND lower(trim(rm.name)) IN ('paratha', 'bun', 'burger bun with sesame')
+  ''',
   '''
   INSERT INTO combo_raw_materials (combo_id, raw_material_id, qty)
   SELECT ci.combo_id, ci.raw_material_id, ci.qty

@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:foodstock/model/models.dart';
+import '../services/combo_material_picker.dart';
 import '../services/combo_only_categories.dart';
 import '../services/item_import_service.dart';
 import '../services/repository.dart';
@@ -47,7 +48,7 @@ class _RawMaterialMasterScreenState
   bool _editorOpen = false;
   int _loadGeneration = 0;
 
-  bool get _readOnly => Repository.instance.isAdmin;
+  bool get _readOnly => !Repository.instance.hasFullAppAccess;
 
   @override
   void initState() {
@@ -509,9 +510,7 @@ class _RawMaterialMasterScreenState
     final allItems = await Repository.instance.rawMaterials(
       includeHidden: true,
     );
-    allItems.sort(
-      (a, b) => a.staffLabel.toLowerCase().compareTo(b.staffLabel.toLowerCase()),
-    );
+    final pickerItems = materialsForComboPicker(allItems);
 
     final saved = await showDialog<bool>(
       context: context,
@@ -519,7 +518,7 @@ class _RawMaterialMasterScreenState
         return ComboEditorDialog(
           existing: existing,
           categories: _categories,
-          rawMaterials: allItems,
+          rawMaterials: pickerItems,
           unitName: _unitName,
           onPickImage: () {
             return _pickAndSaveImage(
