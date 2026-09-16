@@ -843,6 +843,137 @@ class _SalesReportTabState extends State<_SalesReportTab> {
   }
 }
 
+class _ReportDateRangeBar extends StatelessWidget {
+  const _ReportDateRangeBar({
+    required this.from,
+    required this.to,
+    required this.onFromChanged,
+    required this.onToChanged,
+    required this.onToday,
+    required this.onThisWeek,
+    required this.onThisMonth,
+  });
+
+  final DateTime from;
+  final DateTime to;
+  final VoidCallback onFromChanged;
+  final VoidCallback onToChanged;
+  final VoidCallback onToday;
+  final VoidCallback onThisWeek;
+  final VoidCallback onThisMonth;
+
+  String _formatDate(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        OutlinedButton.icon(
+          icon: const Icon(Icons.calendar_today, size: 16),
+          label: Text('From ${_formatDate(from)}'),
+          onPressed: onFromChanged,
+        ),
+        OutlinedButton.icon(
+          icon: const Icon(Icons.calendar_today, size: 16),
+          label: Text('To ${_formatDate(to)}'),
+          onPressed: onToChanged,
+        ),
+        TextButton(onPressed: onToday, child: const Text('Today')),
+        TextButton(onPressed: onThisWeek, child: const Text('This week')),
+        TextButton(onPressed: onThisMonth, child: const Text('This month')),
+      ],
+    );
+  }
+}
+
+class _BillSummaryRow extends StatelessWidget {
+  const _BillSummaryRow({
+    required this.billLabel,
+    required this.dateLabel,
+    required this.amountLabel,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String billLabel;
+  final String dateLabel;
+  final String amountLabel;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Material(
+      color: selected ? colorScheme.primaryContainer.withValues(alpha: 0.35) : null,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            children: [
+              Text(
+                billLabel,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Text(
+                  dateLabel,
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+              ),
+              Text(
+                amountLabel,
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BillLineRow extends StatelessWidget {
+  const _BillLineRow({
+    required this.title,
+    required this.detail,
+  });
+
+  final String title;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(
+            detail,
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _BillWiseSalesTab extends StatefulWidget {
   const _BillWiseSalesTab();
   @override
@@ -850,6 +981,8 @@ class _BillWiseSalesTab extends StatefulWidget {
 }
 
 class _BillWiseSalesTabState extends State<_BillWiseSalesTab> {
+  DateTime _from = DateTime.now();
+  DateTime _to = DateTime.now();
   List<Map<String, dynamic>> _bills = [];
   Map<String, dynamic>? _selected;
   List<Map<String, dynamic>> _lines = [];
@@ -863,7 +996,11 @@ class _BillWiseSalesTabState extends State<_BillWiseSalesTab> {
 
   Future<void> _loadBills() async {
     setState(() => _loading = true);
-    final bills = await Repository.instance.salesReport(includeVoided: false);
+    final bills = await Repository.instance.salesReport(
+      from: _from,
+      to: _to,
+      includeVoided: false,
+    );
     if (!mounted) return;
     setState(() {
       _bills = bills;
@@ -900,6 +1037,89 @@ class _BillWiseSalesTabState extends State<_BillWiseSalesTab> {
     return text;
   }
 
+  String _formatQty(num? value) {
+    final number = value?.toDouble() ?? 0;
+    if ((number - number.roundToDouble()).abs() < 0.000001) {
+      return number.round().toString();
+    }
+    return number.toStringAsFixed(2);
+  }
+
+  double get _rangeTotal {
+    return _bills.fold<double>(
+      0,
+      (sum, bill) => sum + ((bill['total'] as num?)?.toDouble() ?? 0),
+    );
+  }
+
+  Future<void> _pickFromDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _from,
+      firstDate: DateTime.now().subtract(const Duration(days: 3650)),
+      lastDate: _to,
+    );
+    if (picked == null) return;
+    setState(() {
+      _from = picked;
+      if (_to.isBefore(_from)) _to = _from;
+      _selected = null;
+      _lines = [];
+    });
+    await _loadBills();
+  }
+
+  Future<void> _pickToDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _to,
+      firstDate: _from,
+      lastDate: DateTime.now(),
+    );
+    if (picked == null) return;
+    setState(() {
+      _to = picked;
+      if (_from.isAfter(_to)) _from = _to;
+      _selected = null;
+      _lines = [];
+    });
+    await _loadBills();
+  }
+
+  void _setToday() {
+    final today = DateTime.now();
+    setState(() {
+      _from = today;
+      _to = today;
+      _selected = null;
+      _lines = [];
+    });
+    _loadBills();
+  }
+
+  void _setThisWeek() {
+    final today = DateTime.now();
+    final start = today.subtract(Duration(days: today.weekday - 1));
+    setState(() {
+      _from = start;
+      _to = today;
+      _selected = null;
+      _lines = [];
+    });
+    _loadBills();
+  }
+
+  void _setThisMonth() {
+    final today = DateTime.now();
+    setState(() {
+      _from = DateTime(today.year, today.month, 1);
+      _to = today;
+      _selected = null;
+      _lines = [];
+    });
+    _loadBills();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -921,9 +1141,19 @@ class _BillWiseSalesTabState extends State<_BillWiseSalesTab> {
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 const SizedBox(height: 8),
+                _ReportDateRangeBar(
+                  from: _from,
+                  to: _to,
+                  onFromChanged: _pickFromDate,
+                  onToChanged: _pickToDate,
+                  onToday: _setToday,
+                  onThisWeek: _setThisWeek,
+                  onThisMonth: _setThisMonth,
+                ),
+                const SizedBox(height: 8),
                 Expanded(
                   child: _bills.isEmpty
-                      ? const Center(child: Text('No sales yet'))
+                      ? const Center(child: Text('No sales in this date range'))
                       : ListView.separated(
                           itemCount: _bills.length,
                           separatorBuilder: (_, __) => const Divider(height: 1),
@@ -931,22 +1161,38 @@ class _BillWiseSalesTabState extends State<_BillWiseSalesTab> {
                             final bill = _bills[index];
                             final selected =
                                 _selected?['id'] == bill['id'];
-                            return ListTile(
+                            return _BillSummaryRow(
+                              billLabel: 'Bill #${bill['id']}',
+                              dateLabel: _formatBillDate(bill['sale_date']),
+                              amountLabel:
+                                  '₹${(bill['total'] as num).toStringAsFixed(2)}',
                               selected: selected,
-                              title: Text('Bill #${bill['id']}'),
-                              subtitle: Text(
-                                _formatBillDate(bill['sale_date']),
-                              ),
-                              trailing: Text(
-                                '₹${(bill['total'] as num).toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
                               onTap: () => _selectBill(bill),
                             );
                           },
                         ),
+                ),
+                const SizedBox(height: 8),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '${_bills.length} bill(s) in range',
+                          style: TextStyle(color: Colors.grey.shade700),
+                        ),
+                        Text(
+                          'Total ₹${_rangeTotal.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -981,16 +1227,16 @@ class _BillWiseSalesTabState extends State<_BillWiseSalesTab> {
                                     const Divider(height: 1),
                                 itemBuilder: (context, index) {
                                   final line = _lines[index];
-                                  return ListTile(
-                                    title: Text(
-                                      RawMaterial.staffLabelFor(
-                                        line['item_name']?.toString() ?? '',
-                                        line['sub_item']?.toString(),
-                                      ),
+                                  final qty = (line['qty'] as num?)?.toDouble() ?? 0;
+                                  final amount =
+                                      (line['amount'] as num?)?.toDouble() ?? 0;
+                                  return _BillLineRow(
+                                    title: RawMaterial.staffLabelFor(
+                                      line['item_name']?.toString() ?? '',
+                                      line['sub_item']?.toString(),
                                     ),
-                                    subtitle: Text(
-                                      'Qty ${line['qty']}  •  ₹${line['amount']}',
-                                    ),
+                                    detail:
+                                        'Qty ${_formatQty(qty)}  •  ₹${amount.toStringAsFixed(2)}',
                                   );
                                 },
                               ),
@@ -1111,6 +1357,8 @@ class _PurchaseBillsTab extends StatefulWidget {
 }
 
 class _PurchaseBillsTabState extends State<_PurchaseBillsTab> {
+  DateTime _from = DateTime.now();
+  DateTime _to = DateTime.now();
   List<Map<String, dynamic>> _bills = [];
   Map<String, dynamic>? _selected;
   List<Map<String, dynamic>> _lines = [];
@@ -1124,7 +1372,10 @@ class _PurchaseBillsTabState extends State<_PurchaseBillsTab> {
 
   Future<void> _loadBills() async {
     setState(() => _loading = true);
-    final bills = await Repository.instance.purchases();
+    final bills = await Repository.instance.purchases(
+      from: _from,
+      to: _to,
+    );
     if (!mounted) return;
     setState(() {
       _bills = bills;
@@ -1161,6 +1412,89 @@ class _PurchaseBillsTabState extends State<_PurchaseBillsTab> {
     return text;
   }
 
+  String _formatQty(num? value) {
+    final number = value?.toDouble() ?? 0;
+    if ((number - number.roundToDouble()).abs() < 0.000001) {
+      return number.round().toString();
+    }
+    return number.toStringAsFixed(2);
+  }
+
+  double get _rangeTotal {
+    return _bills.fold<double>(
+      0,
+      (sum, bill) => sum + ((bill['total_amount'] as num?)?.toDouble() ?? 0),
+    );
+  }
+
+  Future<void> _pickFromDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _from,
+      firstDate: DateTime.now().subtract(const Duration(days: 3650)),
+      lastDate: _to,
+    );
+    if (picked == null) return;
+    setState(() {
+      _from = picked;
+      if (_to.isBefore(_from)) _to = _from;
+      _selected = null;
+      _lines = [];
+    });
+    await _loadBills();
+  }
+
+  Future<void> _pickToDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _to,
+      firstDate: _from,
+      lastDate: DateTime.now(),
+    );
+    if (picked == null) return;
+    setState(() {
+      _to = picked;
+      if (_from.isAfter(_to)) _from = _to;
+      _selected = null;
+      _lines = [];
+    });
+    await _loadBills();
+  }
+
+  void _setToday() {
+    final today = DateTime.now();
+    setState(() {
+      _from = today;
+      _to = today;
+      _selected = null;
+      _lines = [];
+    });
+    _loadBills();
+  }
+
+  void _setThisWeek() {
+    final today = DateTime.now();
+    final start = today.subtract(Duration(days: today.weekday - 1));
+    setState(() {
+      _from = start;
+      _to = today;
+      _selected = null;
+      _lines = [];
+    });
+    _loadBills();
+  }
+
+  void _setThisMonth() {
+    final today = DateTime.now();
+    setState(() {
+      _from = DateTime(today.year, today.month, 1);
+      _to = today;
+      _selected = null;
+      _lines = [];
+    });
+    _loadBills();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -1182,31 +1516,59 @@ class _PurchaseBillsTabState extends State<_PurchaseBillsTab> {
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
                 const SizedBox(height: 8),
+                _ReportDateRangeBar(
+                  from: _from,
+                  to: _to,
+                  onFromChanged: _pickFromDate,
+                  onToChanged: _pickToDate,
+                  onToday: _setToday,
+                  onThisWeek: _setThisWeek,
+                  onThisMonth: _setThisMonth,
+                ),
+                const SizedBox(height: 8),
                 Expanded(
                   child: _bills.isEmpty
-                      ? const Center(child: Text('No purchases yet'))
+                      ? const Center(
+                          child: Text('No purchases in this date range'),
+                        )
                       : ListView.separated(
                           itemCount: _bills.length,
                           separatorBuilder: (_, __) => const Divider(height: 1),
                           itemBuilder: (context, index) {
                             final bill = _bills[index];
                             final selected = _selected?['id'] == bill['id'];
-                            return ListTile(
+                            return _BillSummaryRow(
+                              billLabel: 'Bill #${bill['id']}',
+                              dateLabel: _formatBillDate(bill['purchase_date']),
+                              amountLabel:
+                                  '₹${(bill['total_amount'] as num).toStringAsFixed(2)}',
                               selected: selected,
-                              title: Text('Bill #${bill['id']}'),
-                              subtitle: Text(
-                                _formatBillDate(bill['purchase_date']),
-                              ),
-                              trailing: Text(
-                                '₹${(bill['total_amount'] as num).toStringAsFixed(2)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
                               onTap: () => _selectBill(bill),
                             );
                           },
                         ),
+                ),
+                const SizedBox(height: 8),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          '${_bills.length} bill(s) in range',
+                          style: TextStyle(color: Colors.grey.shade700),
+                        ),
+                        Text(
+                          'Total ₹${_rangeTotal.toStringAsFixed(2)}',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -1252,17 +1614,14 @@ class _PurchaseBillsTabState extends State<_PurchaseBillsTab> {
                                   final amount =
                                       (line['amount'] as num?)?.toDouble() ??
                                           qty * rate;
-                                  return ListTile(
-                                    title: Text(
-                                      RawMaterial.staffLabelFor(
-                                        line['material_name']?.toString() ??
-                                            '',
-                                        line['material_sub_item']?.toString(),
-                                      ),
+                                  return _BillLineRow(
+                                    title: RawMaterial.staffLabelFor(
+                                      line['material_name']?.toString() ??
+                                          '',
+                                      line['material_sub_item']?.toString(),
                                     ),
-                                    subtitle: Text(
-                                      'Qty $qty ${line['unit'] ?? ''}  •  Rate ₹${rate.toStringAsFixed(2)}  •  Amount ₹${amount.toStringAsFixed(2)}',
-                                    ),
+                                    detail:
+                                        'Qty ${_formatQty(qty)} ${line['unit'] ?? ''}  •  ₹${amount.toStringAsFixed(2)}',
                                   );
                                 },
                               ),

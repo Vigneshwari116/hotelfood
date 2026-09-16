@@ -146,6 +146,7 @@ class _PosScreenState extends State<PosScreen> {
         _categories = categories;
         _locations = locations;
         _loading = false;
+        _seedDefaultVariantSelections(materials);
         if (_categoryId != null &&
             !_categoryIdsWithItems.contains(_categoryId)) {
           _categoryId = null;
@@ -617,10 +618,7 @@ class _PosScreenState extends State<PosScreen> {
       }
     }
 
-    for (final variant in group.variants) {
-      if (variant.sellingPrice != null) return variant;
-    }
-    return group.variants.first;
+    return _defaultVariantForGroup(group);
   }
 
   double _cartQtyForVariantGroup(VariantGroup group) {
@@ -675,13 +673,35 @@ class _PosScreenState extends State<PosScreen> {
     return _cart[index].qty;
   }
 
+  void _seedDefaultVariantSelections(List<RawMaterial> materials) {
+    final partition = VariantHelpers.partitionForPos(materials);
+    for (final group in partition.groups) {
+      final defaultVariant = _defaultVariantForGroup(group);
+      if (defaultVariant.id == null) continue;
+      _selectedVariantIdByGroup.putIfAbsent(
+        group.key,
+        () => defaultVariant.id!,
+      );
+    }
+  }
+
+  RawMaterial _defaultVariantForGroup(VariantGroup group) {
+    for (final variant in group.variants) {
+      if (variant.sellingPrice != null && variant.id != null) {
+        return variant;
+      }
+    }
+    return group.variants.first;
+  }
+
   // ============================================================
   // ADD RAW MATERIAL
   // ============================================================
 
   void _addRawMaterial(
-      RawMaterial material,
-      ) {
+      RawMaterial material, {
+      double qty = 1,
+      }) {
     if (material.id == null) {
       return;
     }
@@ -693,6 +713,10 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
+    if (qty <= 0) {
+      return;
+    }
+
     final index = _cartIndexForRaw(material.id!);
 
     if (index == -1) {
@@ -701,7 +725,7 @@ class _PosScreenState extends State<PosScreen> {
           rawMaterialId: material.id,
           name: material.name,
           subItem: material.trimmedSubItem,
-          qty: 1,
+          qty: qty,
           price: material.sellingPrice ?? 0,
         ),
       );
@@ -717,7 +741,7 @@ class _PosScreenState extends State<PosScreen> {
       name: old.name,
       subItem: old.subItem,
       componentLabels: old.componentLabels,
-      qty: old.qty + 1,
+      qty: old.qty + qty,
       price: old.price,
     );
     _refreshUi();
@@ -1374,36 +1398,47 @@ class _PosScreenState extends State<PosScreen> {
         if (id == null) return const SizedBox.shrink();
         final label = VariantHelpers.variantSelectorLabel(variant);
         final isSelected = selected.id == id;
-        return ActionChip(
-          label: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ActionChip(
+              label: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: isSelected ? FontWeight.w600 : FontWeight.normal,
+                ),
+              ),
+              visualDensity: VisualDensity.compact,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              backgroundColor: isSelected
+                  ? Theme.of(context).colorScheme.primaryContainer
+                  : null,
+              side: isSelected
+                  ? BorderSide(color: Theme.of(context).colorScheme.primary)
+                  : null,
+              avatar: isSelected
+                  ? Icon(
+                      Icons.check,
+                      size: 14,
+                      color: Theme.of(context).colorScheme.primary,
+                    )
+                  : null,
+              onPressed: () {
+                setState(() => _selectedVariantIdByGroup[group.key] = id);
+                _addRawMaterial(variant);
+              },
             ),
-          ),
-          visualDensity: VisualDensity.compact,
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          backgroundColor: isSelected
-              ? Theme.of(context).colorScheme.primaryContainer
-              : null,
-          side: isSelected
-              ? BorderSide(color: Theme.of(context).colorScheme.primary)
-              : null,
-          avatar: isSelected
-              ? Icon(
-                  Icons.check,
-                  size: 14,
-                  color: Theme.of(context).colorScheme.primary,
-                )
-              : null,
-          onPressed: () {
-            setState(() => _selectedVariantIdByGroup[group.key] = id);
-            _addRawMaterial(variant);
-          },
+            _VariantQtyField(
+              onQtyCommitted: (qty) {
+                setState(() => _selectedVariantIdByGroup[group.key] = id);
+                _addRawMaterial(variant, qty: qty);
+              },
+            ),
+          ],
         );
       }).toList(),
     );
@@ -1449,6 +1484,12 @@ class _PosScreenState extends State<PosScreen> {
                           isSelected ? FontWeight.w600 : FontWeight.normal,
                     ),
                   ),
+                ),
+                _VariantQtyField(
+                  onQtyCommitted: (qty) {
+                    setState(() => _selectedVariantIdByGroup[group.key] = id);
+                    _addRawMaterial(variant, qty: qty);
+                  },
                 ),
               ],
             ),
@@ -2755,6 +2796,62 @@ class _PosGridEntry {
 
   final RawMaterial? material;
   final VariantGroup? variantGroup;
+}
+
+class _VariantQtyField extends StatefulWidget {
+  const _VariantQtyField({required this.onQtyCommitted});
+
+  final ValueChanged<double> onQtyCommitted;
+
+  @override
+  State<_VariantQtyField> createState() => _VariantQtyFieldState();
+}
+
+class _VariantQtyFieldState extends State<_VariantQtyField> {
+  final _controller = TextEditingController();
+  final _focusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _commit() {
+    final raw = _controller.text.trim().replaceAll(',', '.');
+    if (raw.isEmpty) return;
+    final parsed = double.tryParse(raw);
+    if (parsed == null || parsed <= 0) {
+      _controller.clear();
+      return;
+    }
+    widget.onQtyCommitted(parsed);
+    _controller.clear();
+    _focusNode.unfocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 44,
+      child: TextField(
+        controller: _controller,
+        focusNode: _focusNode,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        textAlign: TextAlign.center,
+        style: const TextStyle(fontSize: 11),
+        decoration: const InputDecoration(
+          isDense: true,
+          hintText: 'Qty',
+          contentPadding: EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          border: OutlineInputBorder(),
+        ),
+        onSubmitted: (_) => _commit(),
+        onEditingComplete: _commit,
+      ),
+    );
+  }
 }
 
 class _CartQtyField extends StatefulWidget {

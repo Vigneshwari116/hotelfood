@@ -370,7 +370,7 @@ void main() {
       );
 
       final holder = rows.firstWhere((row) => row['id'] == 1);
-      final variant = rows.firstWhere((row) => row['id'] == 2);
+      expect(rows.any((row) => row['id'] == 2), isFalse);
       final opening = (holder['opening_qty'] as num).toDouble();
       final purchase = (holder['purchase_qty'] as num).toDouble();
       final sales = (holder['sales_qty'] as num).toDouble();
@@ -378,7 +378,6 @@ void main() {
       final adjustment = (holder['adjustment_qty'] as num).toDouble();
 
       expect(opening + purchase - sales + adjustment, closing);
-      expect(variant['closing_qty'], holder['closing_qty']);
 
       await tearDownStockTestSession(database);
     });

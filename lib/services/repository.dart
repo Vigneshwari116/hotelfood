@@ -9,6 +9,7 @@ import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/item_import_service.dart';
+import 'package:foodstock/services/sub_item_stock.dart';
 import 'package:foodstock/services/variant_helpers.dart';
 
 // ============================================================
@@ -1995,8 +1996,30 @@ class Repository {
             });
       }
 
-      Future<List<Map<String, dynamic>>> purchases() async {
+      Future<List<Map<String, dynamic>>> purchases({
+            DateTime? from,
+            DateTime? to,
+      }) async {
             final db = await _db;
+
+            final where = <String>[];
+            final args = <Object>[];
+
+            if (from != null) {
+                  final start = DateTime(from.year, from.month, from.day);
+                  where.add('p.purchase_date >= ?');
+                  args.add(start.toIso8601String());
+            }
+
+            if (to != null) {
+                  final endExclusive = DateTime(
+                        to.year,
+                        to.month,
+                        to.day,
+                  ).add(const Duration(days: 1));
+                  where.add('p.purchase_date < ?');
+                  args.add(endExclusive.toIso8601String());
+            }
 
             return db.rawQuery(
                   '''
@@ -2006,9 +2029,77 @@ class Repository {
       FROM purchases p
       LEFT JOIN suppliers s
         ON s.id = p.supplier_id
-      ORDER BY p.purchase_date DESC
+      ${where.isEmpty ? '' : 'WHERE ${where.join(' AND ')}'}
+      ORDER BY p.purchase_date DESC, p.id DESC
       ''',
+                  args.isEmpty ? null : args,
             );
+      }
+
+      Future<List<String>> distinctSubItemGroups() async {
+            final items = await rawMaterials(includeHidden: true);
+            return SubItemStock.distinctGroupLabels(
+                  items.map((item) => item.subItem ?? item.name),
+            );
+      }
+
+      /// Merges case/whitespace variants of sub_item into one canonical label.
+      Future<int> normalizeSubItemGroupLabels() async {
+            final db = await _db;
+            final rows = await db.query(
+                  'raw_materials',
+                  columns: ['id', 'name', 'sub_item', 'menu_sort_order'],
+            );
+            if (rows.isEmpty) return 0;
+
+            final byKey = <String, List<Map<String, dynamic>>>{};
+            for (final row in rows) {
+                  final sub = row['sub_item']?.toString().trim();
+                  final name = row['name']?.toString().trim() ?? '';
+                  final label = (sub == null || sub.isEmpty) ? name : sub;
+                  if (label.isEmpty) continue;
+                  byKey
+                      .putIfAbsent(
+                        SubItemStock.normalizeGroupKey(label),
+                        () => [],
+                      )
+                      .add(row);
+            }
+
+            var updated = 0;
+            for (final familyRows in byKey.values) {
+                  if (familyRows.length < 2) continue;
+
+                  final family = familyRows
+                      .map(
+                        (row) => RawMaterial(
+                          id: row['id'] as int?,
+                          name: row['name']?.toString() ?? '',
+                          subItem: row['sub_item']?.toString(),
+                          menuSortOrder:
+                              (row['menu_sort_order'] as num?)?.toInt(),
+                        ),
+                      )
+                      .toList();
+                  final canonical = SubItemStock.canonicalLabelForFamily(family);
+                  if (canonical.isEmpty) continue;
+
+                  for (final row in familyRows) {
+                        final id = row['id'] as int?;
+                        if (id == null) continue;
+                        final current = row['sub_item']?.toString().trim() ?? '';
+                        if (current == canonical) continue;
+                        await db.update(
+                              'raw_materials',
+                              {'sub_item': canonical},
+                              where: 'id = ?',
+                              whereArgs: [id],
+                        );
+                        updated++;
+                  }
+            }
+
+            return updated;
       }
 
       Future<List<Map<String, dynamic>>> purchaseItems(
@@ -2557,6 +2648,7 @@ class Repository {
       // ============================================================
 
       Future<void> refreshVariantLinks() async {
+            await normalizeSubItemGroupLabels();
             final items = await rawMaterials(includeHidden: true);
             final categories = await this.categories(type: 'raw_material');
             final categoryNameById = {
@@ -2769,29 +2861,54 @@ class Repository {
                         if (row['id'] != null) row['id'] as int: row,
             };
 
-            return rows.map((row) {
+            final familyByStockId = <int, List<RawMaterial>>{};
+            for (final item in linked) {
+                  if (item.id == null) continue;
+                  final stockId = stockIdByMaterialId[item.id!] ?? item.id!;
+                  familyByStockId.putIfAbsent(stockId, () => []).add(item);
+            }
+
+            final collapsed = <Map<String, dynamic>>[];
+            for (final row in rows) {
                   final materialId = row['id'] as int?;
-                  if (materialId == null) return row;
+                  if (materialId == null) {
+                        collapsed.add(row);
+                        continue;
+                  }
 
                   final stockId = stockIdByMaterialId[materialId] ?? materialId;
-                  if (stockId == materialId) return row;
+                  if (stockId != materialId) continue;
 
-                  final holderRow = rowByMaterialId[stockId];
-                  if (holderRow == null) return row;
+                  final holderRow = rowByMaterialId[stockId] ?? row;
+                  final family = familyByStockId[stockId] ?? linked
+                      .where((item) => item.id == stockId)
+                      .toList();
+                  final groupLabel = SubItemStock.canonicalLabelForFamily(family);
 
-                  return {
-                        ...row,
-                        'opening_qty': holderRow['opening_qty'],
-                        'purchase_qty': holderRow['purchase_qty'],
-                        'sales_qty': holderRow['sales_qty'],
-                        'adjustment_qty': holderRow['adjustment_qty'],
-                        'closing_qty': holderRow['closing_qty'],
-                        'opening_value': holderRow['opening_value'],
-                        'closing_value': holderRow['closing_value'],
-                        'purchase_value': holderRow['purchase_value'],
-                        'sales_value': holderRow['sales_value'],
-                  };
-            }).toList();
+                  collapsed.add({
+                        ...holderRow,
+                        'item_name': groupLabel.isNotEmpty
+                            ? groupLabel
+                            : holderRow['item_name'],
+                        'sub_item': groupLabel.isNotEmpty
+                            ? groupLabel
+                            : holderRow['sub_item'],
+                  });
+            }
+
+            collapsed.sort((a, b) {
+                  final nameA = RawMaterial.staffLabelFor(
+                        a['item_name']?.toString() ?? '',
+                        a['sub_item']?.toString(),
+                  );
+                  final nameB = RawMaterial.staffLabelFor(
+                        b['item_name']?.toString() ?? '',
+                        b['sub_item']?.toString(),
+                  );
+                  return nameA.toLowerCase().compareTo(nameB.toLowerCase());
+            });
+
+            return collapsed;
       }
 
       // ============================================================
@@ -3967,23 +4084,19 @@ class Repository {
             final args = <dynamic>[];
 
             if (from != null) {
-                  where.add(
-                        'sale_date >= ?',
-                  );
-
-                  args.add(
-                        from.toIso8601String(),
-                  );
+                  final start = DateTime(from.year, from.month, from.day);
+                  where.add('sale_date >= ?');
+                  args.add(start.toIso8601String());
             }
 
             if (to != null) {
-                  where.add(
-                        'sale_date <= ?',
-                  );
-
-                  args.add(
-                        to.toIso8601String(),
-                  );
+                  final endExclusive = DateTime(
+                        to.year,
+                        to.month,
+                        to.day,
+                  ).add(const Duration(days: 1));
+                  where.add('sale_date < ?');
+                  args.add(endExclusive.toIso8601String());
             }
 
             if (!includeVoided) {

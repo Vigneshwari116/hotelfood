@@ -7,7 +7,76 @@ class SubItemStock {
   static String? stockKey(RawMaterial item) {
     final sub = item.subItem?.trim();
     if (sub == null || sub.isEmpty) return null;
-    return sub.toLowerCase();
+    return normalizeGroupKey(sub);
+  }
+
+  /// Case-insensitive, trimmed comparison key for stock pools.
+  static String normalizeGroupKey(String value) {
+    return value.trim().toLowerCase();
+  }
+
+  /// Returns the existing label when [input] matches a group case-insensitively.
+  static String resolveCanonicalLabel(
+    String input,
+    Iterable<String> existingLabels,
+  ) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) return trimmed;
+
+    final key = normalizeGroupKey(trimmed);
+    for (final label in existingLabels) {
+      final candidate = label.trim();
+      if (candidate.isEmpty) continue;
+      if (normalizeGroupKey(candidate) == key) return candidate;
+    }
+    return trimmed;
+  }
+
+  /// Unique grouping labels sorted A–Z (case-insensitive dedupe).
+  static List<String> distinctGroupLabels(Iterable<String?> values) {
+    final byKey = <String, String>{};
+    for (final value in values) {
+      final trimmed = value?.trim();
+      if (trimmed == null || trimmed.isEmpty) continue;
+      final key = normalizeGroupKey(trimmed);
+      byKey.putIfAbsent(key, () => trimmed);
+    }
+
+    final labels = byKey.values.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    return labels;
+  }
+
+  /// Picks one display label for a pool of items that share a stock key.
+  static String canonicalLabelForFamily(List<RawMaterial> family) {
+    if (family.isEmpty) return '';
+
+    final stockKeyValue = stockKey(family.first);
+    if (stockKeyValue == null || stockKeyValue.isEmpty) {
+      return family.first.trimmedSubItem ?? family.first.name.trim();
+    }
+
+    for (final item in family) {
+      if (normalizeGroupKey(item.name) == stockKeyValue) {
+        return item.name.trim();
+      }
+    }
+
+    for (final item in family) {
+      final sub = item.subItem?.trim();
+      if (sub != null &&
+          sub.isNotEmpty &&
+          normalizeGroupKey(sub) == stockKeyValue) {
+        return sub;
+      }
+    }
+
+    final holder = canonicalHolder(family, stockKey: stockKeyValue);
+    if (holder != null) {
+      return holder.trimmedSubItem ?? holder.name.trim();
+    }
+
+    return family.first.trimmedSubItem ?? family.first.name.trim();
   }
 
   /// Patty/component references on burger rows are not shared product pools.
