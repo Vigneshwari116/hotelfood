@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/variant_helpers.dart';
 
-/// Mirrors POS cart merge rules from PosScreen for pre-merge verification.
+/// Mirrors POS variant-card add rules: only variant selector taps add to cart.
 class PosCartSimulator {
   PosCartSimulator(this.regular, this.large);
 
@@ -31,6 +31,9 @@ class PosCartSimulator {
     selectedId = id;
     addRawMaterial(variant);
   }
+
+  /// Variant card image/price areas are display-only (no independent add).
+  void onVariantCardTapped(RawMaterial selected) {}
 
   void addRawMaterial(
     RawMaterial material, {
@@ -114,6 +117,14 @@ void main() {
       expect(sim.cart.length, 1);
       expect(sim.cart.single.rawMaterialId, 2);
       expect(sim.cart.single.qty, 3);
+    });
+
+    test('chip tap then card tap adds only once', () {
+      sim.onVariantTapped(regular);
+      sim.onVariantCardTapped(regular);
+
+      expect(sim.cart.length, 1);
+      expect(sim.cart.single.qty, 1);
     });
   });
 }

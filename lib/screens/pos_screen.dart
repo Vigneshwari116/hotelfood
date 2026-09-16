@@ -711,13 +711,8 @@ class _PosScreenState extends State<PosScreen> {
     final id = variant.id;
     if (id == null) return;
 
-    final alreadySelected = _selectedVariantIdByGroup[group.key] == id;
     setState(() => _selectedVariantIdByGroup[group.key] = id);
-    if (alreadySelected) {
-      _addRawMaterial(variant);
-    } else {
-      _addRawMaterial(variant, replaceQty: false);
-    }
+    _addRawMaterial(variant);
   }
 
   void _seedDefaultVariantSelections(List<RawMaterial> materials) {
@@ -1340,10 +1335,7 @@ class _PosScreenState extends State<PosScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          InkWell(
-            onTap: () => _addRawMaterial(selected),
-            child: _image(imagePath, height: 72),
-          ),
+          _image(imagePath, height: 72),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
@@ -1371,37 +1363,33 @@ class _PosScreenState extends State<PosScreen> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  InkWell(
-                    onTap: () => _addRawMaterial(selected),
-                    borderRadius: BorderRadius.circular(6),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            selected.sellingPrice == null
-                                ? 'No price'
-                                : '₹${selected.sellingPrice!.toStringAsFixed(2)}',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 13,
-                              color: selected.sellingPrice == null
-                                  ? Theme.of(context).colorScheme.error
-                                  : null,
-                            ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          selected.sellingPrice == null
+                              ? 'No price'
+                              : '₹${selected.sellingPrice!.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                            color: selected.sellingPrice == null
+                                ? Theme.of(context).colorScheme.error
+                                : null,
                           ),
-                          Text(
-                            _formatStockLabel(stock),
-                            style: TextStyle(
-                              fontSize: 11,
-                              color: stock < 0
-                                  ? Colors.red.shade700
-                                  : Colors.grey.shade700,
-                            ),
+                        ),
+                        Text(
+                          _formatStockLabel(stock),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: stock < 0
+                                ? Colors.red.shade700
+                                : Colors.grey.shade700,
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                   if (cartQty > 0)
