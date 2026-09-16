@@ -1162,7 +1162,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
           const SizedBox(height: 8),
 
           InventoryItemTypeahead(
-            entries: inventorySearchEntriesFromMaterials(_materials),
+            entries: inventoryPurchaseEntriesFromMaterials(_materials),
             selectedPrimaryLabel: line.material?.staffLabel,
             enabled: !_saving,
             labelText: 'Item',

@@ -151,3 +151,51 @@ List<InventorySearchEntry> inventorySearchEntriesFromMaterials(
       ),
   ];
 }
+
+/// One dropdown row per purchasable stock pool (variants collapsed to the holder).
+List<InventorySearchEntry> inventoryPurchaseEntriesFromMaterials(
+  Iterable<RawMaterial> materials, {
+  String? Function(int? categoryId)? categoryNameFor,
+}) {
+  final list = materials.toList();
+  final partition = VariantHelpers.partitionForPos(list);
+  final entries = <InventorySearchEntry>[];
+
+  for (final group in partition.groups) {
+    final holder = group.stockSource;
+    final haystack = [
+      group.posTitle,
+      holder.name,
+      holder.trimmedSubItem ?? '',
+      holder.barcode ?? '',
+      for (final variant in group.variants) ...[
+        variant.name,
+        variant.variantLabel ?? '',
+        variant.staffLabel,
+      ],
+      categoryNameFor?.call(holder.categoryId) ?? '',
+    ].join(' ').toLowerCase();
+
+    entries.add(
+      InventorySearchEntry(
+        primaryLabel: group.posTitle,
+        haystack: haystack,
+        material: holder,
+      ),
+    );
+  }
+
+  for (final single in partition.singles) {
+    entries.add(
+      InventorySearchEntry.fromMaterial(
+        single,
+        categoryName: categoryNameFor?.call(single.categoryId),
+      ),
+    );
+  }
+
+  entries.sort(
+    (a, b) => a.primaryLabel.toLowerCase().compareTo(b.primaryLabel.toLowerCase()),
+  );
+  return entries;
+}

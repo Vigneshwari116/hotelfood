@@ -508,6 +508,16 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
+  String _posEntrySortLabel(_PosGridEntry entry) {
+    if (entry.variantGroup != null) {
+      return entry.variantGroup!.posTitle;
+    }
+    if (entry.material != null) {
+      return entry.material!.salesLabel;
+    }
+    return '';
+  }
+
   List<({String title, List<_PosGridEntry> entries, List<Combo> combos})>
       get _productSections {
     final items = _filteredMaterials;
@@ -519,10 +529,24 @@ class _PosScreenState extends State<PosScreen> {
 
     List<_PosGridEntry> entriesFor(List<RawMaterial> materials) {
       final partition = VariantHelpers.partitionForPos(materials);
-      return [
+      final entries = [
         ...partition.groups.map(_PosGridEntry.variant),
         ...partition.singles.map(_PosGridEntry.material),
       ];
+      entries.sort(
+        (a, b) => _posEntrySortLabel(a)
+            .toLowerCase()
+            .compareTo(_posEntrySortLabel(b).toLowerCase()),
+      );
+      return entries;
+    }
+
+    List<Combo> sortedCombos(List<Combo> source) {
+      final list = List<Combo>.from(source);
+      list.sort(
+        (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()),
+      );
+      return list;
     }
 
     if (_categoryId != null) {
@@ -533,7 +557,7 @@ class _PosScreenState extends State<PosScreen> {
         (
           title: title,
           entries: entriesFor(items),
-          combos: combos,
+          combos: sortedCombos(combos),
         ),
       ];
     }
@@ -557,7 +581,7 @@ class _PosScreenState extends State<PosScreen> {
       sections.add((
         title: _categoryLabel(category.name),
         entries: entriesFor(materials),
-        combos: categoryCombos,
+        combos: sortedCombos(categoryCombos),
       ));
     }
 
@@ -567,7 +591,7 @@ class _PosScreenState extends State<PosScreen> {
       sections.add((
         title: 'Other',
         entries: entriesFor(uncategorizedMaterials),
-        combos: uncategorizedCombos,
+        combos: sortedCombos(uncategorizedCombos),
       ));
     }
 
@@ -578,7 +602,7 @@ class _PosScreenState extends State<PosScreen> {
       sections.add((
         title: _categoryName(entry.key) ?? 'Other',
         entries: entriesFor(materials),
-        combos: categoryCombos,
+        combos: sortedCombos(categoryCombos),
       ));
     }
 
@@ -587,7 +611,7 @@ class _PosScreenState extends State<PosScreen> {
       sections.add((
         title: _categoryName(entry.key) ?? 'Other',
         entries: const [],
-        combos: entry.value,
+        combos: sortedCombos(entry.value),
       ));
     }
 
@@ -2264,16 +2288,14 @@ class _PosScreenState extends State<PosScreen> {
         child:
         CircularProgressIndicator(),
       )
-          : Column(
-        children: [
-          _topBar(),
-
-          Expanded(
-            child:
-            _buildResponsiveBody(),
-          ),
-        ],
-      ),
+          : phone
+              ? Column(
+                  children: [
+                    _posToolbar(),
+                    Expanded(child: _productArea()),
+                  ],
+                )
+              : _desktopBody(),
       floatingActionButton: _loading || !phone
           ? null
           : _mobileCartButton(),
@@ -2346,10 +2368,11 @@ class _PosScreenState extends State<PosScreen> {
   // TOP BAR
   // ============================================================
 
-  Widget _topBar() {
+  Widget _posToolbar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (_repo.isAdmin && _locations.isNotEmpty) ...[
             DropdownButtonFormField<int>(
@@ -2380,19 +2403,7 @@ class _PosScreenState extends State<PosScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Flexible(
-                flex: 11,
-                child: InventoryItemTypeahead(
-                  controller: _searchController,
-                  entries: _posSearchEntries,
-                  enabled: !_loading && !_adminViewOnly,
-                  hintText: 'Type name, sub item, barcode or size',
-                  onSelected: _onSearchEntrySelected,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Flexible(
-                flex: 9,
+              Expanded(
                 child: TextField(
                   controller: _barcodeController,
                   onSubmitted: _handleBarcode,
@@ -2410,6 +2421,17 @@ class _PosScreenState extends State<PosScreen> {
                 icon: const Icon(Icons.refresh),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: 320,
+            child: InventoryItemTypeahead(
+              controller: _searchController,
+              entries: _posSearchEntries,
+              enabled: !_loading && !_adminViewOnly,
+              hintText: 'Search items',
+              onSelected: _onSearchEntrySelected,
+            ),
           ),
           if (!_adminViewOnly) ...[
             const SizedBox(height: 8),
@@ -2446,44 +2468,31 @@ class _PosScreenState extends State<PosScreen> {
   // RESPONSIVE BODY
   // ============================================================
 
-  Widget _buildResponsiveBody() {
-    final width =
-        MediaQuery.of(
-          context,
-        ).size.width;
-
-    if (width < 900) {
-      return _mobileBody();
-    }
-
+  Widget _desktopBody() {
+    final width = MediaQuery.sizeOf(context).width;
     final cartWidth = width < 1100 ? 320.0 : (width < 1300 ? 360.0 : 400.0);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(
-          child: ClipRect(
-            child: _productArea(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _posToolbar(),
+              Expanded(child: _productArea()),
+            ],
           ),
         ),
-        const SizedBox(width: 8),
         SizedBox(
           width: cartWidth,
           child: Padding(
-            padding: const EdgeInsets.only(right: 8, bottom: 8),
+            padding: const EdgeInsets.only(right: 8, top: 8, bottom: 8),
             child: _cartView(),
           ),
         ),
       ],
     );
-  }
-
-  // ============================================================
-  // MOBILE BODY
-  // ============================================================
-
-  Widget _mobileBody() {
-    return _productArea();
   }
 
   // ============================================================
