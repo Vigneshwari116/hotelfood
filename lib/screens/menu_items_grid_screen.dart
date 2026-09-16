@@ -178,7 +178,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
     }
   }
 
-  List<String> _distinctFieldValues(String? Function(_MenuGridRow row) read) {
+  List<String> _distinctFieldValues(String Function(_MenuGridRow row) read) {
     final values = <String>{};
     for (final row in _rows) {
       final value = read(row).trim();
