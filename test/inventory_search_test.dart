@@ -65,8 +65,13 @@ void main() {
 
   group('inventorySearchEntriesFromMaterials', () {
     test('uses staff label as primary label', () {
-      final item = material(id: 1, name: 'Patty', subItem: 'Crispy Chicken');
+      final item = material(
+        id: 1,
+        name: 'Patty',
+        subItem: 'Crispy Chicken Patty',
+      );
       final entry = inventorySearchEntriesFromMaterials([item]).single;
+      expect(entry.primaryLabel, item.staffLabel);
       expect(entry.primaryLabel, 'Crispy Chicken Patty');
     });
   });
