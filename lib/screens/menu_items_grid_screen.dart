@@ -38,7 +38,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
   bool _savingAll = false;
   bool _changed = false;
 
-  bool get _readOnly => Repository.instance.isAdmin;
+  bool get _readOnly => !Repository.instance.hasFullAppAccess;
 
   @override
   void initState() {
@@ -500,6 +500,7 @@ class _CategoryGridSection extends StatelessWidget {
   int get _dirtyInSection => rows.where((row) => row.isDirty).length;
 
   static const _headers = [
+    _GridColumnSpec('', width: 36, tooltip: 'Delete row'),
     _GridColumnSpec('Barcode', width: 72),
     _GridColumnSpec('Item name', width: 152, wrapText: true),
     _GridColumnSpec('Sub-item name', width: 152, wrapText: true),
@@ -550,7 +551,6 @@ class _CategoryGridSection extends StatelessWidget {
     ),
     _GridColumnSpec('Cost (₹)', width: 60),
     _GridColumnSpec('Sell (₹)', width: 60),
-    _GridColumnSpec('', width: 36),
   ];
 
   @override
@@ -648,6 +648,27 @@ class _CategoryGridSection extends StatelessWidget {
                               )
                             : null,
                         children: [
+                          Padding(
+                            padding: const EdgeInsets.all(2),
+                            child: IconButton(
+                              tooltip: 'Delete row',
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 28,
+                                minHeight: 28,
+                              ),
+                              icon: Icon(
+                                Icons.delete_outline,
+                                size: 18,
+                                color: readOnly
+                                    ? Colors.grey
+                                    : Colors.red.shade700,
+                              ),
+                              onPressed:
+                                  readOnly ? null : () => onDelete(row),
+                            ),
+                          ),
                           _GridTextCell(
                             controller: row.barcode,
                             readOnly: readOnly,
@@ -697,7 +718,7 @@ class _CategoryGridSection extends StatelessWidget {
                                 .toList(),
                             readOnly: readOnly,
                             allowEmpty: true,
-                            menuWidth: _headers[5].menuWidth,
+                            menuWidth: _headers[6].menuWidth,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
@@ -769,27 +790,6 @@ class _CategoryGridSection extends StatelessWidget {
                             ),
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.all(2),
-                            child: IconButton(
-                              tooltip: 'Delete row',
-                              visualDensity: VisualDensity.compact,
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(
-                                minWidth: 28,
-                                minHeight: 28,
-                              ),
-                              icon: Icon(
-                                Icons.delete_outline,
-                                size: 18,
-                                color: readOnly
-                                    ? Colors.grey
-                                    : Colors.red.shade700,
-                              ),
-                              onPressed:
-                                  readOnly ? null : () => onDelete(row),
-                            ),
                           ),
                         ],
                       ),
