@@ -4,10 +4,12 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/combo_only_categories.dart';
+import 'package:foodstock/services/inventory_search.dart';
 import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/printer_service.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/services/variant_helpers.dart';
+import 'package:foodstock/widgets/inventory_item_typeahead.dart';
 
 class PosScreen extends StatefulWidget {
   const PosScreen({super.key});
@@ -275,16 +277,10 @@ class _PosScreenState extends State<PosScreen> {
     }
 
     return list.where((material) {
-      final name = material.name.toLowerCase();
-      final subItem = material.trimmedSubItem?.toLowerCase() ?? '';
-      final barcode = material.barcode?.toLowerCase() ?? '';
-      final variantGroup = material.variantGroup?.toLowerCase() ?? '';
-      final variantLabel = material.variantLabel?.toLowerCase() ?? '';
-      return name.contains(_search) ||
-          subItem.contains(_search) ||
-          barcode.contains(_search) ||
-          variantGroup.contains(_search) ||
-          variantLabel.contains(_search);
+      return matchesInventorySearchQuery(
+        inventoryMaterialHaystack(material),
+        _search,
+      );
     }).toList();
   }
 
@@ -308,20 +304,47 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   bool _comboMatchesSearch(Combo combo) {
-    final name = combo.name.toLowerCase();
-    final barcode = combo.barcode?.toLowerCase() ?? '';
-    if (name.contains(_search) || barcode.contains(_search)) {
-      return true;
-    }
+    return matchesInventorySearchQuery(
+      inventoryComboHaystack(combo),
+      _search,
+    );
+  }
 
-    for (final item in combo.items) {
-      final itemName = item.materialName?.toLowerCase() ?? '';
-      final subItem = item.materialSubItem?.toLowerCase() ?? '';
-      if (itemName.contains(_search) || subItem.contains(_search)) {
-        return true;
+  List<InventorySearchEntry> get _posSearchEntries {
+    return [
+      ...inventorySearchEntriesFromMaterials(
+        _allMaterials.where(_isDirectSaleMaterial),
+      ),
+      for (final combo in _activeCombos) InventorySearchEntry.fromCombo(combo),
+    ];
+  }
+
+  VariantGroup? _variantGroupForMaterial(RawMaterial material) {
+    final partition = VariantHelpers.partitionForPos(
+      _allMaterials.where(_isDirectSaleMaterial).toList(),
+    );
+    for (final group in partition.groups) {
+      if (group.variants.any((variant) => variant.id == material.id)) {
+        return group;
       }
     }
-    return false;
+    return null;
+  }
+
+  void _onSearchEntrySelected(InventorySearchEntry entry) {
+    if (entry.material != null) {
+      final material = entry.material!;
+      final group = _variantGroupForMaterial(material);
+      if (group != null) {
+        _onVariantTapped(group, material);
+      } else {
+        if (!_guardRapidTap()) return;
+        _addRawMaterial(material);
+      }
+    } else if (entry.combo != null) {
+      _addCombo(entry.combo!);
+    }
+    _searchController.clear();
   }
 
   bool _guardRapidTap() {
@@ -2354,23 +2377,12 @@ class _PosScreenState extends State<PosScreen> {
             ),
             const SizedBox(height: 8),
           ],
-          TextField(
+          InventoryItemTypeahead(
             controller: _searchController,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              hintText: 'Search items',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: _search.isEmpty
-                  ? null
-                  : IconButton(
-                      onPressed: _searchController.clear,
-                      icon: const Icon(Icons.clear),
-                    ),
-              border: const OutlineInputBorder(),
-              isDense: true,
-              filled: true,
-              fillColor: Colors.white,
-            ),
+            entries: _posSearchEntries,
+            enabled: !_loading && !_adminViewOnly,
+            hintText: 'Type name, sub item, barcode or size',
+            onSelected: _onSearchEntrySelected,
           ),
           const SizedBox(height: 8),
           Row(
