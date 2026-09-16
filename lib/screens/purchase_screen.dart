@@ -109,6 +109,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
 
   List<Supplier> _suppliers = [];
   List<RawMaterial> _materials = [];
+  List<UnitM> _units = [];
   List<Map<String, dynamic>> _history = [];
 
   int? _supplierId;
@@ -171,6 +172,8 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       final materials =
       await Repository.instance.rawMaterialsForDisplay();
 
+      final units = await Repository.instance.units();
+
       final history =
       await Repository.instance.purchases();
 
@@ -179,6 +182,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       setState(() {
         _suppliers = suppliers;
         _materials = materials;
+        _units = units;
         _history = history;
 
         if (_supplierId == null &&
@@ -407,6 +411,43 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
     return value % 1 == 0
         ? value.toStringAsFixed(0)
         : value.toStringAsFixed(2);
+  }
+
+  String _unitCode(RawMaterial? material) {
+    final unitId = material?.unitId;
+    if (unitId == null) return 'pc';
+    for (final unit in _units) {
+      if (unit.id == unitId) return unit.shortCode.toLowerCase();
+    }
+    return 'pc';
+  }
+
+  String _unitLabel(String code) {
+    switch (code.toLowerCase()) {
+      case 'g':
+        return 'grams';
+      case 'kg':
+        return 'kg';
+      case 'pc':
+      case 'pcs':
+        return 'pieces';
+      case 'box':
+        return 'boxes';
+      default:
+        return code;
+    }
+  }
+
+  String _packetUnitLabel(RawMaterial material) {
+    return _unitLabel(_unitCode(material));
+  }
+
+  String _totalQtyLabel(_PurchaseLine line) {
+    if (!line.usesPacketPricing) return 'Qty';
+    final code = _unitCode(line.material);
+    if (code == 'g') return 'Total grams';
+    if (code == 'kg') return 'Total kg';
+    return 'Total pieces';
   }
 
   // ==========================================================
@@ -1190,8 +1231,9 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                 isDense: true,
                 labelText: 'Packets purchased',
                 helperText: '1 packet = '
-                    '${_formatNumber(line.material!.unitsPerPacket!)} pieces'
-                    ' — auto-fills total pieces below',
+                    '${_formatNumber(line.material!.unitsPerPacket!)} '
+                    '${_packetUnitLabel(line.material!)}'
+                    ' — auto-fills total ${_packetUnitLabel(line.material!).toLowerCase()} below',
                 border: const OutlineInputBorder(),
               ),
             ),
@@ -1212,9 +1254,7 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
                   onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
                     isDense: true,
-                    labelText: line.usesPacketPricing
-                        ? 'Total pieces'
-                        : 'Qty',
+                    labelText: _totalQtyLabel(line),
                     border: const OutlineInputBorder(),
                   ),
                 ),

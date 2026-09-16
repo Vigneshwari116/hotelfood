@@ -228,6 +228,14 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
+  bool _isPosStandaloneMaterial(RawMaterial material) {
+    return ComboOnlyCategories.isPosStandaloneMaterial(
+      material,
+      comboOnlyCategoryIds: _comboOnlyCategoryIds,
+      categoryNameFor: _categoryName,
+    );
+  }
+
   List<RawMaterial> get _allMaterials => _materials;
 
   List<Combo> get _activeCombos => _combos
@@ -241,6 +249,7 @@ class _PosScreenState extends State<PosScreen> {
     return ComboOnlyCategories.posVisibleCategoryIds(
       materials: _allMaterials,
       combos: _combos,
+      categoryNameFor: _categoryName,
     );
   }
 
@@ -259,7 +268,7 @@ class _PosScreenState extends State<PosScreen> {
   }
 
   List<RawMaterial> get _filteredMaterials {
-    var list = _allMaterials.where(_isDirectSaleMaterial).toList();
+    var list = _allMaterials.where(_isPosStandaloneMaterial).toList();
     if (_categoryId == _uncategorizedFilter) {
       list = list.where((material) => material.categoryId == null).toList();
     } else if (_categoryId != null) {
@@ -314,7 +323,7 @@ class _PosScreenState extends State<PosScreen> {
   List<InventorySearchEntry> get _posSearchEntries {
     return [
       ...inventorySearchEntriesFromMaterials(
-        _allMaterials.where(_isDirectSaleMaterial),
+        _allMaterials.where(_isPosStandaloneMaterial),
         categoryNameFor: _categoryName,
       ),
       for (final combo in _activeCombos)
@@ -327,7 +336,7 @@ class _PosScreenState extends State<PosScreen> {
 
   VariantGroup? _variantGroupForMaterial(RawMaterial material) {
     final partition = VariantHelpers.partitionForPos(
-      _allMaterials.where(_isDirectSaleMaterial).toList(),
+      _allMaterials.where(_isPosStandaloneMaterial).toList(),
     );
     for (final group in partition.groups) {
       if (group.variants.any((variant) => variant.id == material.id)) {
@@ -627,7 +636,7 @@ class _PosScreenState extends State<PosScreen> {
         return;
       }
 
-      if (!_isDirectSaleMaterial(material)) {
+      if (!_isPosStandaloneMaterial(material)) {
         final categoryName = _categoryName(material.categoryId) ?? 'this category';
         _showError(
           'Items in $categoryName are sold through combos only. Select a combo instead.',
@@ -977,6 +986,75 @@ class _PosScreenState extends State<PosScreen> {
   // CHECKOUT
   // ============================================================
 
+  Future<bool> _promptCustomerDetails() async {
+    final nameController = TextEditingController(
+      text: _customerNameController.text,
+    );
+    final phoneController = TextEditingController(
+      text: _customerPhoneController.text,
+    );
+
+    final proceed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Complete sale'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Customer details are optional. Leave blank to continue without them.',
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: nameController,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Customer name (optional)',
+                border: OutlineInputBorder(),
+                isDense: true,
+                prefixIcon: Icon(Icons.person_outline),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: phoneController,
+              keyboardType: TextInputType.phone,
+              decoration: const InputDecoration(
+                labelText: 'Mobile number (optional)',
+                border: OutlineInputBorder(),
+                isDense: true,
+                prefixIcon: Icon(Icons.phone_outlined),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Complete sale'),
+          ),
+        ],
+      ),
+    );
+
+    if (proceed != true) {
+      nameController.dispose();
+      phoneController.dispose();
+      return false;
+    }
+
+    _customerNameController.text = nameController.text.trim();
+    _customerPhoneController.text = phoneController.text.trim();
+    nameController.dispose();
+    phoneController.dispose();
+    return true;
+  }
+
   Future<void> _checkout() async {
     if (_saving) return;
 
@@ -993,6 +1071,9 @@ class _PosScreenState extends State<PosScreen> {
       );
       return;
     }
+
+    final proceed = await _promptCustomerDetails();
+    if (!proceed) return;
 
     final customerPhone = _customerPhoneController.text.trim();
 
@@ -1940,32 +2021,7 @@ class _PosScreenState extends State<PosScreen> {
               ),
             ),
           ],
-          if (_cart.isNotEmpty) ...[
-            TextField(
-              controller: _customerNameController,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
-                labelText: 'Customer name (optional)',
-                border: OutlineInputBorder(),
-                isDense: true,
-                prefixIcon: Icon(Icons.person_outline),
-              ),
-              onChanged: (_) => _refreshUi(),
-            ),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _customerPhoneController,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Mobile number (optional)',
-                border: OutlineInputBorder(),
-                isDense: true,
-                prefixIcon: Icon(Icons.phone_outlined),
-              ),
-              onChanged: (_) => _refreshUi(),
-            ),
-            const SizedBox(height: 8),
-          ],
+          // Customer name/phone collected in Complete Sale dialog (_checkout).
 
           // ------------------------------------------------------
           // PAYMENT
