@@ -59,20 +59,12 @@ class ItemImportService {
     'stock',
   };
 
-  static const hiddenGroupingTags = {
-    'sauce/dry stock',
-    'sauces',
-  };
+  static const hiddenGroupingTags = <String>{};
 
   static const hiddenByDefaultNames = {
     'paratha',
     'bun',
     'burger bun with sesame',
-    'bbq seasoning',
-    'tandoori mayonnaise',
-    'cp marinade',
-    'eggless mayonnaise',
-    'paratha sauce',
   };
 
   static bool isGroupingTag(String? value) {
@@ -130,9 +122,6 @@ class ItemImportService {
       if (label.isEmpty) continue;
       if (hiddenByDefaultNames.contains(label)) return true;
     }
-
-    final categoryName = category?.trim().toLowerCase() ?? '';
-    if (categoryName == 'sauces') return true;
 
     return false;
   }

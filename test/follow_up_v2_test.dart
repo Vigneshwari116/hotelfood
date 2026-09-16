@@ -19,7 +19,7 @@ void main() {
   });
 
   group('import grouping tags', () {
-    test('treats sauce/dry stock tag as hidden from sales', () {
+    test('lists sauce/dry stock rows for POS as free add-ons', () {
       expect(
         ItemImportService.shouldHideFromSales(
           groupingTag: 'SAUCE/DRY STOCK',
@@ -27,7 +27,7 @@ void main() {
           subItem: 'BBQ Seasoning',
           category: 'Sauces',
         ),
-        isTrue,
+        isFalse,
       );
     });
 
