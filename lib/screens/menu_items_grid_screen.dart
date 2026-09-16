@@ -880,9 +880,9 @@ class _GridSelectCell extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.all(2),
       child: DropdownButtonFormField<String>(
-        key: ValueKey('${controller.hashCode}-${current}-${choices.length}'),
+        key: ValueKey('${controller.hashCode}-$current-${choices.length}'),
         isExpanded: true,
-        value: selected,
+        initialValue: selected,
         decoration: const InputDecoration(
           isDense: true,
           border: OutlineInputBorder(),
