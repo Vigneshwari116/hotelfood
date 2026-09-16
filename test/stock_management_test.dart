@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/combo_only_categories.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/services/variant_helpers.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -443,44 +444,84 @@ void main() {
     });
   });
 
-  group('POS burger rules', () {
-    bool isBurgersCategory(String? categoryName) {
-      final name = categoryName?.trim().toLowerCase() ?? '';
-      return name == 'burgers' || name == 'burger';
-    }
-
-    bool isDirectSaleMaterial(String? categoryName) {
-      return !isBurgersCategory(categoryName);
-    }
-
-    // Test 9
-    test('burger rows are not direct POS sale items; combos are separate', () {
-      final burger = RawMaterial(
+  group('POS combo-only category rules', () {
+    test('category is hidden when every listed item is a combo component', () {
+      final bun = RawMaterial(
         id: 1,
-        name: 'star burger',
-        subItem: 'Crispy Chicken Patty',
+        name: 'Burger Bun',
         categoryId: 10,
-        sellingPrice: 60,
+        listed: true,
       );
-
-      expect(isDirectSaleMaterial('Burgers'), isFalse);
-      expect(isDirectSaleMaterial(burger.categoryId == 10 ? 'Burgers' : null),
-          isFalse);
-
+      final patty = RawMaterial(
+        id: 2,
+        name: 'Crispy Patty',
+        categoryId: 10,
+        listed: true,
+      );
       final combo = Combo(
         id: 99,
-        name: 'Star Burger Combo',
+        name: 'Burger Combo',
         price: 150,
         categoryId: 10,
-        items: const [],
+        items: [
+          ComboItem(comboId: 99, rawMaterialId: 1, qty: 1),
+          ComboItem(comboId: 99, rawMaterialId: 2, qty: 1),
+        ],
       );
-      expect(combo.name.contains('Combo'), isTrue);
+
+      final comboOnly = ComboOnlyCategories.categoryIds(
+        materials: [bun, patty],
+        combos: [combo],
+      );
+      expect(comboOnly, {10});
       expect(
-        VariantHelpers.partitionForPos([burger]).singles.length,
-        1,
+        ComboOnlyCategories.isDirectSaleMaterial(
+          bun,
+          comboOnlyCategoryIds: comboOnly,
+        ),
+        isFalse,
       );
     });
 
+    test('mixed category stays sellable when any item is not a combo component', () {
+      final roll = RawMaterial(
+        id: 3,
+        name: 'Chicken Roll',
+        categoryId: 20,
+        listed: true,
+      );
+      final paratha = RawMaterial(
+        id: 4,
+        name: 'Paratha',
+        categoryId: 20,
+        listed: true,
+      );
+      final combo = Combo(
+        id: 100,
+        name: 'Roll Combo',
+        price: 120,
+        categoryId: 20,
+        items: [
+          ComboItem(comboId: 100, rawMaterialId: 4, qty: 1),
+        ],
+      );
+
+      final comboOnly = ComboOnlyCategories.categoryIds(
+        materials: [roll, paratha],
+        combos: [combo],
+      );
+      expect(comboOnly.contains(20), isFalse);
+      expect(
+        ComboOnlyCategories.isDirectSaleMaterial(
+          roll,
+          comboOnlyCategoryIds: comboOnly,
+        ),
+        isTrue,
+      );
+    });
+  });
+
+  group('Variant stock pooling', () {
     test('syncVariantLinks pools Krusty Bites with Chicken 65 by sub_item', () {
       final chicken65 = RawMaterial(
         id: 1,

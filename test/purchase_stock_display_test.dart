@@ -55,6 +55,7 @@ void main() {
             name TEXT NOT NULL,
             sub_item TEXT,
             qty_needed REAL NOT NULL DEFAULT 1,
+            unit_id INTEGER,
             opening_stock REAL NOT NULL DEFAULT 0,
             current_stock REAL NOT NULL DEFAULT 0,
             reorder_level REAL NOT NULL DEFAULT 0,

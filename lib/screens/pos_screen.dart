@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/combo_only_categories.dart';
 import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/printer_service.dart';
 import 'package:foodstock/services/repository.dart';
@@ -61,6 +62,8 @@ class _PosScreenState extends State<PosScreen> {
 
   /// Selected variant raw_material id per [VariantGroup.key].
   final Map<String, int> _selectedVariantIdByGroup = {};
+
+  Set<int?> _comboOnlyCategoryIds = {};
 
   bool get _adminViewOnly => _repo.isAdmin;
 
@@ -146,6 +149,10 @@ class _PosScreenState extends State<PosScreen> {
         _categories = categories;
         _locations = locations;
         _loading = false;
+        _comboOnlyCategoryIds = ComboOnlyCategories.categoryIds(
+          materials: materials,
+          combos: combos,
+        );
         _seedDefaultVariantSelections(materials);
         if (_categoryId != null &&
             !_categoryIdsWithItems.contains(_categoryId)) {
@@ -177,6 +184,10 @@ class _PosScreenState extends State<PosScreen> {
       setState(() {
         _materials = materials;
         _combos = combos;
+        _comboOnlyCategoryIds = ComboOnlyCategories.categoryIds(
+          materials: materials,
+          combos: combos,
+        );
       });
     } catch (e) {
       if (!mounted) return;
@@ -204,13 +215,15 @@ class _PosScreenState extends State<PosScreen> {
     return null;
   }
 
-  bool _isBurgersCategory(int? categoryId) {
-    final name = _categoryName(categoryId)?.trim().toLowerCase() ?? '';
-    return name == 'burgers' || name == 'burger';
+  bool _isComboOnlyCategory(int? categoryId) {
+    return _comboOnlyCategoryIds.contains(categoryId);
   }
 
   bool _isDirectSaleMaterial(RawMaterial material) {
-    return !_isBurgersCategory(material.categoryId);
+    return ComboOnlyCategories.isDirectSaleMaterial(
+      material,
+      comboOnlyCategoryIds: _comboOnlyCategoryIds,
+    );
   }
 
   List<RawMaterial> get _allMaterials => _materials;
@@ -230,7 +243,7 @@ class _PosScreenState extends State<PosScreen> {
     for (final combo in _activeCombos) {
       ids.add(combo.categoryId);
     }
-    ids.removeWhere((id) => _isBurgersCategory(id));
+    ids.removeWhere((id) => _isComboOnlyCategory(id));
     return ids;
   }
 
@@ -586,8 +599,9 @@ class _PosScreenState extends State<PosScreen> {
       }
 
       if (!_isDirectSaleMaterial(material)) {
+        final categoryName = _categoryName(material.categoryId) ?? 'this category';
         _showError(
-          'Burgers are sold through combos only. Select a combo instead.',
+          'Items in $categoryName are sold through combos only. Select a combo instead.',
         );
         return;
       }
@@ -634,6 +648,16 @@ class _PosScreenState extends State<PosScreen> {
   // CART HELPERS
   // ============================================================
 
+  int _cartIndexForRawMaterial(RawMaterial material) {
+    if (material.id == null) return -1;
+    final label = _variantLabelFor(material);
+    return _cart.indexWhere(
+      (line) =>
+          line.rawMaterialId == material.id &&
+          (line.variantLabel ?? '') == label,
+    );
+  }
+
   int _cartIndexForRaw(
       int id,
       ) {
@@ -660,6 +684,12 @@ class _PosScreenState extends State<PosScreen> {
     return _cart[index].qty;
   }
 
+  double _cartQtyForRawMaterial(RawMaterial material) {
+    final index = _cartIndexForRawMaterial(material);
+    if (index == -1) return 0;
+    return _cart[index].qty;
+  }
+
   double _cartQtyForRaw(
       int id,
       ) {
@@ -671,6 +701,23 @@ class _PosScreenState extends State<PosScreen> {
     }
 
     return _cart[index].qty;
+  }
+
+  String _variantLabelFor(RawMaterial material) {
+    return VariantHelpers.variantSelectorLabel(material);
+  }
+
+  void _onVariantTapped(VariantGroup group, RawMaterial variant) {
+    final id = variant.id;
+    if (id == null) return;
+
+    final alreadySelected = _selectedVariantIdByGroup[group.key] == id;
+    setState(() => _selectedVariantIdByGroup[group.key] = id);
+    if (alreadySelected) {
+      _addRawMaterial(variant);
+    } else {
+      _addRawMaterial(variant, replaceQty: false);
+    }
   }
 
   void _seedDefaultVariantSelections(List<RawMaterial> materials) {
@@ -701,6 +748,7 @@ class _PosScreenState extends State<PosScreen> {
   void _addRawMaterial(
       RawMaterial material, {
       double qty = 1,
+      bool replaceQty = false,
       }) {
     if (material.id == null) {
       return;
@@ -717,7 +765,8 @@ class _PosScreenState extends State<PosScreen> {
       return;
     }
 
-    final index = _cartIndexForRaw(material.id!);
+    final variantLabel = _variantLabelFor(material);
+    final index = _cartIndexForRawMaterial(material);
 
     if (index == -1) {
       _cart.add(
@@ -725,6 +774,7 @@ class _PosScreenState extends State<PosScreen> {
           rawMaterialId: material.id,
           name: material.name,
           subItem: material.trimmedSubItem,
+          variantLabel: variantLabel,
           qty: qty,
           price: material.sellingPrice ?? 0,
         ),
@@ -740,8 +790,9 @@ class _PosScreenState extends State<PosScreen> {
       comboId: old.comboId,
       name: old.name,
       subItem: old.subItem,
+      variantLabel: old.variantLabel,
       componentLabels: old.componentLabels,
-      qty: old.qty + qty,
+      qty: replaceQty ? qty : old.qty + qty,
       price: old.price,
     );
     _refreshUi();
@@ -829,6 +880,7 @@ class _PosScreenState extends State<PosScreen> {
       comboId: line.comboId,
       name: line.name,
       subItem: line.subItem,
+      variantLabel: line.variantLabel,
       componentLabels: line.componentLabels,
       qty: newQty,
       price: line.price,
@@ -1278,7 +1330,7 @@ class _PosScreenState extends State<PosScreen> {
   Widget _variantGroupCard(VariantGroup group) {
     final selected = _selectedVariant(group);
     final stock = VariantHelpers.sellableUnits(selected, _materialsById);
-    final cartQty = _cartQtyForVariantGroup(group);
+    final cartQty = _cartQtyForRawMaterial(selected);
     final imagePath = selected.imagePath ?? group.stockSource.imagePath;
     final useColumnSelector = group.variants.length >= 2;
 
@@ -1427,15 +1479,12 @@ class _PosScreenState extends State<PosScreen> {
                       color: Theme.of(context).colorScheme.primary,
                     )
                   : null,
-              onPressed: () {
-                setState(() => _selectedVariantIdByGroup[group.key] = id);
-                _addRawMaterial(variant);
-              },
+              onPressed: () => _onVariantTapped(group, variant),
             ),
             _VariantQtyField(
               onQtyCommitted: (qty) {
                 setState(() => _selectedVariantIdByGroup[group.key] = id);
-                _addRawMaterial(variant, qty: qty);
+                _addRawMaterial(variant, qty: qty, replaceQty: true);
               },
             ),
           ],
@@ -1454,10 +1503,7 @@ class _PosScreenState extends State<PosScreen> {
         final isSelected = selected.id == id;
         final label = VariantHelpers.variantSelectorLabel(variant);
         return InkWell(
-          onTap: () {
-            setState(() => _selectedVariantIdByGroup[group.key] = id);
-            _addRawMaterial(variant);
-          },
+          onTap: () => _onVariantTapped(group, variant),
           borderRadius: BorderRadius.circular(6),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
@@ -1721,7 +1767,7 @@ class _PosScreenState extends State<PosScreen> {
                   .start,
               children: [
                 Text(
-                  line.name,
+                  line.displayLabel,
                   maxLines: 2,
                   overflow:
                   TextOverflow

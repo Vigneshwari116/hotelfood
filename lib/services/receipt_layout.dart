@@ -41,7 +41,7 @@ List<ReceiptDisplayLine> expandReceiptLines(List<CartLine> lines) {
 
     output.add(
       ReceiptDisplayLine(
-        label: line.name.trim(),
+        label: line.displayLabel,
         qty: line.qty,
         amount: line.amount,
       ),

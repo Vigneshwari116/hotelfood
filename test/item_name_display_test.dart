@@ -14,16 +14,17 @@ void main() {
       expect(item.staffLabel, 'Crispy Chicken Patty');
     });
 
-    test('cart line displayLabel uses item name only', () {
+    test('cart line displayLabel includes variant when present', () {
       final line = CartLine(
         rawMaterialId: 1,
-        name: 'star burger',
-        subItem: 'Crispy Chicken Patty',
+        name: 'Chicken Popcorn',
+        subItem: 'Chicken Popcorn',
+        variantLabel: 'popcorn large',
         qty: 1,
-        price: 120,
+        price: 129,
       );
 
-      expect(line.displayLabel, 'star burger');
+      expect(line.displayLabel, 'Chicken Popcorn — popcorn large');
     });
 
     test('receipt uses item name for raw material sales', () {

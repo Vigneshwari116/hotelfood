@@ -1259,11 +1259,13 @@ class _BillWiseSalesTabState extends State<_BillWiseSalesTab> {
                                   final qty = (line['qty'] as num?)?.toDouble() ?? 0;
                                   final amount =
                                       (line['amount'] as num?)?.toDouble() ?? 0;
+                                  final variant =
+                                      line['material_variant_label']?.toString();
+                                  final title = RawMaterial(
+                                    name: line['item_name']?.toString() ?? '',
+                                  ).soldLineLabel(variantLabel: variant);
                                   return _BillLineRow(
-                                    title: RawMaterial.staffLabelFor(
-                                      line['item_name']?.toString() ?? '',
-                                      line['sub_item']?.toString(),
-                                    ),
+                                    title: title,
                                     detail:
                                         'Qty ${_formatQty(qty)}  •  ₹${amount.toStringAsFixed(2)}',
                                   );

@@ -189,4 +189,9 @@ class SubItemStock {
     final categoryIds = family.map((item) => item.categoryId).toSet();
     return categoryIds.length == 1;
   }
+
+  /// Normalizes a variant label for duplicate detection (case/whitespace).
+  static String normalizeVariantLabel(String value) {
+    return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  }
 }
