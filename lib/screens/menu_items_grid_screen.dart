@@ -469,7 +469,8 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                     child: Text(
                       'Pieces per packet is set once per item. Enter opening packets; '
                       'total stock = opening packets × pieces per packet (auto). '
-                      'Pieces sold per customer = qty per POS order.',
+                      'Pieces sold per customer = qty per POS order. '
+                      'Variant Group / Label: type a new name or pick from the list.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: Theme.of(context).colorScheme.primary,
                           ),
@@ -679,19 +680,21 @@ class _CategoryGridSection extends StatelessWidget {
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
-                          _GridSelectCell(
+                          _GridComboCell(
                             controller: row.variantGroup,
                             options: variantGroups,
                             readOnly: readOnly,
                             allowEmpty: true,
+                            hintText: 'Type or pick group',
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
-                          _GridSelectCell(
+                          _GridComboCell(
                             controller: row.variantLabel,
                             options: variantLabels,
                             readOnly: readOnly,
                             allowEmpty: true,
+                            hintText: 'Type or pick label',
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
@@ -840,6 +843,89 @@ class _HeaderCell extends StatelessWidget {
               message: tooltip!,
               child: text,
             ),
+    );
+  }
+}
+
+class _GridComboCell extends StatelessWidget {
+  const _GridComboCell({
+    required this.controller,
+    required this.options,
+    required this.readOnly,
+    required this.onChanged,
+    required this.onCommit,
+    this.allowEmpty = false,
+    this.hintText,
+  });
+
+  final TextEditingController controller;
+  final List<String> options;
+  final bool readOnly;
+  final VoidCallback onChanged;
+  final VoidCallback onCommit;
+  final bool allowEmpty;
+  final String? hintText;
+
+  @override
+  Widget build(BuildContext context) {
+    if (readOnly) {
+      return _GridTextCell(
+        controller: controller,
+        readOnly: true,
+        onChanged: onChanged,
+        onCommit: onCommit,
+      );
+    }
+
+    final suggestions = <String>{
+      ...options.map((value) => value.trim()).where((value) => value.isNotEmpty),
+    }.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+
+    return Padding(
+      padding: const EdgeInsets.all(2),
+      child: TextField(
+        controller: controller,
+        textInputAction: TextInputAction.done,
+        style: Theme.of(context).textTheme.bodySmall,
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: hintText,
+          border: const OutlineInputBorder(),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          suffixIcon: suggestions.isEmpty && !allowEmpty
+              ? null
+              : PopupMenuButton<String>(
+                  tooltip: 'Pick existing',
+                  padding: EdgeInsets.zero,
+                  icon: const Icon(Icons.arrow_drop_down, size: 20),
+                  onSelected: (value) {
+                    controller.text = value;
+                    onChanged();
+                    onCommit();
+                  },
+                  itemBuilder: (context) => [
+                    if (allowEmpty)
+                      const PopupMenuItem<String>(
+                        value: '',
+                        child: Text('— (none)'),
+                      ),
+                    for (final option in suggestions)
+                      PopupMenuItem<String>(
+                        value: option,
+                        child: Text(
+                          option,
+                          overflow: TextOverflow.visible,
+                          softWrap: true,
+                        ),
+                      ),
+                  ],
+                ),
+        ),
+        onChanged: (_) => onChanged(),
+        onEditingComplete: onCommit,
+        onSubmitted: (_) => onCommit(),
+      ),
     );
   }
 }
