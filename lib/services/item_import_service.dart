@@ -6,6 +6,7 @@ import 'package:archive/archive.dart';
 import 'package:flutter/services.dart';
 import 'package:foodstock/database/category_cleanup.dart';
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/menu_item_edit_helpers.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/services/spreadsheet_export.dart';
 import 'package:foodstock/services/sub_item_stock.dart';
@@ -182,6 +183,33 @@ class ItemImportService {
     'stock_source_name',
   ];
 
+  /// Matches the Menu Items Grid screen column-for-column (plus category).
+  static const gridExportHeaders = [
+    'category',
+    'barcode',
+    'item_name',
+    'sub_item',
+    'variant_group',
+    'variant_label',
+    'stock_source_name',
+    'units_per_packet',
+    'packets',
+    'opening_pieces',
+    'total_stock',
+    'qty_per_sale',
+    'cost_price',
+    'selling_price',
+  ];
+
+  static const comboExportHeaders = [
+    'combo_name',
+    'category',
+    'combo_price',
+    'item_name',
+    'item_qty',
+    'unit',
+  ];
+
   void validateImportFilename(String filePath, String expectedLocationName) {
     final baseName = p.basenameWithoutExtension(filePath).trim().toLowerCase();
     final expected = expectedLocationName.trim().toLowerCase();
@@ -223,8 +251,132 @@ class ItemImportService {
   }
 
   Future<Uint8List> exportXlsxForLocation(int locationId) async {
-    final rows = await _menuRowsForLocation(locationId);
-    return SpreadsheetExport.buildXlsx(menuHeaders, rows);
+    return exportGridWorkbookForLocation(locationId);
+  }
+
+  /// Grid-aligned menu export with a second sheet listing saved combos.
+  Future<Uint8List> exportGridWorkbookForLocation(int locationId) async {
+    final menuRows = await _gridRowsForLocation(locationId);
+    final comboRows = await _comboRowsForExport();
+    return SpreadsheetExport.buildMultiSheetXlsx({
+      'Menu Items': (headers: gridExportHeaders, rows: menuRows),
+      'Combos': (headers: comboExportHeaders, rows: comboRows),
+    });
+  }
+
+  Future<List<List<String>>> gridExportRowsForLocation(int locationId) {
+    return _gridRowsForLocation(locationId);
+  }
+
+  Future<List<List<String>>> comboExportRows() {
+    return _comboRowsForExport();
+  }
+
+  Future<List<List<String>>> _gridRowsForLocation(int locationId) async {
+    final materials = await Repository.instance.rawMaterialsForDisplay(
+      includeHidden: true,
+    );
+    final categories = await Repository.instance.categories(type: 'raw_material');
+    final categoryNameById = {
+      for (final category in categories)
+        if (category.id != null) category.id!: category.name,
+    };
+    final nameById = {
+      for (final material in materials)
+        if (material.id != null) material.id!: material.name,
+    };
+
+    String cell(num? value) {
+      if (value == null) return '';
+      final number = value.toDouble();
+      if (number % 1 == 0) return number.toStringAsFixed(0);
+      return number.toString();
+    }
+
+    String cellDouble(double? value) {
+      if (value == null) return '';
+      return MenuItemEditHelpers.formatNumber(value);
+    }
+
+    final rows = <List<String>>[];
+    for (final item in materials) {
+      final categoryName = displayCategoryName(categoryNameById[item.categoryId]);
+      final stockSourceName = item.stockSourceId == null
+          ? ''
+          : (nameById[item.stockSourceId] ?? '');
+      final packets = MenuItemEditHelpers.packetsTextFromStock(
+            item.currentStock,
+            item.unitsPerPacket,
+            openingPieces: item.openingPieces,
+          ) ??
+          '';
+
+      rows.add([
+        categoryName,
+        item.barcode ?? '',
+        item.name,
+        item.subItem ?? item.name,
+        item.variantGroup ?? '',
+        item.variantLabel ?? '',
+        stockSourceName,
+        item.unitsPerPacket == null
+            ? ''
+            : MenuItemEditHelpers.formatNumber(item.unitsPerPacket!),
+        packets,
+        item.openingPieces == 0
+            ? ''
+            : MenuItemEditHelpers.formatNumber(item.openingPieces),
+        MenuItemEditHelpers.formatNumber(item.currentStock),
+        MenuItemEditHelpers.formatNumber(item.qtyNeeded),
+        cellDouble(item.costPrice),
+        cellDouble(item.sellingPrice),
+      ]);
+    }
+    return rows;
+  }
+
+  Future<List<List<String>>> _comboRowsForExport() async {
+    final combos = await Repository.instance.combosWithItems();
+    final categories = await Repository.instance.categories(type: 'raw_material');
+    final categoryNameById = {
+      for (final category in categories)
+        if (category.id != null) category.id!: category.name,
+    };
+
+    String cell(num? value) {
+      if (value == null) return '';
+      final number = value.toDouble();
+      if (number % 1 == 0) return number.toStringAsFixed(0);
+      return number.toString();
+    }
+
+    final rows = <List<String>>[];
+    for (final combo in combos) {
+      final categoryName = displayCategoryName(categoryNameById[combo.categoryId]);
+      if (combo.items.isEmpty) {
+        rows.add([
+          combo.name,
+          categoryName,
+          cell(combo.price),
+          '',
+          '',
+          '',
+        ]);
+        continue;
+      }
+
+      for (final item in combo.items) {
+        rows.add([
+          combo.name,
+          categoryName,
+          cell(combo.price),
+          item.itemNameLabel,
+          cell(item.qty),
+          item.unit ?? '',
+        ]);
+      }
+    }
+    return rows;
   }
 
   /// Parses spreadsheet bytes the same way menu import does (for tests).

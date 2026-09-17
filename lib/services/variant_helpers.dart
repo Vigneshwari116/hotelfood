@@ -117,6 +117,7 @@ class VariantHelpers {
       categoryId: item.categoryId,
       unitId: item.unitId,
       openingStock: item.openingStock,
+      openingPieces: item.openingPieces,
       currentStock: currentStock,
       reorderLevel: item.reorderLevel,
       shelfLifeDays: item.shelfLifeDays,

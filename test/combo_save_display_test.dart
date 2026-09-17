@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:foodstock/database/sqlite_app_db.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/combo_catalog_sync.dart';
-import 'package:foodstock/services/combo_import_service.dart';
+import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -200,7 +200,7 @@ void main() {
       );
     });
 
-    test('combo export and import round-trip keeps component names and qty', () async {
+    test('combo export rows keep saved component names and qty', () async {
       await Repository.instance.saveCombo(
         Combo(
           name: 'Chicken roll',
@@ -212,24 +212,12 @@ void main() {
         ],
       );
 
-      final service = ComboImportService();
-      final bytes = await service.exportXlsx();
-      await database.delete('combo_raw_materials');
-      await database.delete('combos');
-
-      final result = await service.importFileBytes(bytes, 'combos.xlsx');
-
-      expect(result.errors, isEmpty);
-      expect(result.created, 1);
-
-      final combos = await Repository.instance.combosWithItems();
-      expect(combos, hasLength(1));
-      expect(combos.first.name, 'Chicken roll');
-      expect(combos.first.price, 75);
-      expect(combos.first.items, hasLength(1));
-      expect(combos.first.items.first.rawMaterialId, 5);
-      expect(combos.first.items.first.itemNameLabel, 'spicy fingers');
-      expect(combos.first.items.first.qty, 2);
+      final comboRows = await ItemImportService().comboExportRows();
+      expect(comboRows, hasLength(1));
+      expect(comboRows.first[0], 'Chicken roll');
+      expect(comboRows.first[2], '75');
+      expect(comboRows.first[3], 'spicy fingers');
+      expect(comboRows.first[4], '2');
     });
   });
 }

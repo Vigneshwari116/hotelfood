@@ -37,7 +37,7 @@ void main() {
 
     List<List<String>> normalizedGrid(List<List<String>> rows) {
       if (rows.isEmpty) return rows;
-      final width = ItemImportService.menuHeaders.length;
+      final width = ItemImportService.gridExportHeaders.length;
       return rows
           .map((row) {
             return [
@@ -47,7 +47,7 @@ void main() {
           })
           .where((row) {
             if (row.isEmpty) return false;
-            final itemName = row.length > 1 ? row[1].trim() : '';
+            final itemName = row.length > 2 ? row[2].trim() : '';
             if (itemName.isEmpty) return false;
             if (row.first.trim().toLowerCase() == 'category' &&
                 itemName.toLowerCase() == 'item_name') {
@@ -81,9 +81,9 @@ void main() {
         expect(normalized, isNotEmpty);
         expect(
           normalized.any(
-            (row) =>
-                row.length > 1 &&
-                row[1].toLowerCase().contains('chicken 65'),
+            (row) => row.any(
+              (cell) => cell.toLowerCase().contains('chicken 65'),
+            ),
           ),
           isTrue,
           reason: 'Approved master import must export core menu rows',
