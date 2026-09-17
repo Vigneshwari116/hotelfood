@@ -2886,17 +2886,11 @@ class Repository {
             };
 
             double pooledStockFor(int stockId) {
-                  var total = 0.0;
-                  for (final row in rows) {
-                        final materialId = row['id'] as int?;
-                        if (materialId == null) continue;
-                        if ((stockIdByMaterialId[materialId] ?? materialId) !=
-                            stockId) {
-                              continue;
-                        }
-                        total += (row['current_stock'] as num?)?.toDouble() ?? 0;
-                  }
-                  return total;
+                  // Linked rows mirror the holder's stock via stock_source_id;
+                  // count the canonical holder once to avoid double-counting.
+                  final holderRow = rowByMaterialId[stockId];
+                  if (holderRow == null) return 0;
+                  return (holderRow['current_stock'] as num?)?.toDouble() ?? 0;
             }
 
             final collapsed = <Map<String, dynamic>>[];
@@ -4170,13 +4164,9 @@ class Repository {
                                     stockIdMap: stockIdMap,
                                   );
 
-                              final double requiredQty =
-                                  comboQty *
-                                      line.qty *
-                                      await _qtyNeeded(
-                                        txn,
-                                        rawMaterialId,
-                                      );
+                              // Combo recipe qty is already in physical stock units;
+                              // do not apply the standalone POS qty_needed multiplier.
+                              final double requiredQty = comboQty * line.qty;
 
                               final double existing =
                                   totalNeeded[stockMaterialId] ?? 0.0;
@@ -4908,7 +4898,7 @@ class Repository {
         SELECT
           crm.raw_material_id AS raw_material_id,
           SUM(
-            crm.qty * si.qty * COALESCE(rm.qty_needed, 1)
+            crm.qty * si.qty
           ) AS consumed_qty
         FROM sale_items si
         JOIN sales s
