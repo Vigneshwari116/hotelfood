@@ -171,8 +171,40 @@ class VariantHelpers {
       if (material.id == null) continue;
       final groupKey = material.variantGroup?.trim();
       if (groupKey == null || groupKey.isEmpty) continue;
-      byGroup.putIfAbsent(groupKey, () => []).add(material);
+      byGroup.putIfAbsent(groupKey.toLowerCase(), () => []).add(material);
       assigned.add(material.id!);
+    }
+
+    final byStockHolder = <int, List<RawMaterial>>{};
+    for (final material in linked) {
+      if (material.id == null || assigned.contains(material.id)) continue;
+      final sourceId = material.stockSourceId;
+      if (sourceId == null) continue;
+      byStockHolder.putIfAbsent(sourceId, () => []).add(material);
+    }
+    for (final material in linked) {
+      if (material.id == null || assigned.contains(material.id)) continue;
+      final variants = byStockHolder[material.id!];
+      if (variants == null || variants.isEmpty) continue;
+      if (!variants.any((item) => item.id == material.id)) {
+        variants.insert(0, material);
+      }
+    }
+    for (final entry in byStockHolder.entries) {
+      final variants = List<RawMaterial>.from(entry.value);
+      if (variants.length < 2) continue;
+      if (variants.any(
+        (item) => SubItemStock.isComponentReference(item, null),
+      )) {
+        continue;
+      }
+      if (variants.map((item) => item.categoryId).toSet().length != 1) {
+        continue;
+      }
+      for (final variant in variants) {
+        if (variant.id != null) assigned.add(variant.id!);
+      }
+      byGroup.putIfAbsent('stock:${entry.key}', () => variants);
     }
 
     final bySubItem = <String, List<RawMaterial>>{};
@@ -222,8 +254,12 @@ class VariantHelpers {
                   .toSet()
                   .length ==
               1;
+      final stockSourceLinkedFamily = variants.length >= 2 &&
+          variants.any((item) => item.stockSourceId != null) &&
+          variants.map((item) => item.categoryId).toSet().length == 1;
       final canGroup = !isComponentFamily &&
           (explicitVariantGroup ||
+              stockSourceLinkedFamily ||
               SubItemStock.shouldGroupOnPos(variants) ||
               shouldAutoLinkFamily(variants));
       if (variants.length < 2 || !canGroup) {
@@ -449,7 +485,7 @@ class VariantHelpers {
       if (!item.listed) continue;
       final group = item.variantGroup?.trim();
       if (group == null || group.isEmpty) continue;
-      explicitPosGroups.putIfAbsent(group, () => []).add(item);
+      explicitPosGroups.putIfAbsent(group.toLowerCase(), () => []).add(item);
     }
 
     final explicitGroupedIds = <int>{};
@@ -478,6 +514,12 @@ class VariantHelpers {
       );
       if (source.id == null) continue;
 
+      final groupName = source.variantGroup?.trim().isNotEmpty == true
+          ? source.variantGroup!.trim()
+          : (source.subItem?.trim().isNotEmpty == true
+              ? source.subItem!.trim()
+              : source.name.trim());
+
       for (final item in family) {
         if (item.id == null) continue;
         explicitGroupedIds.add(item.id!);
@@ -488,7 +530,7 @@ class VariantHelpers {
             : null;
         planned[item.id!] = _copyWithLinks(
           planned[item.id!] ?? item,
-          variantGroup: entry.key,
+          variantGroup: groupName,
           variantLabel: isSource
               ? (sizeLabel ?? 'Regular')
               : (sizeLabel ?? derivedLabel ?? item.name),

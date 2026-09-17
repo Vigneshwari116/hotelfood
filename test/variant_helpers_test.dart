@@ -82,6 +82,33 @@ void main() {
       expect(result.singles.length, 2);
     });
 
+    test('groups listed items by stock_source_id even without variant_group', () {
+      final regular = RawMaterial(
+        id: 1,
+        name: 'Chicken Popcorn',
+        subItem: 'Chicken Popcorn',
+        categoryId: 3,
+        qtyNeeded: 1,
+        sellingPrice: 75,
+      );
+      final large = RawMaterial(
+        id: 2,
+        name: 'Chicken popcorn large',
+        subItem: 'Chicken Popcorn',
+        categoryId: 3,
+        stockSourceId: 1,
+        qtyNeeded: 1,
+        sellingPrice: 129,
+      );
+
+      final result = VariantHelpers.partitionForPos([regular, large]);
+
+      expect(result.singles, isEmpty);
+      expect(result.groups.length, 1);
+      expect(result.groups.first.variants.length, 2);
+      expect(result.groups.first.posTitle, 'Chicken Popcorn');
+    });
+
     test('groups explicit variant_group even when sub_item differs across rows', () {
       final pieces = RawMaterial(
         id: 1,
