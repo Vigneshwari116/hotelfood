@@ -115,6 +115,38 @@ void main() {
       expect(entries.map((e) => e.primaryLabel).toList(), ['Apple pie', 'Zebra chips']);
     });
 
+    test('dedupes duplicate patties across categories', () {
+      final paneer = material(
+        id: 1,
+        name: 'Paneer Patty',
+        subItem: 'Paneer Patty',
+      );
+      final panner = material(
+        id: 2,
+        name: 'panner patty',
+        subItem: 'panner patty',
+      );
+      final hotCrispyA = material(
+        id: 3,
+        name: 'Hot Crispy Patty',
+        subItem: 'Hot Crispy Patty',
+      );
+      final hotCrispyB = material(
+        id: 4,
+        name: 'Hot Crispy Patty',
+        subItem: 'Hot Crispy Patty',
+      );
+
+      final entries = inventoryPurchaseEntriesFromMaterials(
+        [paneer, panner, hotCrispyA, hotCrispyB],
+      );
+      expect(entries, hasLength(2));
+      expect(
+        entries.map((entry) => entry.primaryLabel.toLowerCase()).toList(),
+        containsAll(['paneer patty', 'hot crispy patty']),
+      );
+    });
+
     test('dedupes variants that share one stock pool', () {
       final base = material(
         id: 1,

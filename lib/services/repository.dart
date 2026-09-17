@@ -9,6 +9,7 @@ import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/database/sub_item_migration.dart';
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/database/category_cleanup.dart';
 import 'package:foodstock/database/raw_material_integrity.dart';
 import 'package:foodstock/services/inventory_search.dart';
 import 'package:foodstock/services/item_import_service.dart';
@@ -2127,8 +2128,10 @@ class Repository {
 
       Future<List<String>> distinctSubItemGroups() async {
             final items = await rawMaterials(includeHidden: true);
+            final holders =
+                SubItemStock.deduplicateToCanonicalStockHolders(items);
             return SubItemStock.distinctGroupLabels(
-                  items.map((item) => item.subItem ?? item.name),
+                  holders.map((item) => item.subItem ?? item.name),
             );
       }
 
@@ -2136,6 +2139,12 @@ class Repository {
       Future<int> normalizeSubItemGroupLabels() async {
             final db = await _db;
             return normalizeSubItemLabels(db);
+      }
+
+      /// Dedupes ingredient rows and syncs combo links after import or upgrades.
+      Future<void> maintainCatalog() async {
+            final db = await _db;
+            await runCatalogMaintenance(db);
       }
 
       Future<List<Map<String, dynamic>>> purchaseItems(
@@ -2636,6 +2645,7 @@ class Repository {
         rm.sub_item,
         rm.barcode,
         rm.stock_source_id,
+        rm.listed,
         COALESCE(
           CASE
             WHEN rm.stock_source_id IS NOT NULL THEN ls_source.current_stock
@@ -2660,7 +2670,6 @@ class Repository {
         ON u.id = rm.unit_id
       LEFT JOIN categories c
         ON c.id = rm.category_id
-      WHERE (rm.listed IS NULL OR rm.listed = 1)
       ORDER BY rm.name ASC
       ''',
                         [locationId, locationId],
@@ -2674,6 +2683,7 @@ class Repository {
         rm.sub_item,
         rm.barcode,
         rm.stock_source_id,
+        rm.listed,
         COALESCE(
           CASE
             WHEN rm.stock_source_id IS NOT NULL THEN source.current_stock
@@ -2695,7 +2705,6 @@ class Repository {
         ON u.id = rm.unit_id
       LEFT JOIN categories c
         ON c.id = rm.category_id
-      WHERE (rm.listed IS NULL OR rm.listed = 1)
       ORDER BY rm.name ASC
       ''',
                   );
@@ -2718,6 +2727,7 @@ class Repository {
                         '',
                     subItem: row['sub_item']?.toString(),
                     stockSourceId: (row['stock_source_id'] as num?)?.toInt(),
+                    listed: (row['listed'] as num?)?.toInt() != 0,
                     currentStock: (row['current_stock'] as num?)?.toDouble() ?? 0,
                   ),
                 )
@@ -2729,14 +2739,9 @@ class Repository {
                   for (final item in linked)
                         if (item.id != null) item.id!: item,
             };
-            final stockIdByMaterialId = <int, int>{
-                  for (final item in linked)
-                        if (item.id != null)
-                              item.id!: SubItemStock.resolveCanonicalStockHolderId(
-                                    item,
-                                    byId,
-                              ),
-            };
+            final stockIdByMaterialId = SubItemStock.buildCanonicalStockIdMap(
+                  linked,
+            );
 
             final familyByStockId = <int, List<RawMaterial>>{};
             for (final item in linked) {
@@ -2749,6 +2754,20 @@ class Repository {
                   for (final row in rows)
                         if (row['id'] != null) row['id'] as int: row,
             };
+
+            double pooledStockFor(int stockId) {
+                  var total = 0.0;
+                  for (final row in rows) {
+                        final materialId = row['id'] as int?;
+                        if (materialId == null) continue;
+                        if ((stockIdByMaterialId[materialId] ?? materialId) !=
+                            stockId) {
+                              continue;
+                        }
+                        total += (row['current_stock'] as num?)?.toDouble() ?? 0;
+                  }
+                  return total;
+            }
 
             final collapsed = <Map<String, dynamic>>[];
             for (final row in rows) {
@@ -2774,7 +2793,7 @@ class Repository {
                         'sub_item': groupLabel.isNotEmpty
                             ? groupLabel
                             : holderRow['sub_item'],
-                        'current_stock': holderRow['current_stock'],
+                        'current_stock': pooledStockFor(stockId),
                   });
             }
 
@@ -3135,14 +3154,8 @@ class Repository {
                   for (final item in linked)
                         if (item.id != null) item.id!: item,
             };
-            final stockIdByMaterialId = <int, int>{
-                  for (final item in linked)
-                        if (item.id != null)
-                              item.id!: SubItemStock.resolveCanonicalStockHolderId(
-                                    item,
-                                    byId,
-                              ),
-            };
+            final stockIdByMaterialId =
+                SubItemStock.buildCanonicalStockIdMap(linked);
             final rowByMaterialId = <int, Map<String, dynamic>>{
                   for (final row in rows)
                         if (row['id'] != null) row['id'] as int: row,
@@ -3153,6 +3166,20 @@ class Repository {
                   if (item.id == null) continue;
                   final stockId = stockIdByMaterialId[item.id!] ?? item.id!;
                   familyByStockId.putIfAbsent(stockId, () => []).add(item);
+            }
+
+            double sumField(int stockId, String field) {
+                  var total = 0.0;
+                  for (final row in rows) {
+                        final materialId = row['id'] as int?;
+                        if (materialId == null) continue;
+                        if ((stockIdByMaterialId[materialId] ?? materialId) !=
+                            stockId) {
+                              continue;
+                        }
+                        total += (row[field] as num?)?.toDouble() ?? 0;
+                  }
+                  return total;
             }
 
             final collapsed = <Map<String, dynamic>>[];
@@ -3171,6 +3198,10 @@ class Repository {
                       .where((item) => item.id == stockId)
                       .toList();
                   final groupLabel = SubItemStock.canonicalLabelForFamily(family);
+                  final openingQty = sumField(stockId, 'opening_qty');
+                  final purchaseQty = sumField(stockId, 'purchase_qty');
+                  final salesQty = sumField(stockId, 'sales_qty');
+                  final adjustmentQty = sumField(stockId, 'adjustment_qty');
 
                   collapsed.add({
                         ...holderRow,
@@ -3180,6 +3211,12 @@ class Repository {
                         'sub_item': groupLabel.isNotEmpty
                             ? groupLabel
                             : holderRow['sub_item'],
+                        'opening_qty': openingQty,
+                        'purchase_qty': purchaseQty,
+                        'sales_qty': salesQty,
+                        'adjustment_qty': adjustmentQty,
+                        'closing_qty':
+                            openingQty + purchaseQty - salesQty + adjustmentQty,
                   });
             }
 

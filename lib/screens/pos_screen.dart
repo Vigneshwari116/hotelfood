@@ -6,6 +6,8 @@ import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/combo_only_categories.dart';
 import 'package:foodstock/services/inventory_search.dart';
 import 'package:foodstock/services/item_import_service.dart';
+import 'package:foodstock/services/sub_item_stock.dart';
+import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/pos_free_addons.dart';
 import 'package:foodstock/services/printer_service.dart';
 import 'package:foodstock/services/repository.dart';
@@ -258,7 +260,26 @@ class _PosScreenState extends State<PosScreen> {
     );
   }
 
-  List<RawMaterial> get _allMaterials => _materials;
+  List<RawMaterial> get _allMaterials {
+    final linked = VariantHelpers.withEffectiveStock(_materials);
+    final byId = {
+      for (final material in linked)
+        if (material.id != null) material.id!: material,
+    };
+    return linked.where((material) {
+      if (ItemImportService.shouldHideFromSales(
+        name: material.name,
+        subItem: material.subItem,
+        category: _categoryName(material.categoryId),
+      )) {
+        return false;
+      }
+      if (SubItemStock.isListedStockShadow(material, byId)) {
+        return false;
+      }
+      return true;
+    }).toList();
+  }
 
   List<Combo> get _activeCombos => _combos
       .where(
