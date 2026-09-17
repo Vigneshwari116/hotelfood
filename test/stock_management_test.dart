@@ -598,6 +598,68 @@ void main() {
     });
   });
 
+  test('resetting opening stock updates stock summary opening and closing', () async {
+    final database = await openStockTestDatabase();
+    bindStockTestSession(database);
+
+    final now = DateTime.now().toIso8601String();
+    await database.insert('raw_materials', {
+      'name': 'Breader',
+      'sub_item': 'Breader',
+      'qty_needed': 1,
+      'unit_id': 2,
+      'cost_price': 48,
+      'current_stock': 5,
+      'opening_stock': 5,
+      'created_at': now,
+    });
+    await seedLocationStock(database, 1, stock: 5);
+    await database.insert('stock_ledger', {
+      'raw_material_id': 1,
+      'entry_date': '2026-09-01T08:00:00.000',
+      'ref_type': 'opening',
+      'qty_in': 5,
+      'qty_out': 0,
+      'unit_cost': 48,
+      'balance_after': 5,
+      'location_id': 1,
+    });
+
+    await Repository.instance.saveRawMaterial(
+      RawMaterial(
+        id: 1,
+        name: 'Breader',
+        subItem: 'Breader',
+        qtyNeeded: 1,
+        unitId: 2,
+        openingStock: 0,
+        currentStock: 0,
+        costPrice: 48,
+      ),
+    );
+
+    expect(await locationStock(database, 1), 0);
+
+    final locationStockRows = await database.query(
+      'location_stock',
+      where: 'location_id = ? AND raw_material_id = ?',
+      whereArgs: [1, 1],
+    );
+    expect((locationStockRows.first['opening_stock'] as num).toDouble(), 0);
+
+    final today = DateTime.now();
+    final rows = await Repository.instance.stockMovementReport(
+      from: DateTime(today.year, today.month, today.day),
+      to: DateTime(today.year, today.month, today.day),
+    );
+    final breader = rows.firstWhere((row) => row['item_name'] == 'Breader');
+    expect((breader['opening_qty'] as num).toDouble(), 0);
+    expect((breader['closing_qty'] as num).toDouble(), 0);
+    expect((breader['adjustment_qty'] as num).toDouble(), 0);
+
+    await tearDownStockTestSession(database);
+  });
+
   group('Variant stock pooling', () {
     test('syncVariantLinks pools Krusty Bites with Chicken 65 by sub_item', () {
       final chicken65 = RawMaterial(

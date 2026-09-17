@@ -1821,11 +1821,10 @@ class _RawMaterialEditorDialogState
         unitId:
         _unitId,
         openingStock:
-        widget.existing?.openingStock ??
-            (double.tryParse(
-                  _openingController.text.trim(),
-                ) ??
-                0),
+        double.tryParse(
+          _openingController.text.trim(),
+        ) ??
+            0,
         currentStock:
         double.tryParse(
           _openingController.text.trim(),
