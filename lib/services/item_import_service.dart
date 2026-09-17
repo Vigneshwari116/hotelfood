@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:flutter/services.dart';
 import 'package:foodstock/database/category_cleanup.dart';
-import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/services/spreadsheet_export.dart';
@@ -731,7 +730,7 @@ class ItemImportService {
   }
 
   Future<void> _runCatalogMaintenance() async {
-    final db = await DBHelper.instance.appDb;
+    final db = await Repository.instance.sharedAppDb();
     await runCatalogMaintenance(db);
   }
 

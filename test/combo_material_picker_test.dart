@@ -23,7 +23,7 @@ void main() {
       RawMaterial(id: 4, name: 'Tea', listed: true),
     ]);
 
-    expect(materials, hasLength(3));
+    expect(materials, hasLength(2));
     expect(
       materials.where((item) => item.name == 'Hot Crispy Patty'),
       hasLength(1),

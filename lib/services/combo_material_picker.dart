@@ -27,10 +27,17 @@ List<RawMaterial> materialsForComboPicker(Iterable<RawMaterial> all) {
     return value;
   }
 
+  bool shouldInclude(RawMaterial material) {
+    if (isStockComponent(material)) return true;
+    if (!material.listed) return true;
+    final sub = material.subItem?.trim();
+    return sub != null && sub.isNotEmpty;
+  }
+
   final list = all.where((material) => material.id != null).toList();
   final byPool = <String, List<RawMaterial>>{};
   for (final material in list) {
-    if (!material.listed && !isStockComponent(material)) continue;
+    if (!shouldInclude(material)) continue;
     final poolKey = SubItemStock.ingredientPoolKey(material) ??
         '${material.categoryId}|${material.staffLabel.trim().toLowerCase()}';
     byPool.putIfAbsent(poolKey, () => []).add(material);
