@@ -1,13 +1,60 @@
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/item_import_service.dart';
 
 /// Stock pooling and POS grouping keyed by [RawMaterial.subItem].
 class SubItemStock {
   SubItemStock._();
 
-  static String? stockKey(RawMaterial item) {
+  static String? stockKey(RawMaterial item) => ingredientPoolKey(item);
+
+  /// Normalized identity for one physical ingredient (paratha, patty, bun, etc.).
+  static String? ingredientPoolKey(RawMaterial item) {
     final sub = item.subItem?.trim();
-    if (sub == null || sub.isEmpty) return null;
-    return normalizeGroupKey(sub);
+    if (sub != null && sub.isNotEmpty) {
+      return normalizeIngredientKey(sub);
+    }
+    final name = item.name.trim();
+    if (name.isEmpty) return null;
+    return normalizeIngredientKey(name);
+  }
+
+  /// Case-insensitive ingredient key with common spelling/plural fixes.
+  static String normalizeIngredientKey(String value) {
+    var key = normalizeGroupKey(value).replaceAll('panner', 'paneer');
+    const blockedSingularization = {
+      'fries',
+      'sauce',
+      'masala',
+      'rice',
+      'cheese',
+    };
+    if (blockedSingularization.contains(key)) return key;
+    if (key.endsWith('s') && key.length > 4 && !key.endsWith('ss')) {
+      return key.substring(0, key.length - 1);
+    }
+    return key;
+  }
+
+  /// Whether duplicate rows for this ingredient should be merged into one stock pool.
+  static bool isMergeableIngredientRow(
+    RawMaterial item, {
+    required Set<int> comboComponentIds,
+  }) {
+    if (item.id != null && comboComponentIds.contains(item.id)) return true;
+    if (!item.listed) return true;
+
+    final poolKey = ingredientPoolKey(item);
+    if (poolKey == null || poolKey.isEmpty) return false;
+
+    final nameKey = normalizeIngredientKey(item.name);
+    if (nameKey == poolKey) return true;
+
+    if (ItemImportService.hiddenByDefaultNames.contains(nameKey)) return true;
+    if (nameKey.contains('patty')) return true;
+    if (nameKey.contains('finger')) return true;
+    if (nameKey.contains('bun')) return true;
+
+    return false;
   }
 
   /// Case-insensitive, trimmed comparison key for stock pools.
@@ -142,6 +189,46 @@ class SubItemStock {
     if (sub.contains('bun')) return true;
     final category = categoryName?.trim().toLowerCase() ?? '';
     return category == 'burgers' || category == 'burger';
+  }
+
+  /// Resolves [material] to the canonical stock-holder id for purchases and sales.
+  /// Items that share the same sub_item pool (e.g. Paratha in different categories)
+  /// always debit/credit the same physical stock row.
+  static int resolveCanonicalStockHolderId(
+    RawMaterial material,
+    Map<int, RawMaterial> byId,
+  ) {
+    final startId = material.id;
+    if (startId == null) return startId ?? 0;
+
+    var resolvedId = startId;
+    final visited = <int>{resolvedId};
+    while (true) {
+      final current = byId[resolvedId];
+      if (current == null) break;
+      final sourceId = current.stockSourceId;
+      if (sourceId == null ||
+          sourceId == resolvedId ||
+          visited.contains(sourceId)) {
+        break;
+      }
+      visited.add(sourceId);
+      resolvedId = sourceId;
+    }
+
+    final resolved = byId[resolvedId];
+    if (resolved == null) return resolvedId;
+
+    final key = ingredientPoolKey(resolved);
+    if (key == null || key.isEmpty) return resolvedId;
+
+    final family = byId.values
+        .where((item) => ingredientPoolKey(item) == key)
+        .toList();
+    if (family.length < 2) return resolvedId;
+
+    final holder = canonicalHolder(family, stockKey: key);
+    return holder?.id ?? resolvedId;
   }
 
   static RawMaterial? canonicalHolder(
