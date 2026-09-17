@@ -29,6 +29,47 @@ void main() {
       expect(krustyUpdate.stockSourceId, 1);
     });
 
+    test('normalizeIngredientKey fixes panner and plural fingers', () {
+      expect(
+        SubItemStock.normalizeIngredientKey('panner patty'),
+        SubItemStock.normalizeIngredientKey('Paneer Patty'),
+      );
+      expect(
+        SubItemStock.normalizeIngredientKey('veg fingers'),
+        SubItemStock.normalizeIngredientKey('Veg Finger'),
+      );
+    });
+
+    test('isMergeableIngredientRow keeps sellable burgers separate from patties', () {
+      final burger = RawMaterial(
+        id: 1,
+        name: 'Hot Crispy burger',
+        subItem: 'Hot Crispy Patty',
+        listed: true,
+      );
+      final patty = RawMaterial(
+        id: 2,
+        name: 'Hot Crispy Patty',
+        subItem: 'Hot Crispy Patty',
+        listed: true,
+      );
+
+      expect(
+        SubItemStock.isMergeableIngredientRow(
+          burger,
+          comboComponentIds: const {},
+        ),
+        isFalse,
+      );
+      expect(
+        SubItemStock.isMergeableIngredientRow(
+          patty,
+          comboComponentIds: const {},
+        ),
+        isTrue,
+      );
+    });
+
     test('does not group patty references on POS', () {
       final burger = RawMaterial(
         id: 1,

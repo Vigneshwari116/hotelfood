@@ -1,6 +1,8 @@
 import 'package:foodstock/database/app_db.dart';
-import 'package:foodstock/services/item_import_service.dart';
+import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/combo_catalog_sync.dart';
+import 'package:foodstock/services/item_import_service.dart';
+import 'package:foodstock/services/sub_item_stock.dart';
 
 String _normalizeItemKey(String? name, String? subItem) {
   final n = (name ?? '').trim().toLowerCase();
@@ -380,8 +382,212 @@ Future<int> assignStockComponentCategories(AppDb db) async {
   return updated;
 }
 
+/// Merges duplicate ingredient rows (patty, bun, paratha, veg finger, etc.)
+/// that share one physical stock pool across categories.
+Future<int> mergeGlobalStockDuplicateRows(AppDb db) async {
+  final rows = await db.query(
+    'raw_materials',
+    columns: [
+      'id',
+      'name',
+      'sub_item',
+      'category_id',
+      'listed',
+      'current_stock',
+      'opening_stock',
+      'units_per_packet',
+      'variant_group',
+      'variant_label',
+      'menu_sort_order',
+    ],
+  );
+  if (rows.length < 2) return 0;
+
+  final comboRows = await db.query(
+    'combo_raw_materials',
+    columns: ['raw_material_id'],
+  );
+  final comboComponentIds = comboRows
+      .map((row) => row['raw_material_id'] as int?)
+      .whereType<int>()
+      .toSet();
+
+  final byKey = <String, List<Map<String, dynamic>>>{};
+  for (final row in rows) {
+    final material = RawMaterial(
+      id: row['id'] as int?,
+      name: row['name']?.toString() ?? '',
+      subItem: row['sub_item']?.toString(),
+      categoryId: (row['category_id'] as num?)?.toInt(),
+      listed: (row['listed'] as int? ?? 1) != 0,
+      currentStock: (row['current_stock'] as num?)?.toDouble() ?? 0,
+      menuSortOrder: (row['menu_sort_order'] as num?)?.toInt(),
+    );
+    if (!SubItemStock.isMergeableIngredientRow(
+      material,
+      comboComponentIds: comboComponentIds,
+    )) {
+      continue;
+    }
+
+    final key = SubItemStock.ingredientPoolKey(material);
+    if (key == null || key.isEmpty) continue;
+    byKey.putIfAbsent(key, () => []).add(row);
+  }
+
+  var merged = 0;
+  for (final group in byKey.values) {
+    if (group.length < 2) continue;
+    final keeper = _pickKeeper(group);
+    final keeperId = keeper['id'] as int;
+    for (final row in group) {
+      final id = row['id'] as int?;
+      if (id == null || id == keeperId) continue;
+      await _mergeMaterialIntoKeeper(db, duplicateId: id, keeperId: keeperId);
+      merged++;
+    }
+  }
+  return merged;
+}
+
+Future<void> _mergeMaterialIntoKeeper(
+  AppDb db, {
+  required int duplicateId,
+  required int keeperId,
+}) async {
+  final duplicateRows = await db.query(
+    'location_stock',
+    where: 'raw_material_id = ?',
+    whereArgs: [duplicateId],
+  );
+  for (final row in duplicateRows) {
+    final locationId = row['location_id'] as int?;
+    if (locationId == null) continue;
+    final qty = (row['current_stock'] as num?)?.toDouble() ?? 0;
+    final opening = (row['opening_stock'] as num?)?.toDouble() ?? 0;
+
+    final keeperRows = await db.query(
+      'location_stock',
+      where: 'location_id = ? AND raw_material_id = ?',
+      whereArgs: [locationId, keeperId],
+      limit: 1,
+    );
+    if (keeperRows.isEmpty) {
+      await db.insert('location_stock', {
+        'location_id': locationId,
+        'raw_material_id': keeperId,
+        'current_stock': qty,
+        'opening_stock': opening,
+        'reorder_level': row['reorder_level'] ?? 0,
+      });
+    } else {
+      final keeperQty =
+          (keeperRows.first['current_stock'] as num?)?.toDouble() ?? 0;
+      final keeperOpening =
+          (keeperRows.first['opening_stock'] as num?)?.toDouble() ?? 0;
+      await db.update(
+        'location_stock',
+        {
+          'current_stock': keeperQty + qty,
+          'opening_stock': keeperOpening + opening,
+        },
+        where: 'id = ?',
+        whereArgs: [keeperRows.first['id']],
+      );
+    }
+    await db.delete(
+      'location_stock',
+      where: 'id = ?',
+      whereArgs: [row['id']],
+    );
+  }
+
+  final duplicateMaterial = await db.query(
+    'raw_materials',
+    columns: ['current_stock', 'opening_stock'],
+    where: 'id = ?',
+    whereArgs: [duplicateId],
+    limit: 1,
+  );
+  if (duplicateMaterial.isNotEmpty) {
+    final dupStock =
+        (duplicateMaterial.first['current_stock'] as num?)?.toDouble() ?? 0;
+    final dupOpening =
+        (duplicateMaterial.first['opening_stock'] as num?)?.toDouble() ?? 0;
+    final keeperMaterial = await db.query(
+      'raw_materials',
+      columns: ['current_stock', 'opening_stock'],
+      where: 'id = ?',
+      whereArgs: [keeperId],
+      limit: 1,
+    );
+    if (keeperMaterial.isNotEmpty) {
+      final keeperStock =
+          (keeperMaterial.first['current_stock'] as num?)?.toDouble() ?? 0;
+      final keeperOpening =
+          (keeperMaterial.first['opening_stock'] as num?)?.toDouble() ?? 0;
+      await db.update(
+        'raw_materials',
+        {
+          'current_stock': keeperStock + dupStock,
+          'opening_stock': keeperOpening + dupOpening,
+        },
+        where: 'id = ?',
+        whereArgs: [keeperId],
+      );
+    }
+  }
+
+  await db.update(
+    'combo_raw_materials',
+    {'raw_material_id': keeperId},
+    where: 'raw_material_id = ?',
+    whereArgs: [duplicateId],
+  );
+
+  await db.update(
+    'raw_materials',
+    {'stock_source_id': keeperId},
+    where: 'stock_source_id = ?',
+    whereArgs: [duplicateId],
+  );
+
+  await db.update(
+    'stock_batches',
+    {'raw_material_id': keeperId},
+    where: 'raw_material_id = ?',
+    whereArgs: [duplicateId],
+  );
+
+  await db.update(
+    'stock_ledger',
+    {'raw_material_id': keeperId},
+    where: 'raw_material_id = ?',
+    whereArgs: [duplicateId],
+  );
+
+  await db.update(
+    'purchase_items',
+    {'raw_material_id': keeperId},
+    where: 'raw_material_id = ?',
+    whereArgs: [duplicateId],
+  );
+
+  await db.update(
+    'raw_materials',
+    {
+      'listed': 0,
+      'current_stock': 0,
+      'opening_stock': 0,
+    },
+    where: 'id = ?',
+    whereArgs: [duplicateId],
+  );
+}
+
 /// Runs post-import catalog maintenance (dedupe, combos, categories).
 Future<void> runCatalogMaintenance(AppDb db) async {
+  await mergeGlobalStockDuplicateRows(db);
   await dedupeDuplicateRowsInCategory(db);
   await dedupeDuplicateItemNamesInCategory(db);
   await hideSnacksPopcornLargeDuplicates(db);

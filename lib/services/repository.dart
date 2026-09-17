@@ -2725,10 +2725,17 @@ class Repository {
                 .toList();
 
             final linked = VariantHelpers.withSyncedLinks(materials);
+            final byId = {
+                  for (final item in linked)
+                        if (item.id != null) item.id!: item,
+            };
             final stockIdByMaterialId = <int, int>{
                   for (final item in linked)
                         if (item.id != null)
-                              item.id!: VariantHelpers.stockMaterialId(item),
+                              item.id!: SubItemStock.resolveCanonicalStockHolderId(
+                                    item,
+                                    byId,
+                              ),
             };
 
             final familyByStockId = <int, List<RawMaterial>>{};
@@ -3124,10 +3131,17 @@ class Repository {
                 .toList();
 
             final linked = VariantHelpers.withSyncedLinks(materials);
+            final byId = {
+                  for (final item in linked)
+                        if (item.id != null) item.id!: item,
+            };
             final stockIdByMaterialId = <int, int>{
                   for (final item in linked)
                         if (item.id != null)
-                              item.id!: VariantHelpers.stockMaterialId(item),
+                              item.id!: SubItemStock.resolveCanonicalStockHolderId(
+                                    item,
+                                    byId,
+                              ),
             };
             final rowByMaterialId = <int, Map<String, dynamic>>{
                   for (final row in rows)

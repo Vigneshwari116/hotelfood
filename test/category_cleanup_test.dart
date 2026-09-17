@@ -184,4 +184,188 @@ void main() {
       expect(listedRows.single['name'], 'Hot Crispy Patty');
     });
   });
+
+  group('mergeGlobalStockDuplicateRows', () {
+    late Database database;
+
+    setUp(() async {
+      database = await databaseFactory.openDatabase(
+        inMemoryDatabasePath,
+        options: OpenDatabaseOptions(
+          version: 1,
+          onCreate: (db, version) async {
+            await db.execute('''
+              CREATE TABLE categories (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                type TEXT NOT NULL
+              )
+            ''');
+            await db.execute('''
+              CREATE TABLE raw_materials (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL,
+                sub_item TEXT,
+                category_id INTEGER,
+                listed INTEGER NOT NULL DEFAULT 1,
+                opening_stock REAL NOT NULL DEFAULT 0,
+                current_stock REAL NOT NULL DEFAULT 0,
+                units_per_packet REAL,
+                variant_group TEXT,
+                variant_label TEXT,
+                menu_sort_order INTEGER,
+                stock_source_id INTEGER,
+                created_at TEXT NOT NULL
+              )
+            ''');
+            await db.execute('''
+              CREATE TABLE combo_raw_materials (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                combo_id INTEGER NOT NULL,
+                raw_material_id INTEGER NOT NULL,
+                qty REAL NOT NULL DEFAULT 1
+              )
+            ''');
+            await db.execute('''
+              CREATE TABLE location_stock (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                location_id INTEGER NOT NULL,
+                raw_material_id INTEGER NOT NULL,
+                current_stock REAL NOT NULL DEFAULT 0,
+                opening_stock REAL NOT NULL DEFAULT 0,
+                reorder_level REAL NOT NULL DEFAULT 0,
+                UNIQUE(location_id, raw_material_id)
+              )
+            ''');
+            await db.execute('''
+              CREATE TABLE stock_batches (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                raw_material_id INTEGER NOT NULL,
+                qty_remaining REAL NOT NULL,
+                created_at TEXT NOT NULL
+              )
+            ''');
+            await db.execute('''
+              CREATE TABLE stock_ledger (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                raw_material_id INTEGER NOT NULL,
+                entry_date TEXT NOT NULL,
+                ref_type TEXT NOT NULL,
+                qty_in REAL NOT NULL DEFAULT 0,
+                qty_out REAL NOT NULL DEFAULT 0,
+                balance_after REAL NOT NULL
+              )
+            ''');
+            await db.execute('''
+              CREATE TABLE purchase_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                purchase_id INTEGER NOT NULL,
+                raw_material_id INTEGER NOT NULL,
+                qty REAL NOT NULL,
+                rate REAL NOT NULL,
+                amount REAL NOT NULL
+              )
+            ''');
+
+            await db.insert('categories', {
+              'id': 1,
+              'name': 'Burgers',
+              'type': 'raw_material',
+            });
+            await db.insert('categories', {
+              'id': 2,
+              'name': 'Rolls',
+              'type': 'raw_material',
+            });
+            await db.insert('categories', {
+              'id': 3,
+              'name': 'snacks',
+              'type': 'raw_material',
+            });
+
+            await db.insert('raw_materials', {
+              'name': 'Hot Crispy Patty',
+              'sub_item': 'Hot Crispy Patty',
+              'category_id': 1,
+              'listed': 1,
+              'current_stock': -10,
+              'created_at': '2026-01-01T00:00:00.000',
+            });
+            await db.insert('raw_materials', {
+              'name': 'Hot Crispy Patty',
+              'sub_item': 'Hot Crispy Patty',
+              'category_id': 1,
+              'listed': 1,
+              'current_stock': -10,
+              'created_at': '2026-01-01T00:00:00.000',
+            });
+            await db.insert('raw_materials', {
+              'name': 'Paneer Patty',
+              'sub_item': 'Paneer Patty',
+              'category_id': 1,
+              'listed': 1,
+              'current_stock': 0,
+              'created_at': '2026-01-01T00:00:00.000',
+            });
+            await db.insert('raw_materials', {
+              'name': 'panner patty',
+              'sub_item': 'panner patty',
+              'category_id': 2,
+              'listed': 1,
+              'current_stock': 0,
+              'created_at': '2026-01-01T00:00:00.000',
+            });
+            await db.insert('raw_materials', {
+              'name': 'Veg Finger',
+              'sub_item': 'veg finger',
+              'category_id': 3,
+              'listed': 1,
+              'current_stock': 0,
+              'created_at': '2026-01-01T00:00:00.000',
+            });
+            await db.insert('raw_materials', {
+              'name': 'veg fingers',
+              'sub_item': 'veg finger',
+              'category_id': 2,
+              'listed': 1,
+              'current_stock': 0,
+              'created_at': '2026-01-01T00:00:00.000',
+            });
+            await db.insert('combo_raw_materials', {
+              'combo_id': 1,
+              'raw_material_id': 4,
+              'qty': 1,
+            });
+          },
+        ),
+      );
+    });
+
+    tearDown(() async {
+      await database.close();
+    });
+
+    test('merges duplicate patties and veg finger rows across categories', () async {
+      final merged = await mergeGlobalStockDuplicateRows(SqliteAppDb(database));
+      expect(merged, greaterThanOrEqualTo(3));
+
+      final listedPattyRows = await database.query(
+        'raw_materials',
+        where: "listed = 1 AND lower(name) LIKE '%patty%'",
+      );
+      expect(listedPattyRows.length, lessThanOrEqualTo(2));
+
+      final listedFingerRows = await database.query(
+        'raw_materials',
+        where: "listed = 1 AND lower(name) LIKE '%finger%'",
+      );
+      expect(listedFingerRows, hasLength(1));
+
+      final comboRows = await database.query('combo_raw_materials');
+      expect(
+        comboRows.every((row) => row['raw_material_id'] != 4),
+        isTrue,
+      );
+    });
+  });
 }
