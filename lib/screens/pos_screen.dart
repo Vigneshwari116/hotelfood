@@ -7,7 +7,6 @@ import 'package:foodstock/services/combo_only_categories.dart';
 import 'package:foodstock/services/inventory_search.dart';
 import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/sub_item_stock.dart';
-import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/pos_free_addons.dart';
 import 'package:foodstock/services/printer_service.dart';
 import 'package:foodstock/services/repository.dart';
