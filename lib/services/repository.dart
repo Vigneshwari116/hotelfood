@@ -1769,7 +1769,7 @@ class Repository {
                               'raw_materials',
                               columns: ['id'],
                               where: 'id = ?',
-                              whereArgs: [stockMaterialId],
+                              whereArgs: [item.rawMaterialId],
                               limit: 1,
                         );
 
@@ -1783,7 +1783,7 @@ class Repository {
                               'combo_raw_materials',
                               {
                                     'combo_id': comboId,
-                                    'raw_material_id': stockMaterialId,
+                                    'raw_material_id': item.rawMaterialId,
                                     'qty': item.qty,
                               },
                         );

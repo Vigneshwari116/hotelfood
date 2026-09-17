@@ -103,12 +103,8 @@ Future<int> syncBurgerRollCombos(AppDb db) async {
         where: 'id = ?',
         whereArgs: [comboId],
       );
-      await db.delete(
-        'combo_raw_materials',
-        where: 'combo_id = ?',
-        whereArgs: [comboId],
-      );
       synced++;
+      continue;
     }
 
     await db.insert('combo_raw_materials', {

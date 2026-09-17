@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:foodstock/model/models.dart';
 import '../services/combo_material_picker.dart';
 import '../services/combo_only_categories.dart';
+import '../services/combo_import_service.dart';
 import '../services/item_import_service.dart';
 import '../services/repository.dart';
 import '../services/sub_item_stock.dart';
@@ -168,7 +169,7 @@ class _RawMaterialMasterScreenState
       final haystack = [
         combo.name,
         combo.barcode ?? '',
-        ...combo.items.map((item) => item.materialName ?? ''),
+        ...combo.items.map((item) => item.itemNameLabel),
       ].join(' ').toLowerCase();
       return haystack.contains(query);
     }).toList();
@@ -214,6 +215,158 @@ class _RawMaterialMasterScreenState
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('Menu file saved to $path')),
     );
+  }
+
+  Future<void> _exportCombosFile() async {
+    final repo = Repository.instance;
+    final locationName = repo.sessionLocationName;
+    if (locationName == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Combo export is only available for location accounts.'),
+        ),
+      );
+      return;
+    }
+
+    final service = ComboImportService();
+    final bytes = await service.exportXlsx();
+    final fileName = '$locationName combos.xlsx';
+
+    String? path;
+    if (!kIsWeb &&
+        (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save combos Excel',
+        fileName: fileName,
+        type: FileType.custom,
+        allowedExtensions: const ['xlsx'],
+      );
+    }
+    path ??= p.join(
+      (await getApplicationDocumentsDirectory()).path,
+      fileName,
+    );
+    if (!path.toLowerCase().endsWith('.xlsx')) {
+      path = '$path.xlsx';
+    }
+    await File(path).writeAsBytes(bytes);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Combos file saved to $path')),
+    );
+  }
+
+  Future<void> _importCombosFile() async {
+    final repo = Repository.instance;
+    final locationName = repo.sessionLocationName;
+    if (locationName == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Combo import is only available for location accounts.'),
+        ),
+      );
+      return;
+    }
+
+    final picked = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: const ['csv', 'xlsx', 'xls'],
+      allowMultiple: false,
+      withData: true,
+    );
+    if (picked == null || picked.files.isEmpty) {
+      return;
+    }
+
+    final file = picked.files.first;
+    final filename = file.name;
+    if (filename.trim().isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not read the selected file. Try again.'),
+        ),
+      );
+      return;
+    }
+
+    Uint8List? bytes = file.bytes;
+    if (bytes == null && file.path != null) {
+      bytes = await File(file.path!).readAsBytes();
+    }
+    if (bytes == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not read the selected file. '
+            'Try saving the Excel to Downloads and import again.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        return const Center(
+          child: Card(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            ),
+          ),
+        );
+      },
+    );
+
+    try {
+      final result = await ComboImportService().importFileBytes(bytes, filename);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      await _loadAll();
+      if (!mounted) return;
+
+      final importedTotal = result.created + result.updated;
+      final summary = importedTotal == 0
+          ? 'No combos were imported.'
+          : 'Added ${result.created} new combo(s).\n'
+              'Updated ${result.updated} existing combo(s).';
+
+      await showDialog<void>(
+        context: context,
+        builder: (context) {
+          return AlertDialog(
+            title: Text(
+              importedTotal == 0 ? 'Import finished' : 'Import complete',
+            ),
+            content: Text(
+              '$summary'
+              '${result.skipped > 0 ? '\nSkipped ${result.skipped} row(s).' : ''}'
+              '${result.errors.isEmpty ? '' : '\n\n${result.errors.take(8).join('\n')}'
+                  '${result.errors.length > 8 ? '\n…and ${result.errors.length - 8} more' : ''}'}',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('OK'),
+              ),
+            ],
+          );
+        },
+      );
+    } catch (e) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Combo import failed: $e')),
+      );
+    }
   }
 
   Future<void> _importItemsFile() async {
@@ -1158,62 +1311,83 @@ class _RawMaterialMasterScreenState
         // COMBO HEADER
         // ------------------------------------------------------
 
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Combos',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(
-                  fontWeight:
-                  FontWeight.bold,
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final actions = Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!_readOnly) ...[
+                  IconButton(
+                    tooltip: 'Download combos as Excel',
+                    onPressed: _exportCombosFile,
+                    icon: const Icon(Icons.download_outlined),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _importCombosFile,
+                    icon: const Icon(Icons.upload_file),
+                    label: Text(isMobile ? 'Import' : 'Import Excel'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: () {
+                      _openComboEditor();
+                    },
+                    icon: const Icon(Icons.add),
+                    label: Text(isMobile ? 'Add' : 'Add Combo'),
+                  ),
+                ],
+              ],
+            );
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Combos',
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleLarge
+                                ?.copyWith(
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Create combos from menu items.',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (isMobile)
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: actions,
+                      )
+                    else
+                      actions,
+                  ],
                 ),
-              ),
-            ),
-
-            if (!_readOnly)
-              FilledButton.icon(
-                onPressed: () {
-                  _openComboEditor();
-                },
-                icon: const Icon(
-                  Icons.add,
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _comboSearchController,
+                  decoration: const InputDecoration(
+                    labelText: 'Search combos',
+                    prefixIcon: Icon(Icons.search),
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                  onChanged: (_) => setState(() {}),
                 ),
-                label: Text(
-                  isMobile
-                      ? 'Add'
-                      : 'Add Combo',
-                ),
-              ),
-          ],
-        ),
-
-        const SizedBox(height: 8),
-
-        Align(
-          alignment:
-          Alignment.centerLeft,
-          child: Text(
-            'Create combos from menu items.',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall,
-          ),
-        ),
-
-        const SizedBox(height: 16),
-
-        TextField(
-          controller: _comboSearchController,
-          decoration: const InputDecoration(
-            labelText: 'Search combos',
-            prefixIcon: Icon(Icons.search),
-            border: OutlineInputBorder(),
-            isDense: true,
-          ),
-          onChanged: (_) => setState(() {}),
+              ],
+            );
+          },
         ),
 
         const SizedBox(height: 16),
@@ -1348,16 +1522,8 @@ class _RawMaterialMasterScreenState
                         combo.items
                             .map(
                               (comboItem) {
-                            final material =
-                            _findRawMaterial(
-                              comboItem
-                                  .rawMaterialId,
-                            );
-
                             final name =
-                                material
-                                    ?.name ??
-                                    'Unknown';
+                                comboItem.itemNameLabel;
 
                             return Chip(
                               avatar:
