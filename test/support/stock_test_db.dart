@@ -51,13 +51,16 @@ Future<Database> openStockTestDatabase() async {
           qty_needed REAL NOT NULL DEFAULT 1,
           category_id INTEGER,
           unit_id INTEGER,
+          image_path TEXT,
           opening_stock REAL NOT NULL DEFAULT 0,
+          opening_pieces REAL NOT NULL DEFAULT 0,
           current_stock REAL NOT NULL DEFAULT 0,
           reorder_level REAL NOT NULL DEFAULT 0,
+          shelf_life_days INTEGER,
           units_per_packet REAL,
+          entry_password_hash TEXT,
           cost_price REAL,
           selling_price REAL,
-          image_path TEXT,
           listed INTEGER NOT NULL DEFAULT 1,
           menu_sort_order INTEGER,
           menu_export_row TEXT,
@@ -104,6 +107,17 @@ Future<Database> openStockTestDatabase() async {
           qty_out REAL NOT NULL DEFAULT 0,
           unit_cost REAL,
           balance_after REAL NOT NULL,
+          location_id INTEGER
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE stock_adjustments (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          raw_material_id INTEGER NOT NULL,
+          adjust_date TEXT NOT NULL,
+          qty REAL NOT NULL,
+          reason TEXT,
           location_id INTEGER
         )
       ''');
