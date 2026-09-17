@@ -281,4 +281,57 @@ class SubItemStock {
   static String normalizeVariantLabel(String value) {
     return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
   }
+
+  static Map<int, int> buildCanonicalStockIdMap(
+    Iterable<RawMaterial> materials,
+  ) {
+    final byId = {
+      for (final material in materials)
+        if (material.id != null) material.id!: material,
+    };
+    return {
+      for (final id in byId.keys)
+        id: resolveCanonicalStockHolderId(byId[id]!, byId),
+    };
+  }
+
+  /// One row per physical stock pool for purchase/combo/sub-item pickers.
+  static List<RawMaterial> deduplicateToCanonicalStockHolders(
+    Iterable<RawMaterial> materials,
+  ) {
+    final list = materials.toList();
+    final stockMap = buildCanonicalStockIdMap(list);
+    final byId = {
+      for (final material in list)
+        if (material.id != null) material.id!: material,
+    };
+    final seen = <int>{};
+    final result = <RawMaterial>[];
+
+    for (final material in list) {
+      final id = material.id;
+      if (id == null) continue;
+      final holderId = stockMap[id] ?? id;
+      if (!seen.add(holderId)) continue;
+      result.add(byId[holderId] ?? material);
+    }
+
+    result.sort(
+      (a, b) =>
+          a.staffLabel.toLowerCase().compareTo(b.staffLabel.toLowerCase()),
+    );
+    return result;
+  }
+
+  /// Hides listed shadow rows when another row already owns the same stock pool.
+  static bool isListedStockShadow(
+    RawMaterial material,
+    Map<int, RawMaterial> byId,
+  ) {
+    final id = material.id;
+    if (id == null || !material.listed) return false;
+    final holderId = resolveCanonicalStockHolderId(material, byId);
+    if (holderId == id) return false;
+    return isMergeableIngredientRow(material, comboComponentIds: const {});
+  }
 }

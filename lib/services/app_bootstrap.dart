@@ -42,6 +42,7 @@ class AppBootstrap {
     await Repository.instance.consolidateMenuCategories();
     await Repository.instance.ensureLocationStockRows();
     await Repository.instance.repairOrphanedReferences();
+    await Repository.instance.maintainCatalog();
     await Repository.instance.refreshVariantLinks();
     await Repository.instance.writeOffExpiredStock();
   }

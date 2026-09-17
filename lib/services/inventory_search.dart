@@ -1,4 +1,5 @@
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/sub_item_stock.dart';
 import 'package:foodstock/services/variant_helpers.dart';
 
 /// One row in the purchase or POS item search dropdown.
@@ -152,82 +153,52 @@ List<InventorySearchEntry> inventorySearchEntriesFromMaterials(
   ];
 }
 
-/// One dropdown row per purchasable stock pool (variants collapsed to the holder).
+/// One dropdown row per purchasable stock pool (variants and duplicate
+/// ingredient rows collapsed to the canonical holder).
 List<InventorySearchEntry> inventoryPurchaseEntriesFromMaterials(
   Iterable<RawMaterial> materials, {
   String? Function(int? categoryId)? categoryNameFor,
 }) {
-  final list = VariantHelpers.withSyncedLinks(materials.toList());
-  final byId = {
-    for (final material in list)
-      if (material.id != null) material.id!: material,
-  };
-  final poolByStockId = <int, List<RawMaterial>>{};
-  for (final material in list) {
-    if (material.id == null) continue;
-    final stockId = VariantHelpers.stockMaterialId(material);
-    poolByStockId.putIfAbsent(stockId, () => []).add(material);
+  final linked = VariantHelpers.withSyncedLinks(materials.toList());
+  final holders = SubItemStock.deduplicateToCanonicalStockHolders(linked);
+  final stockMap = SubItemStock.buildCanonicalStockIdMap(linked);
+  final poolMembers = <int, List<RawMaterial>>{};
+  for (final material in linked) {
+    final id = material.id;
+    if (id == null) continue;
+    final holderId = stockMap[id] ?? id;
+    poolMembers.putIfAbsent(holderId, () => []).add(material);
   }
 
-  final partition = VariantHelpers.partitionForPos(list);
   final entries = <InventorySearchEntry>[];
-  final coveredStockIds = <int>{};
-
-  void addPoolEntry({
-    required RawMaterial holder,
-    required String primaryLabel,
-    required List<RawMaterial> pool,
-  }) {
-    final stockId = VariantHelpers.stockMaterialId(holder);
-    if (coveredStockIds.contains(stockId)) return;
-    coveredStockIds.add(stockId);
-
-    final haystack = [
-      primaryLabel,
-      holder.name,
-      holder.trimmedSubItem ?? '',
-      holder.barcode ?? '',
-      for (final variant in pool) ...[
-        variant.name,
-        variant.variantLabel ?? '',
-        variant.staffLabel,
-      ],
-      categoryNameFor?.call(holder.categoryId) ?? '',
-    ].join(' ').toLowerCase();
+  for (final holder in holders) {
+    final holderId = holder.id;
+    if (holderId == null) continue;
+    final pool = poolMembers[holderId] ?? [holder];
+    final partition = VariantHelpers.partitionForPos(pool);
+    final primaryLabel = partition.groups.isNotEmpty
+        ? partition.groups.first.posTitle
+        : SubItemStock.canonicalLabelForFamily(pool).isNotEmpty
+            ? SubItemStock.canonicalLabelForFamily(pool)
+            : holder.staffLabel;
 
     entries.add(
       InventorySearchEntry(
         primaryLabel: primaryLabel,
-        haystack: haystack,
+        haystack: [
+          primaryLabel,
+          holder.name,
+          holder.trimmedSubItem ?? '',
+          holder.barcode ?? '',
+          for (final variant in pool) ...[
+            variant.name,
+            variant.variantLabel ?? '',
+            variant.staffLabel,
+          ],
+          categoryNameFor?.call(holder.categoryId) ?? '',
+        ].join(' ').toLowerCase(),
         material: holder,
       ),
-    );
-  }
-
-  for (final group in partition.groups) {
-    addPoolEntry(
-      holder: group.stockSource,
-      primaryLabel: group.posTitle,
-      pool: group.variants,
-    );
-  }
-
-  final singlesByStockId = <int, List<RawMaterial>>{};
-  for (final single in partition.singles) {
-    if (single.id == null) continue;
-    final stockId = VariantHelpers.stockMaterialId(single);
-    singlesByStockId.putIfAbsent(stockId, () => []).add(single);
-  }
-
-  for (final pool in singlesByStockId.values) {
-    final stockId = VariantHelpers.stockMaterialId(pool.first);
-    if (coveredStockIds.contains(stockId)) continue;
-
-    final holder = byId[stockId] ?? pool.first;
-    addPoolEntry(
-      holder: holder,
-      primaryLabel: holder.staffLabel,
-      pool: poolByStockId[stockId] ?? pool,
     );
   }
 
