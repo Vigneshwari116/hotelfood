@@ -98,6 +98,9 @@ class Repository {
             _testAppDb = db;
       }
 
+      /// Same [AppDb] used by repository operations (honours test overrides).
+      Future<AppDb> sharedAppDb() async => await _db;
+
       String? _sessionRole;
       int? _sessionLocationId;
       String? _sessionLocationName;
