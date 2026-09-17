@@ -144,6 +144,46 @@ class SubItemStock {
     return category == 'burgers' || category == 'burger';
   }
 
+  /// Resolves [material] to the canonical stock-holder id for purchases and sales.
+  /// Items that share the same sub_item pool (e.g. Paratha in different categories)
+  /// always debit/credit the same physical stock row.
+  static int resolveCanonicalStockHolderId(
+    RawMaterial material,
+    Map<int, RawMaterial> byId,
+  ) {
+    final startId = material.id;
+    if (startId == null) return startId ?? 0;
+
+    var resolvedId = startId;
+    final visited = <int>{resolvedId};
+    while (true) {
+      final current = byId[resolvedId];
+      if (current == null) break;
+      final sourceId = current.stockSourceId;
+      if (sourceId == null ||
+          sourceId == resolvedId ||
+          visited.contains(sourceId)) {
+        break;
+      }
+      visited.add(sourceId);
+      resolvedId = sourceId;
+    }
+
+    final resolved = byId[resolvedId];
+    if (resolved == null) return resolvedId;
+
+    final key = stockKey(resolved);
+    if (key == null || key.isEmpty) return resolvedId;
+
+    final family = byId.values
+        .where((item) => stockKey(item) == key)
+        .toList();
+    if (family.length < 2) return resolvedId;
+
+    final holder = canonicalHolder(family, stockKey: key);
+    return holder?.id ?? resolvedId;
+  }
+
   static RawMaterial? canonicalHolder(
     List<RawMaterial> family, {
     required String stockKey,

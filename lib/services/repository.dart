@@ -1604,6 +1604,7 @@ class Repository {
                   // ==========================================================
 
                   final uniqueMaterials = <int>{};
+                  final stockIdMap = await _buildStockMaterialIdMap(txn);
 
                   for (final item in items) {
                         if (combo.id != null && item.comboId != comboId) {
@@ -1618,7 +1619,13 @@ class Repository {
                               );
                         }
 
-                        if (!uniqueMaterials.add(item.rawMaterialId)) {
+                        final stockMaterialId = await _stockMaterialId(
+                              txn,
+                              item.rawMaterialId,
+                              stockIdMap: stockIdMap,
+                        );
+
+                        if (!uniqueMaterials.add(stockMaterialId)) {
                               throw InvalidInventoryException(
                                     'A raw material cannot appear twice in the same combo.',
                               );
@@ -1628,7 +1635,7 @@ class Repository {
                               'raw_materials',
                               columns: ['id'],
                               where: 'id = ?',
-                              whereArgs: [item.rawMaterialId],
+                              whereArgs: [stockMaterialId],
                               limit: 1,
                         );
 
@@ -1642,7 +1649,7 @@ class Repository {
                               'combo_raw_materials',
                               {
                                     'combo_id': comboId,
-                                    'raw_material_id': item.rawMaterialId,
+                                    'raw_material_id': stockMaterialId,
                                     'qty': item.qty,
                               },
                         );
@@ -1987,6 +1994,8 @@ class Repository {
                   // PURCHASE ITEMS
                   // ----------------------------------------------------------
 
+                  final stockIdMap = await _buildStockMaterialIdMap(txn);
+
                   for (final line in lines) {
                         final rawMaterialId =
                         line['raw_material_id'] as int;
@@ -2003,6 +2012,7 @@ class Repository {
                         final stockMaterialId = await _stockMaterialId(
                               txn,
                               rawMaterialId,
+                              stockIdMap: stockIdMap,
                         );
 
                         final purchaseItemId = await txn.insert(
@@ -3879,6 +3889,7 @@ class Repository {
           List<CartLine> lines,
           ) async {
             final totalNeeded = <int, double>{};
+            final stockIdMap = await _buildStockMaterialIdMap(txn);
 
             for (final line in lines) {
                   // --------------------------------------------------------
@@ -3893,6 +3904,7 @@ class Repository {
                             await _stockMaterialIdForSale(
                               txn,
                               rawMaterialId,
+                              stockIdMap: stockIdMap,
                             );
 
                         final double existing =
@@ -3974,6 +3986,7 @@ class Repository {
                                   await _stockMaterialIdForSale(
                                     txn,
                                     rawMaterialId,
+                                    stockIdMap: stockIdMap,
                                   );
 
                               final double requiredQty =
@@ -4015,48 +4028,79 @@ class Repository {
             return value <= 0 ? 1 : value;
       }
 
-      Future<int> _stockMaterialId(
-            AppDb txn,
-            int materialId,
-            ) async {
+      Future<Map<int, int>> _buildStockMaterialIdMap(AppDb txn) async {
             final rows = await txn.query(
                   'raw_materials',
-                  columns: ['stock_source_id', 'id'],
-                  where: 'id = ?',
-                  whereArgs: [materialId],
-                  limit: 1,
+                  columns: [
+                        'id',
+                        'name',
+                        'sub_item',
+                        'category_id',
+                        'menu_sort_order',
+                        'stock_source_id',
+                  ],
             );
 
-            if (rows.isEmpty) {
-                  throw InvalidInventoryException(
-                        'Raw material does not exist.',
+            final byId = <int, RawMaterial>{};
+            for (final row in rows) {
+                  final id = row['id'] as int?;
+                  if (id == null) continue;
+                  byId[id] = RawMaterial(
+                        id: id,
+                        name: row['name']?.toString() ?? '',
+                        subItem: row['sub_item']?.toString(),
+                        categoryId: (row['category_id'] as num?)?.toInt(),
+                        menuSortOrder:
+                            (row['menu_sort_order'] as num?)?.toInt(),
+                        stockSourceId:
+                            (row['stock_source_id'] as num?)?.toInt(),
                   );
             }
 
-            final sourceId =
-                (rows.first['stock_source_id'] as num?)?.toInt();
-            if (sourceId == null || sourceId == materialId) {
-                  return materialId;
+            final stockIdMap = <int, int>{};
+            for (final id in byId.keys) {
+                  stockIdMap[id] = SubItemStock.resolveCanonicalStockHolderId(
+                        byId[id]!,
+                        byId,
+                  );
             }
+            return stockIdMap;
+      }
 
-            final sourceRows = await txn.query(
-                  'raw_materials',
-                  columns: ['id'],
-                  where: 'id = ?',
-                  whereArgs: [sourceId],
-                  limit: 1,
-            );
-            if (sourceRows.isEmpty) {
+      Future<int> _stockMaterialId(
+            AppDb txn,
+            int materialId, {
+            Map<int, int>? stockIdMap,
+      }) async {
+            final resolvedMap = stockIdMap ?? await _buildStockMaterialIdMap(txn);
+            if (!resolvedMap.containsKey(materialId)) {
+                  final rows = await txn.query(
+                        'raw_materials',
+                        columns: ['id'],
+                        where: 'id = ?',
+                        whereArgs: [materialId],
+                        limit: 1,
+                  );
+                  if (rows.isEmpty) {
+                        throw InvalidInventoryException(
+                              'Raw material does not exist.',
+                        );
+                  }
                   return materialId;
             }
-            return sourceId;
+            return resolvedMap[materialId] ?? materialId;
       }
 
       Future<int> _stockMaterialIdForSale(
             AppDb txn,
-            int soldMaterialId,
-            ) async {
-            return _stockMaterialId(txn, soldMaterialId);
+            int soldMaterialId, {
+            Map<int, int>? stockIdMap,
+      }) async {
+            return _stockMaterialId(
+                  txn,
+                  soldMaterialId,
+                  stockIdMap: stockIdMap,
+            );
       }
 
       // ============================================================

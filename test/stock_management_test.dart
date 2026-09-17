@@ -306,6 +306,83 @@ void main() {
       await tearDownStockTestSession(database);
     });
 
+    test('combo sale deducts paratha from canonical stock holder across categories',
+        () async {
+      final database = await openStockTestDatabase();
+      bindStockTestSession(database);
+
+      final now = DateTime.now().toIso8601String();
+      await database.insert('categories', {'name': 'Fried Items'});
+      await database.insert('categories', {'name': 'Uncategorized'});
+
+      await database.insert('raw_materials', {
+        'name': 'Paratha',
+        'sub_item': 'Paratha',
+        'category_id': 1,
+        'qty_needed': 1,
+        'current_stock': 0,
+        'opening_stock': 0,
+        'listed': 0,
+        'created_at': now,
+      });
+      await database.insert('raw_materials', {
+        'name': 'Paratha',
+        'sub_item': 'Paratha',
+        'category_id': 2,
+        'qty_needed': 1,
+        'current_stock': 0,
+        'opening_stock': 0,
+        'listed': 0,
+        'created_at': now,
+      });
+      await database.insert('raw_materials', {
+        'name': 'Veg roll',
+        'sub_item': 'veg finger',
+        'category_id': 2,
+        'qty_needed': 1,
+        'current_stock': 0,
+        'opening_stock': 0,
+        'listed': 1,
+        'created_at': now,
+      });
+
+      await seedLocationStock(database, 1, stock: 12);
+      await seedLocationStock(database, 2, stock: 0);
+
+      await database.insert('combos', {
+        'name': 'Veg roll',
+        'price': 0,
+        'selling_price': 0,
+        'is_active': 1,
+        'created_at': now,
+      });
+      await database.insert('combo_raw_materials', {
+        'combo_id': 1,
+        'raw_material_id': 2,
+        'qty': 1,
+      });
+
+      await Repository.instance.recordSale(
+        lines: [
+          CartLine(
+            comboId: 1,
+            name: 'Veg roll',
+            componentLabels: const ['Paratha'],
+            qty: 1,
+            price: 0,
+          ),
+        ],
+        tax: 0,
+        discount: 0,
+        paymentType: 'cash',
+      );
+
+      expect(await locationStock(database, 1), 11);
+      expect(await locationStock(database, 2), 0);
+
+      await tearDownStockTestSession(database);
+    });
+
     // Test 6: Stock Summary closing formula with pooled rows.
     test('stock summary closing equals opening plus purchase minus sales', () async {
       final database = await openStockTestDatabase();

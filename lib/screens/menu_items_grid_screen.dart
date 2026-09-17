@@ -207,21 +207,11 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
   }
 
-  List<String> get _existingVariantGroups => _distinctFieldValues(
-        (row) => row.variantGroup.text.isNotEmpty
-            ? row.variantGroup.text
-            : (row.item.variantGroup ?? ''),
-      );
-
-  List<String> get _existingVariantLabels => _distinctFieldValues(
-        (row) => row.variantLabel.text.isNotEmpty
-            ? row.variantLabel.text
-            : (row.item.variantLabel ?? ''),
-      );
-
-  List<String> get _existingStockSourceNames => _distinctFieldValues(
+  List<String> get _allItemNames => _distinctFieldValues(
         (row) => row.itemName.text,
       );
+
+  List<String> get _existingStockSourceNames => _allItemNames;
 
   Future<void> _addItemInCategory(String categoryName) async {
     if (_readOnly) return;
@@ -422,7 +412,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                       'opening pieces; total stock = (opening packets × pieces per packet) '
                       '+ opening pieces (auto, in pieces). '
                       'Pieces sold per customer = qty per POS order. '
-                      'Variant Group / Label: type a new name or pick from the list.',
+                      'Variant Group / Label / Stock source: pick any menu item from the dropdown.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: Theme.of(context).colorScheme.primary,
                           ),
@@ -444,8 +434,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                                 return _CategoryGridSection(
                                   category: category,
                                   rows: rows,
-                                  variantGroups: _existingVariantGroups,
-                                  variantLabels: _existingVariantLabels,
+                                  itemNameOptions: _allItemNames,
                                   stockSourceNames: _existingStockSourceNames,
                                   readOnly: _readOnly,
                                   isMobile: isMobile,
@@ -470,8 +459,7 @@ class _CategoryGridSection extends StatelessWidget {
   const _CategoryGridSection({
     required this.category,
     required this.rows,
-    required this.variantGroups,
-    required this.variantLabels,
+    required this.itemNameOptions,
     required this.stockSourceNames,
     required this.readOnly,
     required this.isMobile,
@@ -485,8 +473,7 @@ class _CategoryGridSection extends StatelessWidget {
 
   final String category;
   final List<_MenuGridRow> rows;
-  final List<String> variantGroups;
-  final List<String> variantLabels;
+  final List<String> itemNameOptions;
   final List<String> stockSourceNames;
   final bool readOnly;
   final bool isMobile;
@@ -689,21 +676,21 @@ class _CategoryGridSection extends StatelessWidget {
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
-                          _GridComboCell(
+                          _GridSelectCell(
                             controller: row.variantGroup,
-                            options: variantGroups,
+                            options: itemNameOptions,
                             readOnly: readOnly,
                             allowEmpty: true,
-                            hintText: 'Type or pick group',
+                            menuWidth: _headers[4].menuWidth,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
-                          _GridComboCell(
+                          _GridSelectCell(
                             controller: row.variantLabel,
-                            options: variantLabels,
+                            options: itemNameOptions,
                             readOnly: readOnly,
                             allowEmpty: true,
-                            hintText: 'Type or pick label',
+                            menuWidth: _headers[5].menuWidth,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),

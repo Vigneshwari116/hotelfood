@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foodstock/database/sqlite_app_db.dart';
+import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/sub_item_stock.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -38,6 +39,34 @@ void main() {
           'Masala Fries',
         ]),
         ['Chicken Popcorn', 'Masala Fries'],
+      );
+    });
+
+    test('resolveCanonicalStockHolderId pools duplicate paratha rows', () {
+      final stockParatha = RawMaterial(
+        id: 1,
+        name: 'Paratha',
+        subItem: 'Paratha',
+        categoryId: 10,
+      );
+      final comboParatha = RawMaterial(
+        id: 2,
+        name: 'Paratha',
+        subItem: 'Paratha',
+        categoryId: 20,
+      );
+      final byId = {
+        1: stockParatha,
+        2: comboParatha,
+      };
+
+      expect(
+        SubItemStock.resolveCanonicalStockHolderId(comboParatha, byId),
+        1,
+      );
+      expect(
+        SubItemStock.resolveCanonicalStockHolderId(stockParatha, byId),
+        1,
       );
     });
   });
