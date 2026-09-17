@@ -70,6 +70,38 @@ void main() {
       );
     });
 
+    test('keeps explicit POS variants visible even when name matches sub_item pool', () {
+      final holder = RawMaterial(
+        id: 1,
+        name: 'Thai Crispy',
+        subItem: 'Thai Crispy',
+        variantGroup: 'Thai Crispy',
+        listed: true,
+      );
+      final mini = RawMaterial(
+        id: 2,
+        name: 'Mini Bucket',
+        subItem: 'Thai Crispy',
+        variantGroup: 'Thai Crispy',
+        variantLabel: 'Mini Bucket',
+        stockSourceId: 1,
+        listed: true,
+      );
+      final big = RawMaterial(
+        id: 3,
+        name: 'Big Buckets',
+        subItem: 'Big Buckets',
+        variantGroup: 'Thai Crispy',
+        variantLabel: 'Big Buckets',
+        stockSourceId: 1,
+        listed: true,
+      );
+      final byId = {1: holder, 2: mini, 3: big};
+
+      expect(SubItemStock.isListedStockShadow(big, byId), isFalse);
+      expect(SubItemStock.isListedStockShadow(mini, byId), isFalse);
+    });
+
     test('does not group patty references on POS', () {
       final burger = RawMaterial(
         id: 1,
