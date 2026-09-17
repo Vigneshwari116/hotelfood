@@ -330,6 +330,19 @@ class SubItemStock {
   ) {
     final id = material.id;
     if (id == null || !material.listed) return false;
+
+    // POS sellable variants (Mini Bucket, Big Buckets, large, etc.) share stock
+    // with a holder row but must stay visible for the size/portion selector.
+    final variantGroup = material.variantGroup?.trim();
+    if (variantGroup != null && variantGroup.isNotEmpty) return false;
+
+    final variantLabel = material.variantLabel?.trim();
+    if (variantLabel != null &&
+        variantLabel.isNotEmpty &&
+        material.stockSourceId != null) {
+      return false;
+    }
+
     final holderId = resolveCanonicalStockHolderId(material, byId);
     if (holderId == id) return false;
     return isMergeableIngredientRow(material, comboComponentIds: const {});
