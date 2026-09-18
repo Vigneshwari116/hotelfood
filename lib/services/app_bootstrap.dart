@@ -3,6 +3,7 @@ import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/services/auth_session.dart';
 import 'package:foodstock/services/remote_capabilities.dart';
 import 'package:foodstock/services/repository.dart';
+import 'package:foodstock/services/trial_license.dart';
 
 /// Fast path before the first frame: restore saved session from device storage.
 class AppBootstrap {
@@ -25,7 +26,9 @@ class AppBootstrap {
   static Future<void> connectRemoteDatabase() async {
     await RemoteCapabilities.refresh();
     await DBHelper.instance.verifyRemoteConnection();
-    await Repository.instance.ensureDefaultUsers();
+    if (!TrialLicense.instance.expired) {
+      await Repository.instance.ensureDefaultUsers();
+    }
   }
 
   /// Heavier work that can run after login/shell is visible.
@@ -34,6 +37,9 @@ class AppBootstrap {
   /// via Menu Items -> Import CSV/Excel. Location stock row sync also runs
   /// here so large catalogs do not block the login screen.
   static Future<void> runDeferredInit() async {
+    if (TrialLicense.instance.expired) {
+      return;
+    }
     if (!ApiConfig.enabled) {
       await DBHelper.instance.database;
     }
