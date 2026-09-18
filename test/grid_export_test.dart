@@ -28,6 +28,8 @@ void main() {
         ''');
         await db.insert('categories', {'name': 'Burgers'});
         await db.insert('categories', {'name': 'Fried Items'});
+        await db.insert('categories', {'name': 'Snacks'});
+        await db.insert('categories', {'name': 'Rolls'});
         await db.execute('''
           CREATE TABLE location_stock (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -117,6 +119,21 @@ void main() {
           'qty_needed': 5,
           'created_at': now,
         });
+        await db.insert('raw_materials', {
+          'id': 3,
+          'name': 'Popcorn Small',
+          'sub_item': 'Popcorn Small',
+          'category_id': 3,
+          'selling_price': 49,
+          'created_at': now,
+        });
+        await db.insert('raw_materials', {
+          'id': 4,
+          'name': 'Kathi Roll Paratha',
+          'sub_item': 'Kathi Roll Paratha',
+          'category_id': 4,
+          'created_at': now,
+        });
       },
     );
 
@@ -137,16 +154,15 @@ void main() {
 
     final service = ItemImportService();
     final rows = await service.gridExportRowsForLocation(1);
-    expect(rows, hasLength(2));
+    expect(rows, hasLength(1));
+    expect(rows.map((row) => row[2]), isNot(contains('Hot Crispy Patty')));
+    expect(rows.map((row) => row[2]), isNot(contains('Burger Bun With Sesame')));
+    expect(rows.map((row) => row[2]), isNot(contains('Kathi Roll Paratha')));
 
-    final pattyRow = rows.firstWhere((row) => row[2] == 'Hot Crispy Patty');
-    expect(pattyRow[0], 'Burgers');
-    expect(pattyRow[11], '5');
-
-    final bunRow = rows.firstWhere((row) => row[2] == 'Burger Bun With Sesame');
-    expect(bunRow[7], '10');
-    expect(bunRow[9], '2');
-    expect(bunRow[10], '22');
+    final snackRow = rows.single;
+    expect(snackRow[0], 'Snacks');
+    expect(snackRow[2], 'Popcorn Small');
+    expect(snackRow[13], '49');
 
     final comboRows = await service.comboExportRows();
     expect(comboRows, hasLength(3));
