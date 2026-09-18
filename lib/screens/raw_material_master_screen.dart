@@ -196,7 +196,7 @@ class _RawMaterialMasterScreenState
     if (!kIsWeb &&
         (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
       path = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save menu and combos Excel',
+        dialogTitle: 'Save menu grid Excel',
         fileName: fileName,
         type: FileType.custom,
         allowedExtensions: const ['xlsx'],
@@ -215,7 +215,7 @@ class _RawMaterialMasterScreenState
       SnackBar(
         content: Text(
           ApiConfig.enabled
-              ? 'Menu grid and combos saved to shop-server backup file:\n$path'
+              ? 'Menu grid saved from shop server to:\n$path'
               : 'Menu file saved to $path',
         ),
       ),

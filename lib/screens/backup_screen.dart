@@ -41,7 +41,7 @@ class _BackupScreenState extends State<BackupScreen> {
 
     try {
       final bytes =
-          await ItemImportService().exportGridWorkbookForLocation(locationId);
+          await ItemImportService().exportBackupWorkbookForLocation(locationId);
       final fileName = '$locationName backup.xlsx';
       String? path;
       if (!kIsWeb &&
@@ -65,7 +65,7 @@ class _BackupScreenState extends State<BackupScreen> {
       setState(() {
         _lastMessage =
             'Excel backup saved from shop server to:\n$path\n\n'
-            'This file includes the menu grid and all saved combos.';
+            'This file has two sheets: "Menu Items" (grid) and "Combos" (grouped list).';
       });
     } catch (e) {
       if (!mounted) return;
@@ -173,8 +173,8 @@ class _BackupScreenState extends State<BackupScreen> {
           const SizedBox(height: 8),
           Text(
             ApiConfig.enabled
-                ? 'Shop data is stored on the VPS. Use Excel backup to save the menu grid '
-                  'and combos from the server. The folder backup below only works for local mode.'
+                ? 'Shop data is stored on the VPS. Use Excel backup to download the menu grid '
+                  'and combos as two separate sheets. The folder backup below only works for local mode.'
                 : 'Backup copies the shop database (items, stock, sales) into a folder you pick. '
                   'Restore puts that copy back. Excel import only updates the item list.',
             style: TextStyle(color: Colors.grey.shade700),

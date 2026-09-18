@@ -254,6 +254,16 @@ class ItemImportService {
     return exportGridWorkbookForLocation(locationId);
   }
 
+  /// Full shop backup: menu grid on one sheet, combos on another.
+  Future<Uint8List> exportBackupWorkbookForLocation(int locationId) async {
+    final menuRows = await _gridRowsForLocation(locationId);
+    final comboRows = await _comboRowsForExport();
+    return SpreadsheetExport.buildMultiSheetXlsx({
+      'Menu Items': (headers: gridExportHeaders, rows: menuRows),
+      'Combos': (headers: comboExportHeaders, rows: comboRows),
+    });
+  }
+
   /// Grid-aligned menu export (menu items only — combos have their own export).
   Future<Uint8List> exportGridWorkbookForLocation(int locationId) async {
     final menuRows = await _gridRowsForLocation(locationId);
