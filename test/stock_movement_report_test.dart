@@ -43,6 +43,7 @@ void main() {
               qty_needed REAL NOT NULL DEFAULT 1,
               category_id INTEGER,
               unit_id INTEGER,
+              stock_source_id INTEGER,
               opening_stock REAL NOT NULL DEFAULT 0,
               current_stock REAL NOT NULL DEFAULT 0,
               reorder_level REAL NOT NULL DEFAULT 0,

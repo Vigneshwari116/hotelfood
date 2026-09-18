@@ -60,7 +60,7 @@ void main() {
       expect(lines[2].label, '  star burger');
     });
 
-    test('combo item itemNameLabel prefers material item name', () {
+    test('combo item itemNameLabel prefers stock ingredient name', () {
       final component = ComboItem(
         comboId: 1,
         rawMaterialId: 2,
@@ -69,7 +69,7 @@ void main() {
         materialSubItem: 'Crispy Chicken Patty',
       );
 
-      expect(component.itemNameLabel, 'star burger');
+      expect(component.itemNameLabel, 'Crispy Chicken Patty');
       expect(component.staffLabel, 'Crispy Chicken Patty');
     });
   });

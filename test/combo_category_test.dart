@@ -74,8 +74,17 @@ void main() {
             )
           ''');
           await db.insert('raw_materials', {
+            'id': 1,
             'name': 'KRISPER Roll',
             'sub_item': 'Krisper Roll',
+            'listed': 1,
+            'created_at': now,
+          });
+          await db.insert('raw_materials', {
+            'id': 2,
+            'name': 'Paratha',
+            'sub_item': 'Paratha',
+            'listed': 0,
             'created_at': now,
           });
         },
@@ -100,7 +109,7 @@ void main() {
         [
           ComboRawMaterial(
             comboId: 0,
-            rawMaterialId: 1,
+            rawMaterialId: 2,
             qty: 1,
           ),
         ],
@@ -121,7 +130,7 @@ void main() {
         [
           ComboRawMaterial(
             comboId: 0,
-            rawMaterialId: 1,
+            rawMaterialId: 2,
             qty: 1,
           ),
         ],
@@ -142,7 +151,7 @@ void main() {
         [
           ComboRawMaterial(
             comboId: 0,
-            rawMaterialId: 1,
+            rawMaterialId: 2,
             qty: 1,
           ),
         ],
@@ -158,7 +167,7 @@ void main() {
         [
           ComboRawMaterial(
             comboId: comboId,
-            rawMaterialId: 1,
+            rawMaterialId: 2,
             qty: 1,
           ),
         ],

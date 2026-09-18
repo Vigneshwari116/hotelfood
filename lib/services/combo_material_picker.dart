@@ -22,7 +22,8 @@ List<RawMaterial> materialsForComboPicker(Iterable<RawMaterial> all) {
   int score(RawMaterial material) {
     var value = 0;
     if (!material.listed) value += 8;
-    if (material.currentStock != 0) value += 4;
+    if (isStockComponent(material)) value += 4;
+    if (material.currentStock != 0) value += 2;
     if (material.unitsPerPacket != null) value += 1;
     return value;
   }
@@ -50,5 +51,16 @@ List<RawMaterial> materialsForComboPicker(Iterable<RawMaterial> all) {
     winners[entry.key] = family.first;
   }
 
-  return SubItemStock.deduplicateToCanonicalStockHolders(winners.values);
+  final deduped = SubItemStock.deduplicateToCanonicalStockHolders(winners.values);
+  final uniqueById = <int, RawMaterial>{};
+  for (final material in deduped) {
+    final id = material.id;
+    if (id == null) continue;
+    uniqueById[id] = material;
+  }
+  return uniqueById.values.toList()
+    ..sort(
+      (a, b) =>
+          a.staffLabel.toLowerCase().compareTo(b.staffLabel.toLowerCase()),
+    );
 }
