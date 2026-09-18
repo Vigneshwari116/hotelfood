@@ -479,8 +479,15 @@ void main() {
         await seedLocationStock(database, 1);
         await seedLocationStock(database, 2);
 
+        final reportDay = DateTime.now();
+        final reportDate = DateTime(
+          reportDay.year,
+          reportDay.month,
+          reportDay.day,
+        );
+
         await Repository.instance.recordPurchase(
-          date: DateTime(2026, 9, 17),
+          date: reportDate,
           lines: [
             {'raw_material_id': 1, 'qty': 90, 'rate': 1},
           ],
@@ -514,11 +521,10 @@ void main() {
           paymentType: 'cash',
         );
 
-        final today = DateTime(2026, 9, 17);
         final currentRows = await Repository.instance.currentStockReport();
         final movementRows = await Repository.instance.stockMovementReport(
-          from: today,
-          to: today,
+          from: reportDate,
+          to: reportDate,
         );
 
         final currentChicken65 = currentRows.firstWhere(

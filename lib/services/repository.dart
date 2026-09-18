@@ -2212,6 +2212,7 @@ class Repository {
                               qtyIn: qty,
                               unitCost: rate,
                               balanceAfter: newBalance,
+                              entryDate: date,
                         );
                   }
 
@@ -2475,6 +2476,7 @@ class Repository {
                 required String refType,
                 int? refId,
                 bool? allowNegative,
+                DateTime? entryDate,
           }) async {
             final permitNegative =
                 allowNegative ?? refType == 'sale_deduction';
@@ -2592,6 +2594,7 @@ class Repository {
                       ? costedAmount / costedQty
                       : null,
                   balanceAfter: newBalance,
+                  entryDate: entryDate,
             );
 
             return newBalance;
@@ -2721,6 +2724,7 @@ class Repository {
             double? unitCost,
             required double balanceAfter,
             int? locationId,
+            DateTime? entryDate,
       }) async {
             final executor = txn ?? await _db;
 
@@ -2728,7 +2732,8 @@ class Repository {
                   'stock_ledger',
                   {
                         'raw_material_id': rawMaterialId,
-                        'entry_date': DateTime.now().toIso8601String(),
+                        'entry_date':
+                            (entryDate ?? DateTime.now()).toIso8601String(),
                         'ref_type': refType,
                         'ref_id': refId,
                         'qty_in': qtyIn,
@@ -3177,6 +3182,7 @@ class Repository {
         rm.id AS id,
         rm.name AS item_name,
         rm.sub_item AS sub_item,
+        rm.stock_source_id AS stock_source_id,
         c.name AS category,
         u.short_code AS unit,
         rm.cost_price AS cost_price,
@@ -3270,17 +3276,13 @@ class Repository {
                     id: (row['id'] as num?)?.toInt(),
                     name: row['item_name']?.toString() ?? '',
                     subItem: row['sub_item']?.toString(),
-                    stockSourceId: null,
+                    stockSourceId: (row['stock_source_id'] as num?)?.toInt(),
                   ),
                 )
                 .where((item) => item.id != null)
                 .toList();
 
             final linked = VariantHelpers.withSyncedLinks(materials);
-            final byId = {
-                  for (final item in linked)
-                        if (item.id != null) item.id!: item,
-            };
             final stockIdByMaterialId =
                 SubItemStock.buildCanonicalStockIdMap(linked);
             final rowByMaterialId = <int, Map<String, dynamic>>{
@@ -3891,6 +3893,8 @@ class Repository {
                         );
                   }
 
+                  final saleDate = DateTime.now();
+
                   final saleId = await txn.insert(
                         'sales',
                         {
@@ -3902,7 +3906,7 @@ class Repository {
                                   ? null
                                   : customerPhone?.trim(),
                               'sale_date':
-                              DateTime.now().toIso8601String(),
+                              saleDate.toIso8601String(),
                               'subtotal': subtotal,
                               'tax': tax,
                               'discount': discount,
@@ -3946,6 +3950,7 @@ class Repository {
                               refType: 'sale_deduction',
                               refId: saleId,
                               allowNegative: true,
+                              entryDate: saleDate,
                         );
                   }
 
