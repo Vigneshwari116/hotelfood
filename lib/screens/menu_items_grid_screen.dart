@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/combo_only_categories.dart';
+import 'package:foodstock/services/inventory_search.dart';
 import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/krusty_bites_stock.dart';
 import 'package:foodstock/services/menu_item_edit_helpers.dart';
@@ -752,6 +753,7 @@ class _CategoryGridSection extends StatelessWidget {
                             options: itemNameOptions,
                             readOnly: readOnly,
                             allowEmpty: true,
+                            searchable: true,
                             menuWidth: _headers[5].menuWidth,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
@@ -761,6 +763,7 @@ class _CategoryGridSection extends StatelessWidget {
                             options: itemNameOptions,
                             readOnly: readOnly,
                             allowEmpty: true,
+                            searchable: true,
                             menuWidth: _headers[6].menuWidth,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
@@ -776,6 +779,7 @@ class _CategoryGridSection extends StatelessWidget {
                                 .toList(),
                             readOnly: readOnly,
                             allowEmpty: true,
+                            searchable: true,
                             menuWidth: _headers[7].menuWidth,
                             onChanged: () {
                               row.refreshStockSourcePoolingDisplay();
@@ -997,7 +1001,7 @@ class _GridComboCell extends StatelessWidget {
   }
 }
 
-class _GridSelectCell extends StatelessWidget {
+class _GridSelectCell extends StatefulWidget {
   const _GridSelectCell({
     required this.controller,
     required this.options,
@@ -1005,6 +1009,7 @@ class _GridSelectCell extends StatelessWidget {
     required this.onChanged,
     required this.onCommit,
     this.allowEmpty = false,
+    this.searchable = false,
     this.menuWidth,
   });
 
@@ -1014,34 +1019,58 @@ class _GridSelectCell extends StatelessWidget {
   final VoidCallback onChanged;
   final VoidCallback onCommit;
   final bool allowEmpty;
+  final bool searchable;
   final double? menuWidth;
+
+  @override
+  State<_GridSelectCell> createState() => _GridSelectCellState();
+}
+
+class _GridSelectCellState extends State<_GridSelectCell> {
+  final _focus = FocusNode();
+  String _committedValue = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _committedValue = widget.controller.text.trim();
+    _focus.addListener(_handleFocusChange);
+  }
+
+  @override
+  void dispose() {
+    _focus.removeListener(_handleFocusChange);
+    _focus.dispose();
+    super.dispose();
+  }
+
+  void _handleFocusChange() {
+    if (_focus.hasFocus) return;
+    final current = widget.controller.text.trim();
+    final choices = _choices();
+    if (choices.contains(current)) {
+      _committedValue = current;
+      return;
+    }
+    widget.controller.text = _committedValue;
+  }
 
   String _labelFor(String value) => value.isEmpty ? '—' : value;
 
-  @override
-  Widget build(BuildContext context) {
-    if (readOnly) {
-      return _GridTextCell(
-        controller: controller,
-        readOnly: true,
-        onChanged: onChanged,
-        onCommit: onCommit,
-      );
-    }
-
-    final current = controller.text.trim();
-    final choices = <String>{
-      if (allowEmpty) '',
-      ...options,
+  List<String> _choices() {
+    return <String>{
+      if (widget.allowEmpty) '',
+      ...widget.options,
     }.toList()
       ..sort((a, b) {
         if (a.isEmpty) return -1;
         if (b.isEmpty) return 1;
         return a.toLowerCase().compareTo(b.toLowerCase());
       });
+  }
 
-    final selected = choices.contains(current) ? current : (allowEmpty ? '' : null);
-    final resolvedMenuWidth = menuWidth ??
+  double _resolvedMenuWidth(List<String> choices) {
+    return widget.menuWidth ??
         choices.fold<double>(
           180,
           (width, value) {
@@ -1050,11 +1079,136 @@ class _GridSelectCell extends StatelessWidget {
             return estimated > width ? estimated : width;
           },
         );
+  }
+
+  List<String> _filteredChoices(String query) {
+    final choices = _choices();
+    if (query.trim().isEmpty) return choices;
+    return choices.where((value) {
+      if (value.isEmpty) return widget.allowEmpty;
+      return matchesInventorySearchQuery(value.toLowerCase(), query);
+    }).toList();
+  }
+
+  void _select(String value) {
+    widget.controller.text = value;
+    _committedValue = value;
+    onChanged();
+    onCommit();
+    _focus.unfocus();
+  }
+
+  VoidCallback get onChanged => widget.onChanged;
+  VoidCallback get onCommit => widget.onCommit;
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.readOnly) {
+      return _GridTextCell(
+        controller: widget.controller,
+        readOnly: true,
+        onChanged: widget.onChanged,
+        onCommit: widget.onCommit,
+      );
+    }
+
+    if (!widget.searchable) {
+      return _buildDropdown(context);
+    }
+
+    final choices = _choices();
+    final menuWidth = _resolvedMenuWidth(choices);
+
+    return Padding(
+      padding: const EdgeInsets.all(2),
+      child: RawAutocomplete<String>(
+        textEditingController: widget.controller,
+        focusNode: _focus,
+        displayStringForOption: _labelFor,
+        optionsBuilder: (textEditingValue) {
+          return _filteredChoices(textEditingValue.text);
+        },
+        onSelected: _select,
+        fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+          return TextField(
+            controller: controller,
+            focusNode: focusNode,
+            style: Theme.of(context).textTheme.bodySmall,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            ),
+            onEditingComplete: () {
+              final matches = _filteredChoices(controller.text);
+              if (matches.length == 1) {
+                _select(matches.first);
+              } else {
+                onFieldSubmitted();
+              }
+            },
+            onSubmitted: (_) {
+              final matches = _filteredChoices(controller.text);
+              if (matches.length == 1) {
+                _select(matches.first);
+              }
+            },
+          );
+        },
+        optionsViewBuilder: (context, onSelected, options) {
+          return Align(
+            alignment: Alignment.topLeft,
+            child: Material(
+              elevation: 4,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: 220,
+                  maxWidth: menuWidth,
+                ),
+                child: options.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Text(
+                          'No matching items',
+                          style: TextStyle(color: Colors.black54, fontSize: 13),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: EdgeInsets.zero,
+                        shrinkWrap: true,
+                        itemCount: options.length,
+                        itemBuilder: (context, index) {
+                          final value = options.elementAt(index);
+                          return ListTile(
+                            dense: true,
+                            title: Text(
+                              _labelFor(value),
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                            onTap: () => onSelected(value),
+                          );
+                        },
+                      ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDropdown(BuildContext context) {
+    final current = widget.controller.text.trim();
+    final choices = _choices();
+    final selected =
+        choices.contains(current) ? current : (widget.allowEmpty ? '' : null);
+    final resolvedMenuWidth = _resolvedMenuWidth(choices);
 
     return Padding(
       padding: const EdgeInsets.all(2),
       child: DropdownButtonFormField<String>(
-        key: ValueKey('${controller.hashCode}-$current-${choices.length}'),
+        key: ValueKey('${widget.controller.hashCode}-$current-${choices.length}'),
         isExpanded: true,
         initialValue: selected,
         decoration: const InputDecoration(
@@ -1092,9 +1246,10 @@ class _GridSelectCell extends StatelessWidget {
             .toList(),
         onChanged: (value) {
           if (value == null) return;
-          controller.text = value;
-          onChanged();
-          onCommit();
+          widget.controller.text = value;
+          _committedValue = value;
+          widget.onChanged();
+          widget.onCommit();
         },
       ),
     );
