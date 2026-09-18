@@ -31,4 +31,50 @@ void main() {
     expect(materials.where((item) => item.name == 'Paratha'), hasLength(1));
     expect(materials.any((item) => item.name == 'Tea'), isFalse);
   });
+
+  test('materialsForComboPicker shows one row per duplicate stock ingredient', () {
+    final materials = materialsForComboPicker([
+      RawMaterial(
+        id: 10,
+        name: 'Thai Crispy',
+        subItem: 'Thai Crispy',
+        categoryId: 3,
+        listed: false,
+      ),
+      RawMaterial(
+        id: 11,
+        name: 'Thai Crispy',
+        subItem: 'Thai Crispy',
+        categoryId: 3,
+        listed: true,
+      ),
+      RawMaterial(
+        id: 12,
+        name: 'Thai Crispy',
+        subItem: 'Thai Crispy',
+        categoryId: 9,
+        listed: true,
+      ),
+      RawMaterial(
+        id: 20,
+        name: 'Crunchy Masala',
+        subItem: 'Crunchy Masala',
+        categoryId: 3,
+        listed: false,
+      ),
+      RawMaterial(
+        id: 21,
+        name: 'Crunchy Masala',
+        subItem: 'Crunchy Masala',
+        categoryId: 3,
+        listed: true,
+      ),
+    ]);
+
+    expect(materials, hasLength(2));
+    expect(
+      materials.map((item) => item.staffLabel).toSet(),
+      {'Thai Crispy', 'Crunchy Masala'},
+    );
+  });
 }
