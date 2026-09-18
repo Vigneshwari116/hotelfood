@@ -127,7 +127,7 @@ class DbStore {
         });
       }
 
-      Future<void> user(
+      Future<void> ensureUser(
         String username,
         String password,
         String role, {
@@ -139,40 +139,70 @@ class DbStore {
           whereArgs: [username],
           limit: 1,
         );
-        if (rows.isNotEmpty) return;
-        await db.insert('users', {
+        final values = {
           'username': username,
           'password_hash': sha256.convert(utf8.encode(password)).toString(),
           'role': role,
           'location_id': locationId,
-          'created_at': now,
-        });
+        };
+        if (rows.isEmpty) {
+          await db.insert('users', {
+            ...values,
+            'created_at': now,
+          });
+          return;
+        }
+        await db.update(
+          'users',
+          values,
+          where: 'username = ?',
+          whereArgs: [username],
+        );
       }
 
       final gtWorldMall = await ensureLocation('Gt world mall');
       final magadiRoad = await ensureLocation('Magadi road');
       final subbannaGarden = await ensureLocation('Subbanna garden');
+      const locationPassword = 'Shilpa@0902';
 
-      await user('admin', 'admin123', 'admin');
-      await user(
+      await ensureUser('admin', 'admin123', 'admin');
+      await ensureUser(
         'Gt mall five star',
-        'Shilpa@0902',
+        locationPassword,
+        'location',
+        locationId: gtWorldMall,
+      );
+      await ensureUser(
+        'Gt mall staff',
+        locationPassword,
         'staff',
         locationId: gtWorldMall,
       );
-      await user(
+      await ensureUser(
         'Magadi road five star',
-        'Shilpa@0902',
+        locationPassword,
+        'location',
+        locationId: magadiRoad,
+      );
+      await ensureUser(
+        'Magadi road staff',
+        locationPassword,
         'staff',
         locationId: magadiRoad,
       );
-      await user(
+      await ensureUser(
         'Subbanna garden five star',
-        'Shilpa@0902',
+        locationPassword,
+        'location',
+        locationId: subbannaGarden,
+      );
+      await ensureUser(
+        'Subbanna garden staff',
+        locationPassword,
         'staff',
         locationId: subbannaGarden,
       );
-      await user('staff', 'staff123', 'staff');
+      await ensureUser('staff', 'staff123', 'staff');
     });
   }
 

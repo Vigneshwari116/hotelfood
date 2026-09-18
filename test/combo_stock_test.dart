@@ -164,7 +164,7 @@ void main() {
     final rows = await db.rawQuery('''
       SELECT
         rm.name AS item_name,
-        SUM(crm.qty * si.qty * COALESCE(rm.qty_needed, 1)) AS consumed_qty
+        SUM(crm.qty * si.qty) AS consumed_qty
       FROM sale_items si
       JOIN sales s ON s.id = si.sale_id
       JOIN combo_raw_materials crm ON crm.combo_id = si.combo_id
@@ -183,4 +183,64 @@ void main() {
 
     await db.close();
   });
+
+  test(
+    'combo component usage ignores grid sold-per-customer multiplier',
+    () async {
+      final db = await openTestDb();
+      final now = DateTime.now().toIso8601String();
+
+      await db.insert('raw_materials', {
+        'name': 'Chicken 65',
+        'current_stock': 100,
+        'qty_needed': 8,
+        'created_at': now,
+      });
+      await db.insert('combos', {
+        'name': 'Tandoori Roll New',
+        'price': 105,
+        'created_at': now,
+      });
+      await db.insert('combo_raw_materials', {
+        'combo_id': 1,
+        'raw_material_id': 1,
+        'qty': 5,
+      });
+      await db.insert('sales', {
+        'sale_date': now,
+        'subtotal': 105,
+        'tax': 0,
+        'discount': 0,
+        'total': 105,
+        'payment_type': 'cash',
+      });
+      await db.insert('sale_items', {
+        'sale_id': 1,
+        'combo_id': 1,
+        'item_name': 'Tandoori Roll New',
+        'qty': 1,
+        'price': 105,
+        'amount': 105,
+      });
+
+      final rows = await db.rawQuery('''
+        SELECT
+          rm.name AS item_name,
+          SUM(crm.qty * si.qty) AS consumed_qty
+        FROM sale_items si
+        JOIN sales s ON s.id = si.sale_id
+        JOIN combo_raw_materials crm ON crm.combo_id = si.combo_id
+        JOIN raw_materials rm ON rm.id = crm.raw_material_id
+        WHERE s.is_voided = 0
+          AND si.combo_id IS NOT NULL
+        GROUP BY rm.id, rm.name
+      ''');
+
+      expect(rows.length, 1);
+      expect(rows.first['item_name'], 'Chicken 65');
+      expect((rows.first['consumed_qty'] as num).toDouble(), 5);
+
+      await db.close();
+    },
+  );
 }

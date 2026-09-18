@@ -114,7 +114,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 28,
+      version: 30,
 
       onConfigure: (db) async {
         await db.execute(
@@ -1580,6 +1580,16 @@ class DBHelper {
           'ALTER TABLE raw_materials ADD COLUMN menu_export_row TEXT',
         );
       }
+    }
+
+    if (oldVersion < 30) {
+      await runCatalogMaintenance(SqliteAppDb(db));
+    }
+
+    if (oldVersion < 29) {
+      await mergeGlobalStockDuplicateRows(SqliteAppDb(db));
+      await dedupeDuplicateRowsInCategory(SqliteAppDb(db));
+      await dedupeDuplicateItemNamesInCategory(SqliteAppDb(db));
     }
 
     if (oldVersion < 28) {

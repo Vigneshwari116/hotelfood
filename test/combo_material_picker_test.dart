@@ -3,20 +3,113 @@ import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/combo_material_picker.dart';
 
 void main() {
-  test('materialsForComboPicker dedupes listed rows by category and label', () {
+  test('materialsForComboPicker dedupes ingredient pools across categories', () {
     final materials = materialsForComboPicker([
       RawMaterial(id: 1, name: 'Hot Crispy Patty', categoryId: 2, listed: true),
       RawMaterial(id: 2, name: 'Hot Crispy Patty', categoryId: 2, listed: true),
-      RawMaterial(id: 3, name: 'Paratha', listed: false),
+      RawMaterial(
+        id: 3,
+        name: 'Paratha',
+        subItem: 'Paratha',
+        listed: false,
+      ),
+      RawMaterial(
+        id: 5,
+        name: 'Paratha',
+        subItem: 'Paratha',
+        categoryId: 9,
+        listed: true,
+      ),
       RawMaterial(id: 4, name: 'Tea', listed: true),
     ]);
 
-    expect(materials, hasLength(3));
+    expect(materials, hasLength(2));
     expect(
       materials.where((item) => item.name == 'Hot Crispy Patty'),
       hasLength(1),
     );
-    expect(materials.any((item) => item.name == 'Paratha'), isTrue);
-    expect(materials.any((item) => item.name == 'Tea'), isTrue);
+    expect(materials.where((item) => item.name == 'Paratha'), hasLength(1));
+    expect(materials.any((item) => item.name == 'Tea'), isFalse);
+  });
+
+  test('materialsForComboPicker shows one row per duplicate stock ingredient', () {
+    final materials = materialsForComboPicker([
+      RawMaterial(
+        id: 10,
+        name: 'Thai Crispy',
+        subItem: 'Thai Crispy',
+        categoryId: 3,
+        listed: false,
+      ),
+      RawMaterial(
+        id: 11,
+        name: 'Thai Crispy',
+        subItem: 'Thai Crispy',
+        categoryId: 3,
+        listed: true,
+      ),
+      RawMaterial(
+        id: 12,
+        name: 'Thai Crispy',
+        subItem: 'Thai Crispy',
+        categoryId: 9,
+        listed: true,
+      ),
+      RawMaterial(
+        id: 20,
+        name: 'Crunchy Masala',
+        subItem: 'Crunchy Masala',
+        categoryId: 3,
+        listed: false,
+      ),
+      RawMaterial(
+        id: 21,
+        name: 'Crunchy Masala',
+        subItem: 'Crunchy Masala',
+        categoryId: 3,
+        listed: true,
+      ),
+    ]);
+
+    expect(materials, hasLength(2));
+    expect(
+      materials.map((item) => item.staffLabel).toSet(),
+      {'Thai Crispy', 'Crunchy Masala'},
+    );
+  });
+
+  test('materialsForComboPicker returns canonical stock holder id per pool', () {
+    final materials = materialsForComboPicker([
+      RawMaterial(
+        id: 27,
+        name: 'Thai Crispy',
+        subItem: 'Thai Crispy',
+        listed: true,
+        currentStock: 240,
+      ),
+      RawMaterial(
+        id: 36,
+        name: 'Big Buckets',
+        subItem: 'Thai Crispy',
+        listed: false,
+        stockSourceId: 27,
+      ),
+      RawMaterial(
+        id: 13,
+        name: 'Crunchy Masala',
+        subItem: 'Crunchy Masala',
+        listed: true,
+        currentStock: 150,
+      ),
+      RawMaterial(
+        id: 62,
+        name: 'crunchy masal Mini  bucket',
+        subItem: 'Crunchy Masala',
+        listed: false,
+        stockSourceId: 13,
+      ),
+    ]);
+
+    expect(materials.map((item) => item.id).toSet(), {13, 27});
   });
 }

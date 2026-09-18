@@ -82,6 +82,70 @@ void main() {
       expect(result.singles.length, 2);
     });
 
+    test('groups listed items by stock_source_id even without variant_group', () {
+      final regular = RawMaterial(
+        id: 1,
+        name: 'Chicken Popcorn',
+        subItem: 'Chicken Popcorn',
+        categoryId: 3,
+        qtyNeeded: 1,
+        sellingPrice: 75,
+      );
+      final large = RawMaterial(
+        id: 2,
+        name: 'Chicken popcorn large',
+        subItem: 'Chicken Popcorn',
+        categoryId: 3,
+        stockSourceId: 1,
+        qtyNeeded: 1,
+        sellingPrice: 129,
+      );
+
+      final result = VariantHelpers.partitionForPos([regular, large]);
+
+      expect(result.singles, isEmpty);
+      expect(result.groups.length, 1);
+      expect(result.groups.first.variants.length, 2);
+      expect(result.groups.first.posTitle, 'Chicken Popcorn');
+    });
+
+    test('groups explicit variant_group even when sub_item differs across rows', () {
+      final pieces = RawMaterial(
+        id: 1,
+        name: 'Thai Crispy',
+        subItem: 'Thai Crispy',
+        variantGroup: 'Thai Crispy',
+        variantLabel: 'Regular',
+        sellingPrice: 80,
+      );
+      final mini = RawMaterial(
+        id: 2,
+        name: 'Mini Bucket',
+        subItem: 'Big Buckets',
+        variantGroup: 'Thai Crispy',
+        variantLabel: 'Mini Bucket',
+        stockSourceId: 1,
+        qtyNeeded: 5,
+        sellingPrice: 385,
+      );
+      final big = RawMaterial(
+        id: 3,
+        name: 'Big Buckets',
+        subItem: 'Big Buckets',
+        variantGroup: 'Thai Crispy',
+        variantLabel: 'Big Buckets',
+        stockSourceId: 1,
+        qtyNeeded: 10,
+        sellingPrice: 765,
+      );
+
+      final result = VariantHelpers.partitionForPos([pieces, mini, big]);
+
+      expect(result.singles, isEmpty);
+      expect(result.groups.length, 1);
+      expect(result.groups.first.variants.length, 3);
+    });
+
     test('keeps ungrouped items as singles', () {
       final item = RawMaterial(
         id: 3,
@@ -118,6 +182,42 @@ void main() {
   });
 
   group('VariantHelpers.syncVariantLinks', () {
+    test('preserves explicit variant_group when sub_item differs across rows', () {
+      final pieces = RawMaterial(
+        id: 1,
+        name: 'Thai Crispy',
+        subItem: 'Thai Crispy',
+        variantGroup: 'Thai Crispy',
+        variantLabel: 'Regular',
+        listed: true,
+      );
+      final mini = RawMaterial(
+        id: 2,
+        name: 'Mini Bucket',
+        subItem: 'Big Buckets',
+        variantGroup: 'Thai Crispy',
+        variantLabel: 'Mini Bucket',
+        stockSourceId: 1,
+        listed: true,
+      );
+      final big = RawMaterial(
+        id: 3,
+        name: 'Big Buckets',
+        subItem: 'Big Buckets',
+        variantGroup: 'Thai Crispy',
+        variantLabel: 'Big Buckets',
+        stockSourceId: 1,
+        listed: true,
+      );
+
+      final linked = VariantHelpers.withSyncedLinks([pieces, mini, big]);
+      final byId = {for (final item in linked) if (item.id != null) item.id!: item};
+
+      expect(byId[1]?.variantGroup, 'Thai Crispy');
+      expect(byId[2]?.variantGroup, 'Thai Crispy');
+      expect(byId[3]?.variantGroup, 'Thai Crispy');
+    });
+
     test('links bucket variants to the base item by shared sub_item', () {
       final pieces = RawMaterial(
         id: 1,

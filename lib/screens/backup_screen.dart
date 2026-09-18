@@ -1,8 +1,13 @@
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter/material.dart';
+import 'dart:io';
 
-import '../database/api_config.dart';
-import '../services/backup_service.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
+import '../services/item_import_service.dart';
+import '../services/repository.dart';
 import '../widgets/responsive_shell.dart';
 
 class BackupScreen extends StatefulWidget {
@@ -16,74 +21,14 @@ class _BackupScreenState extends State<BackupScreen> {
   bool _busy = false;
   String? _lastMessage;
 
-  Future<void> _backup() async {
-    if (ApiConfig.enabled) {
+  Future<void> _downloadExcelBackup() async {
+    final locationId = Repository.instance.sessionLocationId;
+    final locationName = Repository.instance.sessionLocationName;
+    if (locationId == null || locationName == null) {
       setState(() {
         _lastMessage =
-            'Shop data is on the VPS. Ask the owner to back up shilpa_enterprise '
-            'with DBeaver or pg_dump. This screen only backs up a local copy.';
+            'Log in with a location account to download menu and combo Excel backup.';
       });
-      return;
-    }
-    final folder = await FilePicker.platform.getDirectoryPath(
-      dialogTitle: 'Choose folder to save backup',
-    );
-    if (folder == null) return;
-
-    setState(() {
-      _busy = true;
-      _lastMessage = null;
-    });
-    try {
-      final path = await BackupService.instance.backupToFolder(folder);
-      if (!mounted) return;
-      setState(() => _lastMessage = 'Backup saved to:\n$path');
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _lastMessage = 'Backup failed: $e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _restore() async {
-    if (ApiConfig.enabled) {
-      setState(() {
-        _lastMessage =
-            'This app uses the shop server. A local restopos.db file cannot replace VPS data.';
-      });
-      return;
-    }
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Restore backup?'),
-        content: const Text(
-          'This replaces the current items, stock, and sales with the backup. '
-          'It cannot be undone. Close and reopen the app after restore.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Restore'),
-          ),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
-
-    final picked = await FilePicker.platform.pickFiles(
-      dialogTitle: 'Choose restopos.db from a backup folder',
-      type: FileType.custom,
-      allowedExtensions: const ['db'],
-    );
-    if (picked == null ||
-        picked.files.isEmpty ||
-        picked.files.first.path == null) {
       return;
     }
 
@@ -91,16 +36,38 @@ class _BackupScreenState extends State<BackupScreen> {
       _busy = true;
       _lastMessage = null;
     });
+
     try {
-      await BackupService.instance.restoreFromPath(picked.files.first.path!);
+      final bytes =
+          await ItemImportService().exportBackupWorkbookForLocation(locationId);
+      final fileName = '$locationName backup.xlsx';
+      String? path;
+      if (!kIsWeb &&
+          (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+        path = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save shop Excel backup',
+          fileName: fileName,
+          type: FileType.custom,
+          allowedExtensions: const ['xlsx'],
+        );
+      }
+      path ??= p.join(
+        (await getApplicationDocumentsDirectory()).path,
+        fileName,
+      );
+      if (!path.toLowerCase().endsWith('.xlsx')) {
+        path = '$path.xlsx';
+      }
+      await File(path).writeAsBytes(bytes);
       if (!mounted) return;
       setState(() {
         _lastMessage =
-            'Restore finished. Close this app and open it again to load the backup.';
+            'Excel backup saved to:\n$path\n\n'
+            'This file has two sheets: "Menu Items" (grid) and "Combos" (grouped list).';
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() => _lastMessage = 'Restore failed: $e');
+      setState(() => _lastMessage = 'Excel backup failed: $e');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -112,26 +79,20 @@ class _BackupScreenState extends State<BackupScreen> {
       child: ListView(
         children: [
           const Text(
-            'Backup & Restore',
+            'Backup',
             style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Text(
-            'Backup copies the shop database (items, stock, sales) into a folder you pick. '
-            'Restore puts that copy back. Excel import only updates the item list.',
+            'Download a copy of the menu grid and combos as an Excel workbook '
+            'with two sheets: Menu Items and Combos.',
             style: TextStyle(color: Colors.grey.shade700),
           ),
           const SizedBox(height: 24),
           FilledButton.icon(
-            onPressed: _busy ? null : _backup,
-            icon: const Icon(Icons.folder_copy_outlined),
-            label: const Text('Backup — choose folder'),
-          ),
-          const SizedBox(height: 12),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : _restore,
-            icon: const Icon(Icons.restore),
-            label: const Text('Restore — choose restopos.db'),
+            onPressed: _busy ? null : _downloadExcelBackup,
+            icon: const Icon(Icons.download_outlined),
+            label: const Text('Download Excel backup (menu + combos)'),
           ),
           if (_busy) ...[
             const SizedBox(height: 24),

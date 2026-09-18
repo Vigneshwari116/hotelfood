@@ -170,7 +170,9 @@ class _PurchaseScreenState extends State<PurchaseScreen> {
       await Repository.instance.suppliers();
 
       final materials =
-      await Repository.instance.rawMaterialsForDisplay();
+      await Repository.instance.rawMaterialsForDisplay(
+        includeHidden: true,
+      );
 
       final units = await Repository.instance.units();
 

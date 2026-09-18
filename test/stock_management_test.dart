@@ -306,6 +306,248 @@ void main() {
       await tearDownStockTestSession(database);
     });
 
+    test('combo sale deducts paratha from canonical stock holder across categories',
+        () async {
+      final database = await openStockTestDatabase();
+      bindStockTestSession(database);
+
+      final now = DateTime.now().toIso8601String();
+      await database.insert('categories', {'name': 'Fried Items'});
+      await database.insert('categories', {'name': 'Uncategorized'});
+
+      await database.insert('raw_materials', {
+        'name': 'Paratha',
+        'sub_item': 'Paratha',
+        'category_id': 1,
+        'qty_needed': 1,
+        'current_stock': 0,
+        'opening_stock': 0,
+        'listed': 0,
+        'created_at': now,
+      });
+      await database.insert('raw_materials', {
+        'name': 'Paratha',
+        'sub_item': 'Paratha',
+        'category_id': 2,
+        'qty_needed': 1,
+        'current_stock': 0,
+        'opening_stock': 0,
+        'listed': 0,
+        'created_at': now,
+      });
+      await database.insert('raw_materials', {
+        'name': 'Veg roll',
+        'sub_item': 'veg finger',
+        'category_id': 2,
+        'qty_needed': 1,
+        'current_stock': 0,
+        'opening_stock': 0,
+        'listed': 1,
+        'created_at': now,
+      });
+
+      await seedLocationStock(database, 1, stock: 12);
+      await seedLocationStock(database, 2, stock: 0);
+
+      await database.insert('combos', {
+        'name': 'Veg roll',
+        'price': 0,
+        'selling_price': 0,
+        'is_active': 1,
+        'created_at': now,
+      });
+      await database.insert('combo_raw_materials', {
+        'combo_id': 1,
+        'raw_material_id': 2,
+        'qty': 1,
+      });
+
+      await Repository.instance.recordSale(
+        lines: [
+          CartLine(
+            comboId: 1,
+            name: 'Veg roll',
+            componentLabels: const ['Paratha'],
+            qty: 1,
+            price: 0,
+          ),
+        ],
+        tax: 0,
+        discount: 0,
+        paymentType: 'cash',
+      );
+
+      expect(await locationStock(database, 1), 11);
+      expect(await locationStock(database, 2), 0);
+
+      await tearDownStockTestSession(database);
+    });
+
+    test(
+      'combo sale deducts recipe qty only and ignores grid sold-per-customer multiplier',
+      () async {
+        final database = await openStockTestDatabase();
+        bindStockTestSession(database);
+
+        final now = DateTime.now().toIso8601String();
+        await database.insert('raw_materials', {
+          'name': 'Chicken 65',
+          'sub_item': 'chicken 65',
+          'qty_needed': 8,
+          'selling_price': 95,
+          'current_stock': 0,
+          'opening_stock': 0,
+          'created_at': now,
+        });
+        await database.insert('raw_materials', {
+          'name': 'Paratha',
+          'sub_item': 'Paratha',
+          'qty_needed': 1,
+          'current_stock': 0,
+          'opening_stock': 0,
+          'created_at': now,
+        });
+        await seedLocationStock(database, 1, stock: 100);
+        await seedLocationStock(database, 2, stock: 20);
+
+        await database.insert('combos', {
+          'name': 'Tandoori Roll New',
+          'price': 105,
+          'selling_price': 105,
+          'is_active': 1,
+          'created_at': now,
+        });
+        await database.insert('combo_raw_materials', {
+          'combo_id': 1,
+          'raw_material_id': 1,
+          'qty': 5,
+        });
+        await database.insert('combo_raw_materials', {
+          'combo_id': 1,
+          'raw_material_id': 2,
+          'qty': 1,
+        });
+
+        await Repository.instance.recordSale(
+          lines: [
+            CartLine(
+              comboId: 1,
+              name: 'Tandoori Roll New',
+              componentLabels: const ['Chicken 65', 'Paratha'],
+              qty: 1,
+              price: 105,
+            ),
+          ],
+          tax: 0,
+          discount: 0,
+          paymentType: 'cash',
+        );
+
+        expect(await locationStock(database, 1), 95);
+        expect(await locationStock(database, 2), 19);
+
+        await tearDownStockTestSession(database);
+      },
+    );
+
+    test(
+      'current stock matches stock summary closing for pooled items after combo sale',
+      () async {
+        final database = await openStockTestDatabase();
+        bindStockTestSession(database);
+
+        final now = DateTime.now().toIso8601String();
+        await database.insert('raw_materials', {
+          'name': 'Chicken 65',
+          'sub_item': 'chicken 65',
+          'qty_needed': 8,
+          'selling_price': 95,
+          'current_stock': 0,
+          'opening_stock': 0,
+          'created_at': now,
+        });
+        await database.insert('raw_materials', {
+          'name': 'Tandoori roll',
+          'sub_item': 'chicken 65',
+          'stock_source_id': 1,
+          'qty_needed': 1,
+          'selling_price': 85,
+          'current_stock': 0,
+          'opening_stock': 0,
+          'created_at': now,
+        });
+        await seedLocationStock(database, 1);
+        await seedLocationStock(database, 2);
+
+        final reportDay = DateTime.now();
+        final reportDate = DateTime(
+          reportDay.year,
+          reportDay.month,
+          reportDay.day,
+        );
+
+        await Repository.instance.recordPurchase(
+          date: reportDate,
+          lines: [
+            {'raw_material_id': 1, 'qty': 90, 'rate': 1},
+          ],
+        );
+
+        await database.insert('combos', {
+          'name': 'Tandoori Roll New',
+          'price': 105,
+          'selling_price': 105,
+          'is_active': 1,
+          'created_at': now,
+        });
+        await database.insert('combo_raw_materials', {
+          'combo_id': 1,
+          'raw_material_id': 1,
+          'qty': 5,
+        });
+
+        await Repository.instance.recordSale(
+          lines: [
+            CartLine(
+              comboId: 1,
+              name: 'Tandoori Roll New',
+              componentLabels: const ['Chicken 65'],
+              qty: 1,
+              price: 105,
+            ),
+          ],
+          tax: 0,
+          discount: 0,
+          paymentType: 'cash',
+        );
+
+        final currentRows = await Repository.instance.currentStockReport();
+        final movementRows = await Repository.instance.stockMovementReport(
+          from: reportDate,
+          to: reportDate,
+        );
+
+        final currentChicken65 = currentRows.firstWhere(
+          (row) =>
+              (row['sub_item']?.toString().toLowerCase() ?? '') == 'chicken 65',
+        );
+        final movementChicken65 = movementRows.firstWhere(
+          (row) =>
+              (row['sub_item']?.toString().toLowerCase() ?? '') == 'chicken 65',
+        );
+
+        final currentStock =
+            (currentChicken65['current_stock'] as num).toDouble();
+        final closingStock =
+            (movementChicken65['closing_qty'] as num).toDouble();
+
+        expect(currentStock, closingStock);
+        expect(currentStock, 85);
+
+        await tearDownStockTestSession(database);
+      },
+    );
+
     // Test 6: Stock Summary closing formula with pooled rows.
     test('stock summary closing equals opening plus purchase minus sales', () async {
       final database = await openStockTestDatabase();
@@ -519,6 +761,68 @@ void main() {
         isTrue,
       );
     });
+  });
+
+  test('resetting opening stock updates stock summary opening and closing', () async {
+    final database = await openStockTestDatabase();
+    bindStockTestSession(database);
+
+    final now = DateTime.now().toIso8601String();
+    await database.insert('raw_materials', {
+      'name': 'Breader',
+      'sub_item': 'Breader',
+      'qty_needed': 1,
+      'unit_id': 2,
+      'cost_price': 48,
+      'current_stock': 5,
+      'opening_stock': 5,
+      'created_at': now,
+    });
+    await seedLocationStock(database, 1, stock: 5);
+    await database.insert('stock_ledger', {
+      'raw_material_id': 1,
+      'entry_date': '2026-09-01T08:00:00.000',
+      'ref_type': 'opening',
+      'qty_in': 5,
+      'qty_out': 0,
+      'unit_cost': 48,
+      'balance_after': 5,
+      'location_id': 1,
+    });
+
+    await Repository.instance.saveRawMaterial(
+      RawMaterial(
+        id: 1,
+        name: 'Breader',
+        subItem: 'Breader',
+        qtyNeeded: 1,
+        unitId: 2,
+        openingStock: 0,
+        currentStock: 0,
+        costPrice: 48,
+      ),
+    );
+
+    expect(await locationStock(database, 1), 0);
+
+    final locationStockRows = await database.query(
+      'location_stock',
+      where: 'location_id = ? AND raw_material_id = ?',
+      whereArgs: [1, 1],
+    );
+    expect((locationStockRows.first['opening_stock'] as num).toDouble(), 0);
+
+    final today = DateTime.now();
+    final rows = await Repository.instance.stockMovementReport(
+      from: DateTime(today.year, today.month, today.day),
+      to: DateTime(today.year, today.month, today.day),
+    );
+    final breader = rows.firstWhere((row) => row['item_name'] == 'Breader');
+    expect((breader['opening_qty'] as num).toDouble(), 0);
+    expect((breader['closing_qty'] as num).toDouble(), 0);
+    expect((breader['adjustment_qty'] as num).toDouble(), 0);
+
+    await tearDownStockTestSession(database);
   });
 
   group('Variant stock pooling', () {

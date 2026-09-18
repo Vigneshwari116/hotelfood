@@ -117,6 +117,7 @@ class VariantHelpers {
       categoryId: item.categoryId,
       unitId: item.unitId,
       openingStock: item.openingStock,
+      openingPieces: item.openingPieces,
       currentStock: currentStock,
       reorderLevel: item.reorderLevel,
       shelfLifeDays: item.shelfLifeDays,
@@ -171,8 +172,40 @@ class VariantHelpers {
       if (material.id == null) continue;
       final groupKey = material.variantGroup?.trim();
       if (groupKey == null || groupKey.isEmpty) continue;
-      byGroup.putIfAbsent(groupKey, () => []).add(material);
+      byGroup.putIfAbsent(groupKey.toLowerCase(), () => []).add(material);
       assigned.add(material.id!);
+    }
+
+    final byStockHolder = <int, List<RawMaterial>>{};
+    for (final material in linked) {
+      if (material.id == null || assigned.contains(material.id)) continue;
+      final sourceId = material.stockSourceId;
+      if (sourceId == null) continue;
+      byStockHolder.putIfAbsent(sourceId, () => []).add(material);
+    }
+    for (final material in linked) {
+      if (material.id == null || assigned.contains(material.id)) continue;
+      final variants = byStockHolder[material.id!];
+      if (variants == null || variants.isEmpty) continue;
+      if (!variants.any((item) => item.id == material.id)) {
+        variants.insert(0, material);
+      }
+    }
+    for (final entry in byStockHolder.entries) {
+      final variants = List<RawMaterial>.from(entry.value);
+      if (variants.length < 2) continue;
+      if (variants.any(
+        (item) => SubItemStock.isComponentReference(item, null),
+      )) {
+        continue;
+      }
+      if (variants.map((item) => item.categoryId).toSet().length != 1) {
+        continue;
+      }
+      for (final variant in variants) {
+        if (variant.id != null) assigned.add(variant.id!);
+      }
+      byGroup.putIfAbsent('stock:${entry.key}', () => variants);
     }
 
     final bySubItem = <String, List<RawMaterial>>{};
@@ -212,8 +245,23 @@ class VariantHelpers {
       final isComponentFamily = variants.any(
         (item) => SubItemStock.isComponentReference(item, null),
       );
+      final explicitVariantGroup = variants.length >= 2 &&
+          variants.every((item) {
+            final group = item.variantGroup?.trim();
+            return group != null && group.isNotEmpty;
+          }) &&
+          variants
+                  .map((item) => item.variantGroup!.trim().toLowerCase())
+                  .toSet()
+                  .length ==
+              1;
+      final stockSourceLinkedFamily = variants.length >= 2 &&
+          variants.any((item) => item.stockSourceId != null) &&
+          variants.map((item) => item.categoryId).toSet().length == 1;
       final canGroup = !isComponentFamily &&
-          (SubItemStock.shouldGroupOnPos(variants) ||
+          (explicitVariantGroup ||
+              stockSourceLinkedFamily ||
+              SubItemStock.shouldGroupOnPos(variants) ||
               shouldAutoLinkFamily(variants));
       if (variants.length < 2 || !canGroup) {
         singles.addAll(variants);
@@ -431,9 +479,74 @@ class VariantHelpers {
       );
     }
 
+    // Menu grid / import variant_group assignments take precedence over
+    // sub_item inference so Thai Crispy + Mini Bucket + Big Buckets stay together.
+    final explicitPosGroups = <String, List<RawMaterial>>{};
+    for (final item in items) {
+      if (!item.listed) continue;
+      final group = item.variantGroup?.trim();
+      if (group == null || group.isEmpty) continue;
+      explicitPosGroups.putIfAbsent(group.toLowerCase(), () => []).add(item);
+    }
+
+    final explicitGroupedIds = <int>{};
+    for (final entry in explicitPosGroups.entries) {
+      final family = entry.value;
+      if (family.length < 2) continue;
+      if (family.any(
+        (item) => SubItemStock.isComponentReference(
+          item,
+          categories[item.categoryId],
+        ),
+      )) {
+        continue;
+      }
+
+      final source = family.firstWhere(
+        (item) => item.stockSourceId == null,
+        orElse: () {
+          final stockKey = SubItemStock.stockKey(family.first) ?? '';
+          return SubItemStock.canonicalHolder(
+                family,
+                stockKey: stockKey,
+              ) ??
+              family.first;
+        },
+      );
+      if (source.id == null) continue;
+
+      final groupName = source.variantGroup?.trim().isNotEmpty == true
+          ? source.variantGroup!.trim()
+          : (source.subItem?.trim().isNotEmpty == true
+              ? source.subItem!.trim()
+              : source.name.trim());
+
+      for (final item in family) {
+        if (item.id == null) continue;
+        explicitGroupedIds.add(item.id!);
+        final isSource = item.id == source.id;
+        final sizeLabel = item.variantLabel?.trim();
+        final derivedLabel = looksLikeSizeVariant(item) && !isSource
+            ? _sizeLabel(item)
+            : null;
+        planned[item.id!] = _copyWithLinks(
+          planned[item.id!] ?? item,
+          variantGroup: groupName,
+          variantLabel: isSource
+              ? (sizeLabel ?? 'Regular')
+              : (sizeLabel ?? derivedLabel ?? item.name),
+          stockSourceId: isSource
+              ? null
+              : (planned[item.id!]?.stockSourceId ?? source.id),
+          clearStockSource: isSource,
+        );
+      }
+    }
+
     final posGroups = <String, List<RawMaterial>>{};
     for (final item in planned.values) {
       if (!item.listed) continue;
+      if (item.id != null && explicitGroupedIds.contains(item.id)) continue;
       final key = SubItemStock.posGroupKey(item);
       posGroups.putIfAbsent(key, () => []).add(item);
     }
@@ -542,6 +655,7 @@ class VariantHelpers {
         if (item.id != null) groupedIds.add(item.id!);
       }
     }
+    groupedIds.addAll(explicitGroupedIds);
 
     for (final item in items) {
       if (item.id == null) continue;

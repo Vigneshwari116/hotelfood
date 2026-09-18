@@ -7,18 +7,20 @@ import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/services/app_bootstrap.dart';
 import 'package:foodstock/services/auth_session.dart';
 import 'package:foodstock/services/shop_server_connection.dart';
+import 'package:foodstock/services/trial_license.dart';
 import 'services/repository.dart';
 
 import 'widgets/brand_logo.dart';
 import 'widgets/responsive_shell.dart';
+import 'widgets/trial_banner.dart';
 import 'theme/brand_theme.dart';
 
 import 'screens/dashboard_screen.dart';
 import 'screens/simple_masters_screen.dart';
 import 'screens/raw_material_master_screen.dart';
 import 'screens/purchase_screen.dart';
-import 'screens/inventory_screen.dart';
 import 'screens/pos_screen.dart';
+import 'package:foodstock/services/user_roles.dart';
 import 'screens/reports_screen.dart';
 import 'screens/printer_settings_screen.dart';
 import 'screens/backup_screen.dart';
@@ -88,13 +90,23 @@ class _StartupGateState extends State<_StartupGate> {
   Future<void> _connectServer() async {
     await ShopServerConnection.instance.connect();
     if (!mounted) return;
-    if (ShopServerConnection.instance.ready) {
+
+    if (TrialLicense.instance.expired && _session != null) {
+      await AuthSession.clear();
+      Repository.instance.bindSession(role: 'staff');
+      setState(() {
+        _session = null;
+        _deferredInitStarted = false;
+      });
+    }
+
+    if (ShopServerConnection.instance.ready && !TrialLicense.instance.expired) {
       _startDeferredInit();
     }
   }
 
   void _startDeferredInit() {
-    if (_deferredInitStarted) return;
+    if (_deferredInitStarted || TrialLicense.instance.expired) return;
     _deferredInitStarted = true;
     unawaited(AppBootstrap.runDeferredInit());
   }
@@ -116,10 +128,12 @@ class _StartupGateState extends State<_StartupGate> {
         final session = _session;
 
         final child = session != null
-            ? MainShell(
-                username: session.username,
-                role: session.role,
-                locationName: session.locationName,
+            ? TrialBanner(
+                child: MainShell(
+                  username: session.username,
+                  role: session.role,
+                  locationName: session.locationName,
+                ),
               )
             : const LoginScreen();
 
@@ -260,6 +274,13 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    if (TrialLicense.instance.expired) {
+      setState(() {
+        _error = TrialLicense.expiredMessage;
+      });
+      return;
+    }
+
     setState(() {
       _loading = true;
       _error = null;
@@ -317,10 +338,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => MainShell(
-            username: username,
-            role: role,
-            locationName: locationName,
+          builder: (_) => TrialBanner(
+            child: MainShell(
+              username: username,
+              role: role,
+              locationName: locationName,
+            ),
           ),
         ),
       );
@@ -336,23 +359,42 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: 380,
-            ),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const BrandLogo(height: 168),
+    return ListenableBuilder(
+      listenable: TrialLicense.instance,
+      builder: (context, _) {
+        final trialExpired =
+            TrialLicense.instance.isActiveOnServer &&
+                TrialLicense.instance.expired;
 
-                    const SizedBox(height: 28),
+        return Scaffold(
+          body: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 380,
+                ),
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const BrandLogo(height: 168),
+
+                        if (trialExpired) ...[
+                          const SizedBox(height: 20),
+                          Text(
+                            TrialLicense.expiredMessage,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.red.shade700,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+
+                        const SizedBox(height: 28),
 
                     // USERNAME
                     TextField(
@@ -394,34 +436,37 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 22),
 
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: FilledButton(
-                        onPressed: _loading ? null : _login,
-                        child: _loading
-                            ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
-                        )
-                            : const Text(
-                          'Login',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
+                        SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: FilledButton(
+                            onPressed:
+                                _loading || trialExpired ? null : _login,
+                            child: _loading
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Login',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                           ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
@@ -449,10 +494,12 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _shellGeneration = 0;
 
-  bool get _isAdmin => widget.role.toLowerCase() == 'admin';
+  bool get _isAdmin => UserRoles.isAdmin(widget.role);
 
-  bool get _hasFullAppAccess =>
-      _isAdmin || Repository.instance.hasFullAppAccess;
+  bool get _isLocationStaff =>
+      UserRoles.isLocationStaff(widget.role, locationId: Repository.instance.sessionLocationId);
+
+  bool get _hasFullAppAccess => Repository.instance.hasFullAppAccess;
 
   @override
   void initState() {
@@ -484,64 +531,73 @@ class _MainShellState extends State<MainShell> {
       page: const PosScreen(),
     );
 
-    final items = _hasFullAppAccess
-        ? <NavEntry>[
+    final dashboardItem = NavItem(
+      icon: Icons.dashboard_outlined,
+      label: 'Dashboard',
+      page: DashboardScreen(isAdmin: _isAdmin),
+    );
+    final purchaseItem = NavItem(
+      icon: Icons.shopping_cart_outlined,
+      label: 'Purchase',
+      page: const PurchaseScreen(),
+    );
+    final reportsItem = NavItem(
+      icon: Icons.bar_chart_outlined,
+      label: 'Reports',
+      page: const ReportsScreen(),
+    );
+
+    final List<NavEntry> items;
+    if (_isLocationStaff) {
+      items = [
+        dashboardItem,
+        salesItem,
+        purchaseItem,
+        reportsItem,
+      ];
+    } else if (_hasFullAppAccess) {
+      items = [
+        dashboardItem,
+        salesItem,
+        purchaseItem,
+        NavItem(
+          icon: Icons.warehouse_outlined,
+          label: 'Menu Items',
+          page: const RawMaterialMasterScreen(),
+        ),
+        NavItem(
+          icon: Icons.category_outlined,
+          label: 'Masters',
+          page: const SimpleMastersScreen(),
+        ),
+        reportsItem,
+        NavItem(
+          icon: Icons.print_outlined,
+          label: 'Printers',
+          page: const PrinterSettingsScreen(),
+        ),
+        NavGroup(
+          icon: Icons.settings_outlined,
+          label: 'Settings',
+          children: [
             NavItem(
-              icon: Icons.dashboard_outlined,
-              label: 'Dashboard',
-              page: DashboardScreen(isAdmin: _isAdmin),
-            ),
-            salesItem,
-            NavItem(
-              icon: Icons.inventory_2_outlined,
-              label: 'Inventory',
-              page: const InventoryScreen(),
+              icon: Icons.backup_outlined,
+              label: 'Backup',
+              page: const BackupScreen(),
             ),
             NavItem(
-              icon: Icons.shopping_cart_outlined,
-              label: 'Purchase',
-              page: const PurchaseScreen(),
+              icon: Icons.restart_alt,
+              label: 'Reset',
+              page: ResetScreen(
+                onSessionReset: _handleSessionReset,
+              ),
             ),
-            NavItem(
-              icon: Icons.warehouse_outlined,
-              label: 'Menu Items',
-              page: const RawMaterialMasterScreen(),
-            ),
-            NavItem(
-              icon: Icons.category_outlined,
-              label: 'Masters',
-              page: const SimpleMastersScreen(),
-            ),
-            NavItem(
-              icon: Icons.bar_chart_outlined,
-              label: 'Reports',
-              page: const ReportsScreen(),
-            ),
-            NavItem(
-              icon: Icons.print_outlined,
-              label: 'Printers',
-              page: const PrinterSettingsScreen(),
-            ),
-            NavGroup(
-              icon: Icons.settings_outlined,
-              label: 'Settings',
-              children: [
-                NavItem(
-                  icon: Icons.backup_outlined,
-                  label: 'Backup',
-                  page: const BackupScreen(),
-                ),
-                NavItem(
-                  icon: Icons.restart_alt,
-                  label: 'Reset',
-                  page: ResetScreen(
-                    onSessionReset: _handleSessionReset,
-                  ),
-                ),
-              ],
-            ),
-          ]
-        : <NavEntry>[salesItem];
+          ],
+        ),
+      ];
+    } else {
+      items = [salesItem];
+    }
 
     return ResponsiveShell(
       key: ValueKey(_shellGeneration),

@@ -1,8 +1,17 @@
-import 'package:flutter/material.dart';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/material.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
+import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/combo_only_categories.dart';
+import 'package:foodstock/services/inventory_search.dart';
 import 'package:foodstock/services/item_import_service.dart';
+import 'package:foodstock/services/krusty_bites_stock.dart';
 import 'package:foodstock/services/menu_item_edit_helpers.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/widgets/responsive_shell.dart';
@@ -207,21 +216,11 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
       ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
   }
 
-  List<String> get _existingVariantGroups => _distinctFieldValues(
-        (row) => row.variantGroup.text.isNotEmpty
-            ? row.variantGroup.text
-            : (row.item.variantGroup ?? ''),
-      );
-
-  List<String> get _existingVariantLabels => _distinctFieldValues(
-        (row) => row.variantLabel.text.isNotEmpty
-            ? row.variantLabel.text
-            : (row.item.variantLabel ?? ''),
-      );
-
-  List<String> get _existingStockSourceNames => _distinctFieldValues(
+  List<String> get _allItemNames => _distinctFieldValues(
         (row) => row.itemName.text,
       );
+
+  List<String> get _existingStockSourceNames => _allItemNames;
 
   Future<void> _addItemInCategory(String categoryName) async {
     if (_readOnly) return;
@@ -308,6 +307,49 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
     }
   }
 
+  Future<void> _downloadExcel() async {
+    final locationId = Repository.instance.sessionLocationId;
+    final locationName = Repository.instance.sessionLocationName;
+    if (locationId == null || locationName == null) {
+      _showMessage(
+        'Excel download is only available for location accounts.',
+        isError: true,
+      );
+      return;
+    }
+
+    try {
+      final bytes =
+          await ItemImportService().exportGridWorkbookForLocation(locationId);
+      final fileName = '$locationName.xlsx';
+      String? path;
+      if (!kIsWeb &&
+          (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+        path = await FilePicker.platform.saveFile(
+          dialogTitle: 'Save menu grid and combos Excel',
+          fileName: fileName,
+          type: FileType.custom,
+          allowedExtensions: const ['xlsx'],
+        );
+      }
+      path ??= p.join(
+        (await getApplicationDocumentsDirectory()).path,
+        fileName,
+      );
+      if (!path.toLowerCase().endsWith('.xlsx')) {
+        path = '$path.xlsx';
+      }
+      await File(path).writeAsBytes(bytes);
+      _showMessage(
+        ApiConfig.enabled
+            ? 'Menu grid saved to $path (shop server data).'
+            : 'Menu grid saved to $path',
+      );
+    } catch (e) {
+      _showMessage('Download failed: $e', isError: true);
+    }
+  }
+
   void _showMessage(String text, {bool isError = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -371,6 +413,11 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
           title: const Text('Menu Items Grid'),
           actions: [
             IconButton(
+              tooltip: 'Download menu grid as Excel',
+              onPressed: _loading ? null : _downloadExcel,
+              icon: const Icon(Icons.download_outlined),
+            ),
+            IconButton(
               tooltip: 'Refresh',
               onPressed: _loading ? null : () => _load(),
               icon: const Icon(Icons.refresh),
@@ -422,7 +469,8 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                       'opening pieces; total stock = (opening packets × pieces per packet) '
                       '+ opening pieces (auto, in pieces). '
                       'Pieces sold per customer = qty per POS order. '
-                      'Variant Group / Label: type a new name or pick from the list.',
+                      'Variant Group / Label: type a new name or pick from the list. '
+                      'Stock source: pick an existing menu item to share its stock.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: Theme.of(context).colorScheme.primary,
                           ),
@@ -444,8 +492,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                                 return _CategoryGridSection(
                                   category: category,
                                   rows: rows,
-                                  variantGroups: _existingVariantGroups,
-                                  variantLabels: _existingVariantLabels,
+                                  itemNameOptions: _allItemNames,
                                   stockSourceNames: _existingStockSourceNames,
                                   readOnly: _readOnly,
                                   isMobile: isMobile,
@@ -470,8 +517,7 @@ class _CategoryGridSection extends StatelessWidget {
   const _CategoryGridSection({
     required this.category,
     required this.rows,
-    required this.variantGroups,
-    required this.variantLabels,
+    required this.itemNameOptions,
     required this.stockSourceNames,
     required this.readOnly,
     required this.isMobile,
@@ -485,8 +531,7 @@ class _CategoryGridSection extends StatelessWidget {
 
   final String category;
   final List<_MenuGridRow> rows;
-  final List<String> variantGroups;
-  final List<String> variantLabels;
+  final List<String> itemNameOptions;
   final List<String> stockSourceNames;
   final bool readOnly;
   final bool isMobile;
@@ -500,6 +545,7 @@ class _CategoryGridSection extends StatelessWidget {
   int get _dirtyInSection => rows.where((row) => row.isDirty).length;
 
   static const _headers = [
+    _GridColumnSpec('#', width: 36, tooltip: 'Row number'),
     _GridColumnSpec('', width: 36, tooltip: 'Delete row'),
     _GridColumnSpec('Barcode', width: 72),
     _GridColumnSpec('Item name', width: 152, wrapText: true),
@@ -640,14 +686,28 @@ class _CategoryGridSection extends StatelessWidget {
                           )
                           .toList(),
                     ),
-                    ...rows.map(
-                      (row) => TableRow(
+                    ...rows.asMap().entries.map(
+                      (entry) {
+                        final rowNumber = entry.key + 1;
+                        final row = entry.value;
+                        return TableRow(
                         decoration: row.isDirty
                             ? BoxDecoration(
                                 color: Colors.amber.shade50,
                               )
                             : null,
                         children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 8,
+                            ),
+                            child: Text(
+                              '$rowNumber',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
                           Padding(
                             padding: const EdgeInsets.all(2),
                             child: IconButton(
@@ -689,21 +749,25 @@ class _CategoryGridSection extends StatelessWidget {
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
-                          _GridComboCell(
+                          _GridSelectCell(
                             controller: row.variantGroup,
-                            options: variantGroups,
+                            options: itemNameOptions,
                             readOnly: readOnly,
                             allowEmpty: true,
-                            hintText: 'Type or pick group',
+                            searchable: true,
+                            allowCustomValue: true,
+                            menuWidth: _headers[5].menuWidth,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
-                          _GridComboCell(
+                          _GridSelectCell(
                             controller: row.variantLabel,
-                            options: variantLabels,
+                            options: itemNameOptions,
                             readOnly: readOnly,
                             allowEmpty: true,
-                            hintText: 'Type or pick label',
+                            searchable: true,
+                            allowCustomValue: true,
+                            menuWidth: _headers[6].menuWidth,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
@@ -718,8 +782,12 @@ class _CategoryGridSection extends StatelessWidget {
                                 .toList(),
                             readOnly: readOnly,
                             allowEmpty: true,
-                            menuWidth: _headers[6].menuWidth,
-                            onChanged: onFieldChanged,
+                            searchable: true,
+                            menuWidth: _headers[7].menuWidth,
+                            onChanged: () {
+                              row.refreshStockSourcePoolingDisplay();
+                              onFieldChanged();
+                            },
                             onCommit: () => onFieldCommitted(row),
                           ),
                           _GridTextCell(
@@ -736,7 +804,7 @@ class _CategoryGridSection extends StatelessWidget {
                           ),
                           _GridTextCell(
                             controller: row.packets,
-                            readOnly: readOnly,
+                            readOnly: readOnly || row.stockFieldsReadOnly,
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
                             ),
@@ -748,7 +816,7 @@ class _CategoryGridSection extends StatelessWidget {
                           ),
                           _GridTextCell(
                             controller: row.openingPieces,
-                            readOnly: readOnly,
+                            readOnly: readOnly || row.stockFieldsReadOnly,
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
                             ),
@@ -792,7 +860,8 @@ class _CategoryGridSection extends StatelessWidget {
                             onCommit: () => onFieldCommitted(row),
                           ),
                         ],
-                      ),
+                      );
+                      },
                     ),
                   ],
                 ),
@@ -935,7 +1004,7 @@ class _GridComboCell extends StatelessWidget {
   }
 }
 
-class _GridSelectCell extends StatelessWidget {
+class _GridSelectCell extends StatefulWidget {
   const _GridSelectCell({
     required this.controller,
     required this.options,
@@ -943,6 +1012,8 @@ class _GridSelectCell extends StatelessWidget {
     required this.onChanged,
     required this.onCommit,
     this.allowEmpty = false,
+    this.searchable = false,
+    this.allowCustomValue = false,
     this.menuWidth,
   });
 
@@ -952,34 +1023,31 @@ class _GridSelectCell extends StatelessWidget {
   final VoidCallback onChanged;
   final VoidCallback onCommit;
   final bool allowEmpty;
+  final bool searchable;
+  final bool allowCustomValue;
   final double? menuWidth;
 
+  @override
+  State<_GridSelectCell> createState() => _GridSelectCellState();
+}
+
+class _GridSelectCellState extends State<_GridSelectCell> {
   String _labelFor(String value) => value.isEmpty ? '—' : value;
 
-  @override
-  Widget build(BuildContext context) {
-    if (readOnly) {
-      return _GridTextCell(
-        controller: controller,
-        readOnly: true,
-        onChanged: onChanged,
-        onCommit: onCommit,
-      );
-    }
-
-    final current = controller.text.trim();
-    final choices = <String>{
-      if (allowEmpty) '',
-      ...options,
+  List<String> _choices() {
+    return <String>{
+      if (widget.allowEmpty) '',
+      ...widget.options,
     }.toList()
       ..sort((a, b) {
         if (a.isEmpty) return -1;
         if (b.isEmpty) return 1;
         return a.toLowerCase().compareTo(b.toLowerCase());
       });
+  }
 
-    final selected = choices.contains(current) ? current : (allowEmpty ? '' : null);
-    final resolvedMenuWidth = menuWidth ??
+  double _resolvedMenuWidth(List<String> choices) {
+    return widget.menuWidth ??
         choices.fold<double>(
           180,
           (width, value) {
@@ -988,11 +1056,127 @@ class _GridSelectCell extends StatelessWidget {
             return estimated > width ? estimated : width;
           },
         );
+  }
+
+  List<String> _filteredChoices(String query) {
+    final choices = _choices();
+    if (query.trim().isEmpty) return choices;
+    return choices.where((value) {
+      if (value.isEmpty) return widget.allowEmpty;
+      return matchesInventorySearchQuery(value.toLowerCase(), query);
+    }).toList();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.readOnly) {
+      return _GridTextCell(
+        controller: widget.controller,
+        readOnly: true,
+        onChanged: widget.onChanged,
+        onCommit: widget.onCommit,
+      );
+    }
+
+    if (widget.allowCustomValue) {
+      return _GridSuggestTextCell(
+        controller: widget.controller,
+        options: widget.options,
+        allowEmpty: widget.allowEmpty,
+        menuWidth: widget.menuWidth,
+        onChanged: widget.onChanged,
+        onCommit: widget.onCommit,
+      );
+    }
+
+    if (!widget.searchable) {
+      return _buildDropdown(context);
+    }
+
+    final choices = _choices();
+    final menuWidth = _resolvedMenuWidth(choices);
+
+    return Padding(
+      padding: const EdgeInsets.all(2),
+      child: RawAutocomplete<String>(
+        textEditingController: widget.controller,
+        displayStringForOption: _labelFor,
+        optionsBuilder: (textEditingValue) {
+          return _filteredChoices(textEditingValue.text);
+        },
+        onSelected: (value) {
+          widget.controller.text = value;
+          widget.onChanged();
+          widget.onCommit();
+        },
+        fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
+          return TextField(
+            controller: controller,
+            focusNode: focusNode,
+            style: Theme.of(context).textTheme.bodySmall,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              isDense: true,
+              border: OutlineInputBorder(),
+              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            ),
+            onEditingComplete: widget.onCommit,
+            onSubmitted: (_) => widget.onCommit(),
+          );
+        },
+        optionsViewBuilder: (context, onSelected, options) {
+          return Align(
+            alignment: Alignment.topLeft,
+            child: Material(
+              elevation: 4,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxHeight: 220,
+                  maxWidth: menuWidth,
+                ),
+                child: options.isEmpty
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: Text(
+                          'No matching items',
+                          style: TextStyle(color: Colors.black54, fontSize: 13),
+                        ),
+                      )
+                    : ListView.builder(
+                        padding: EdgeInsets.zero,
+                        shrinkWrap: true,
+                        itemCount: options.length,
+                        itemBuilder: (context, index) {
+                          final value = options.elementAt(index);
+                          return ListTile(
+                            dense: true,
+                            title: Text(
+                              _labelFor(value),
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                            onTap: () => onSelected(value),
+                          );
+                        },
+                      ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildDropdown(BuildContext context) {
+    final current = widget.controller.text.trim();
+    final choices = _choices();
+    final selected =
+        choices.contains(current) ? current : (widget.allowEmpty ? '' : null);
+    final resolvedMenuWidth = _resolvedMenuWidth(choices);
 
     return Padding(
       padding: const EdgeInsets.all(2),
       child: DropdownButtonFormField<String>(
-        key: ValueKey('${controller.hashCode}-$current-${choices.length}'),
+        key: ValueKey('${widget.controller.hashCode}-$current-${choices.length}'),
         isExpanded: true,
         initialValue: selected,
         decoration: const InputDecoration(
@@ -1030,10 +1214,203 @@ class _GridSelectCell extends StatelessWidget {
             .toList(),
         onChanged: (value) {
           if (value == null) return;
-          controller.text = value;
-          onChanged();
-          onCommit();
+          widget.controller.text = value;
+          widget.onChanged();
+          widget.onCommit();
         },
+      ),
+    );
+  }
+}
+
+/// Free-text grid cell with optional filtered suggestions (keeps any typed value).
+class _GridSuggestTextCell extends StatefulWidget {
+  const _GridSuggestTextCell({
+    required this.controller,
+    required this.options,
+    required this.onChanged,
+    required this.onCommit,
+    this.allowEmpty = false,
+    this.menuWidth,
+  });
+
+  final TextEditingController controller;
+  final List<String> options;
+  final VoidCallback onChanged;
+  final VoidCallback onCommit;
+  final bool allowEmpty;
+  final double? menuWidth;
+
+  @override
+  State<_GridSuggestTextCell> createState() => _GridSuggestTextCellState();
+}
+
+class _GridSuggestTextCellState extends State<_GridSuggestTextCell> {
+  static const _tapGroup = 'grid-suggest-text';
+
+  final _focus = FocusNode();
+  final _fieldKey = GlobalKey();
+  final _link = LayerLink();
+  final _portal = OverlayPortalController();
+  double _fieldWidth = 220;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_handleTextChanged);
+    _focus.addListener(_handleFocusChange);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_handleTextChanged);
+    _focus.removeListener(_handleFocusChange);
+    _focus.dispose();
+    super.dispose();
+  }
+
+  List<String> get _matches {
+    final query = widget.controller.text;
+    if (query.trim().isEmpty) {
+      return widget.options.take(12).toList();
+    }
+    return widget.options
+        .where(
+          (value) => matchesInventorySearchQuery(value.toLowerCase(), query),
+        )
+        .take(12)
+        .toList();
+  }
+
+  void _handleTextChanged() {
+    widget.onChanged();
+    if (mounted) setState(() {});
+    if (_focus.hasFocus && !_portal.isShowing) {
+      _openSuggestions();
+    }
+  }
+
+  void _handleFocusChange() {
+    if (_focus.hasFocus) {
+      _openSuggestions();
+      return;
+    }
+    _portal.hide();
+    widget.onCommit();
+  }
+
+  void _openSuggestions() {
+    final box = _fieldKey.currentContext?.findRenderObject() as RenderBox?;
+    _fieldWidth = box?.size.width ?? widget.menuWidth ?? 220;
+    if (!_portal.isShowing) {
+      _portal.show();
+    } else if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _pick(String value) {
+    widget.controller.text = value;
+    widget.onChanged();
+    widget.onCommit();
+    _portal.hide();
+    _focus.unfocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final matches = _matches;
+
+    return Padding(
+      padding: const EdgeInsets.all(2),
+      child: TapRegion(
+        groupId: _tapGroup,
+        onTapOutside: (_) {
+          _portal.hide();
+          _focus.unfocus();
+        },
+        child: OverlayPortal(
+          controller: _portal,
+          overlayChildBuilder: (context) {
+            return CompositedTransformFollower(
+              link: _link,
+              showWhenUnlinked: false,
+              targetAnchor: Alignment.bottomLeft,
+              followerAnchor: Alignment.topLeft,
+              offset: const Offset(0, 4),
+              child: Align(
+                alignment: Alignment.topLeft,
+                widthFactor: 1,
+                heightFactor: 1,
+                child: TapRegion(
+                  groupId: _tapGroup,
+                  child: Material(
+                    elevation: 4,
+                    borderRadius: BorderRadius.circular(4),
+                    child: SizedBox(
+                      width: _fieldWidth,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 220),
+                        child: matches.isEmpty
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: Text(
+                                  'Press Enter to keep typed name',
+                                  style: TextStyle(
+                                    color: Colors.black54,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                padding: EdgeInsets.zero,
+                                shrinkWrap: true,
+                                itemCount: matches.length,
+                                itemBuilder: (context, index) {
+                                  final value = matches[index];
+                                  return ListTile(
+                                    dense: true,
+                                    title: Text(
+                                      value,
+                                      style:
+                                          Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                    onTap: () => _pick(value),
+                                  );
+                                },
+                              ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+          child: CompositedTransformTarget(
+            link: _link,
+            child: TextField(
+              key: _fieldKey,
+              controller: widget.controller,
+              focusNode: _focus,
+              style: Theme.of(context).textTheme.bodySmall,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              ),
+              onTap: _openSuggestions,
+              onEditingComplete: () {
+                widget.onCommit();
+                _focus.unfocus();
+              },
+              onSubmitted: (_) {
+                widget.onCommit();
+                _focus.unfocus();
+              },
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1100,22 +1477,7 @@ class _MenuGridRow {
           ? ''
           : MenuItemEditHelpers.formatNumber(item.unitsPerPacket!),
     );
-    stock = TextEditingController(
-      text: MenuItemEditHelpers.formatNumber(item.currentStock),
-    );
-    packets = TextEditingController(
-      text: MenuItemEditHelpers.packetsTextFromStock(
-            item.currentStock,
-            item.unitsPerPacket,
-            openingPieces: item.openingPieces,
-          ) ??
-          '',
-    );
-    openingPieces = TextEditingController(
-      text: item.openingPieces == 0
-          ? ''
-          : MenuItemEditHelpers.formatNumber(item.openingPieces),
-    );
+    _initStockFields(item);
     costPrice = TextEditingController(
       text: item.costPrice == null
           ? ''
@@ -1151,6 +1513,59 @@ class _MenuGridRow {
 
   late String _snapshot;
 
+  bool get stockFieldsReadOnly =>
+      KrustyBitesStock.usesStockSourcePool(
+        item,
+        stockSourceName: stockSourceName.text,
+      );
+
+  RawMaterial _displayItemForStock(RawMaterial source) {
+    return stockFieldsReadOnly
+        ? KrustyBitesStock.withZeroOwnStock(source)
+        : source;
+  }
+
+  void _initStockFields(RawMaterial source) {
+    final displayItem = _displayItemForStock(source);
+    stock = TextEditingController(
+      text: MenuItemEditHelpers.formatNumber(displayItem.currentStock),
+    );
+    packets = TextEditingController(
+      text: MenuItemEditHelpers.packetsTextFromStock(
+            displayItem.currentStock,
+            displayItem.unitsPerPacket,
+            openingPieces: displayItem.openingPieces,
+          ) ??
+          '',
+    );
+    openingPieces = TextEditingController(
+      text: displayItem.openingPieces == 0
+          ? ''
+          : MenuItemEditHelpers.formatNumber(displayItem.openingPieces),
+    );
+  }
+
+  void _syncStockDisplayFromItem(RawMaterial source) {
+    final displayItem = _displayItemForStock(source);
+    stock.text = MenuItemEditHelpers.formatNumber(displayItem.currentStock);
+    packets.text = MenuItemEditHelpers.packetsTextFromStock(
+          displayItem.currentStock,
+          displayItem.unitsPerPacket,
+          openingPieces: displayItem.openingPieces,
+        ) ??
+        '';
+    openingPieces.text = displayItem.openingPieces == 0
+        ? ''
+        : MenuItemEditHelpers.formatNumber(displayItem.openingPieces);
+  }
+
+  void refreshStockSourcePoolingDisplay() {
+    if (!stockFieldsReadOnly) return;
+    stock.text = '0';
+    packets.text = '0';
+    openingPieces.text = '';
+  }
+
   static void linkStockSourceNames(
     List<_MenuGridRow> rows,
     List<RawMaterial> items,
@@ -1166,6 +1581,7 @@ class _MenuGridRow {
         continue;
       }
       row.stockSourceName.text = nameById[sourceId] ?? '';
+      row._syncStockDisplayFromItem(row.item);
     }
   }
 
@@ -1191,6 +1607,10 @@ class _MenuGridRow {
   bool get isDirty => _snapshot != _captureSnapshot();
 
   void recalculateStockFromPackets() {
+    if (stockFieldsReadOnly) {
+      refreshStockSourcePoolingDisplay();
+      return;
+    }
     final recalculated = MenuItemEditHelpers.stockFromPacketsAndUnitsPerPacket(
       packetsText: packets.text,
       unitsPerPacketText: unitsPerPacket.text,
@@ -1216,7 +1636,7 @@ class _MenuGridRow {
       }
     }
 
-    return MenuItemEditHelpers.buildForSave(
+    final built = MenuItemEditHelpers.buildForSave(
       existing: item,
       barcodeText: barcode.text,
       itemName: itemName.text,
@@ -1233,6 +1653,13 @@ class _MenuGridRow {
       variantLabelText: variantLabel.text,
       stockSourceId: sourceName.isEmpty ? null : stockSourceId,
     );
+    if (KrustyBitesStock.usesStockSourcePool(
+      built,
+      stockSourceName: stockSourceName.text,
+    )) {
+      return KrustyBitesStock.withZeroOwnStock(built);
+    }
+    return built;
   }
 
   void commitSaved(RawMaterial saved, List<_MenuGridRow> allRows) {
@@ -1246,16 +1673,8 @@ class _MenuGridRow {
     unitsPerPacket.text = saved.unitsPerPacket == null
         ? ''
         : MenuItemEditHelpers.formatNumber(saved.unitsPerPacket!);
-    stock.text = MenuItemEditHelpers.formatNumber(saved.currentStock);
-    packets.text = MenuItemEditHelpers.packetsTextFromStock(
-          saved.currentStock,
-          saved.unitsPerPacket,
-          openingPieces: saved.openingPieces,
-        ) ??
-        '';
-    openingPieces.text = saved.openingPieces == 0
-        ? ''
-        : MenuItemEditHelpers.formatNumber(saved.openingPieces);
+    item = saved;
+    _syncStockDisplayFromItem(saved);
     costPrice.text = saved.costPrice == null
         ? ''
         : MenuItemEditHelpers.formatNumber(saved.costPrice!);

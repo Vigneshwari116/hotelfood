@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:foodstock/model/models.dart';
 import '../services/combo_material_picker.dart';
 import '../services/combo_only_categories.dart';
+import '../database/api_config.dart';
 import '../services/item_import_service.dart';
 import '../services/repository.dart';
 import '../services/sub_item_stock.dart';
@@ -168,7 +169,7 @@ class _RawMaterialMasterScreenState
       final haystack = [
         combo.name,
         combo.barcode ?? '',
-        ...combo.items.map((item) => item.materialName ?? ''),
+        ...combo.items.map((item) => item.itemNameLabel),
       ].join(' ').toLowerCase();
       return haystack.contains(query);
     }).toList();
@@ -196,7 +197,7 @@ class _RawMaterialMasterScreenState
     if (!kIsWeb &&
         (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
       path = await FilePicker.platform.saveFile(
-        dialogTitle: 'Save menu Excel',
+        dialogTitle: 'Save menu grid Excel',
         fileName: fileName,
         type: FileType.custom,
         allowedExtensions: const ['xlsx'],
@@ -212,7 +213,53 @@ class _RawMaterialMasterScreenState
     await File(path).writeAsBytes(bytes);
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Menu file saved to $path')),
+      SnackBar(
+        content: Text(
+          ApiConfig.enabled
+              ? 'Menu grid saved from shop server to:\n$path'
+              : 'Menu file saved to $path',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _exportCombosExcel() async {
+    final locationName = Repository.instance.sessionLocationName;
+    if (locationName == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Combo export is only available for location accounts.'),
+        ),
+      );
+      return;
+    }
+
+    final service = ItemImportService();
+    final bytes = await service.exportCombosXlsx();
+    final fileName = '$locationName combos.xlsx';
+
+    String? path;
+    if (!kIsWeb &&
+        (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save combos Excel',
+        fileName: fileName,
+        type: FileType.custom,
+        allowedExtensions: const ['xlsx'],
+      );
+    }
+    path ??= p.join(
+      (await getApplicationDocumentsDirectory()).path,
+      fileName,
+    );
+    if (!path.toLowerCase().endsWith('.xlsx')) {
+      path = '$path.xlsx';
+    }
+    await File(path).writeAsBytes(bytes);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Combos saved to $path')),
     );
   }
 
@@ -384,13 +431,13 @@ class _RawMaterialMasterScreenState
 
   Future<void> _openMenuItemsGrid() async {
     if (!mounted) return;
-    final refreshed = await Navigator.of(context).push<bool>(
+    await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => const MenuItemsGridScreen(),
       ),
     );
 
-    if (refreshed == true && mounted) {
+    if (mounted) {
       await _loadAll();
     }
   }
@@ -510,7 +557,12 @@ class _RawMaterialMasterScreenState
     final allItems = await Repository.instance.rawMaterials(
       includeHidden: true,
     );
+    // One picker row per stock ingredient (e.g. one Thai Crispy, not per category copy).
     final pickerItems = materialsForComboPicker(allItems);
+    final allMaterialsById = {
+      for (final item in allItems)
+        if (item.id != null) item.id!: item,
+    };
 
     final saved = await showDialog<bool>(
       context: context,
@@ -519,6 +571,7 @@ class _RawMaterialMasterScreenState
           existing: existing,
           categories: _categories,
           rawMaterials: pickerItems,
+          allMaterialsById: allMaterialsById,
           unitName: _unitName,
           onPickImage: () {
             return _pickAndSaveImage(
@@ -708,7 +761,7 @@ class _RawMaterialMasterScreenState
                 if (!_readOnly) ...[
                   const SizedBox(width: 8),
                   IconButton(
-                    tooltip: 'Download current menu as Excel',
+                    tooltip: 'Download menu grid as Excel',
                     onPressed: _saveImportTemplate,
                     icon: const Icon(Icons.download_outlined),
                   ),
@@ -1161,46 +1214,45 @@ class _RawMaterialMasterScreenState
         Row(
           children: [
             Expanded(
-              child: Text(
-                'Combos',
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(
-                  fontWeight:
-                  FontWeight.bold,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Combos',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    ApiConfig.enabled
+                        ? 'Create combos from menu items. Click Save Combo in the editor — it saves to the shop server.'
+                        : 'Create combos from menu items.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
               ),
             ),
-
             if (!_readOnly)
-              FilledButton.icon(
-                onPressed: () {
-                  _openComboEditor();
-                },
-                icon: const Icon(
-                  Icons.add,
-                ),
-                label: Text(
-                  isMobile
-                      ? 'Add'
-                      : 'Add Combo',
-                ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'Download combos as Excel',
+                    onPressed: _exportCombosExcel,
+                    icon: const Icon(Icons.download_outlined),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: () {
+                      _openComboEditor();
+                    },
+                    icon: const Icon(Icons.add),
+                    label: Text(isMobile ? 'Add' : 'Add Combo'),
+                  ),
+                ],
               ),
           ],
-        ),
-
-        const SizedBox(height: 8),
-
-        Align(
-          alignment:
-          Alignment.centerLeft,
-          child: Text(
-            'Create combos from menu items.',
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall,
-          ),
         ),
 
         const SizedBox(height: 16),
@@ -1348,16 +1400,8 @@ class _RawMaterialMasterScreenState
                         combo.items
                             .map(
                               (comboItem) {
-                            final material =
-                            _findRawMaterial(
-                              comboItem
-                                  .rawMaterialId,
-                            );
-
                             final name =
-                                material
-                                    ?.name ??
-                                    'Unknown';
+                                comboItem.itemNameLabel;
 
                             return Chip(
                               avatar:
@@ -1821,11 +1865,10 @@ class _RawMaterialEditorDialogState
         unitId:
         _unitId,
         openingStock:
-        widget.existing?.openingStock ??
-            (double.tryParse(
-                  _openingController.text.trim(),
-                ) ??
-                0),
+        double.tryParse(
+          _openingController.text.trim(),
+        ) ??
+            0,
         currentStock:
         double.tryParse(
           _openingController.text.trim(),
@@ -1880,6 +1923,11 @@ class _RawMaterialEditorDialogState
         imagePath:
         _imagePath,
         listed: _visibleInSales,
+        createdAt: widget.existing?.createdAt,
+        menuSortOrder: widget.existing?.menuSortOrder,
+        variantGroup: widget.existing?.variantGroup,
+        variantLabel: widget.existing?.variantLabel,
+        stockSourceId: widget.existing?.stockSourceId,
       );
 
       await Repository.instance
@@ -2249,6 +2297,7 @@ class ComboEditorDialog
   final Combo? existing;
   final List<Category> categories;
   final List<RawMaterial> rawMaterials;
+  final Map<int, RawMaterial> allMaterialsById;
   final String Function(int?) unitName;
   final Future<String?> Function()
   onPickImage;
@@ -2258,6 +2307,7 @@ class ComboEditorDialog
     this.existing,
     required this.categories,
     required this.rawMaterials,
+    required this.allMaterialsById,
     required this.unitName,
     required this.onPickImage,
   });
@@ -2459,8 +2509,8 @@ class _ComboEditorDialogState
     }
 
     for (final line in _lines) {
-      if (line.rawMaterialId ==
-          null) {
+      final materialId = line.rawMaterialId;
+      if (materialId == null) {
         ScaffoldMessenger.of(context)
             .showSnackBar(
           const SnackBar(
@@ -2518,6 +2568,16 @@ class _ComboEditorDialogState
         comboRawMaterials,
       );
       if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            ApiConfig.enabled
+                ? 'Combo saved to shop server.'
+                : 'Combo saved.',
+          ),
+        ),
+      );
 
       Navigator.pop(
         context,
@@ -2860,11 +2920,18 @@ class _ComboEditorDialogState
       return 'Uncategorized';
     }
 
-    final sortedMaterials = List<RawMaterial>.from(widget.rawMaterials)
-      ..sort(
-        (a, b) =>
-            a.staffLabel.toLowerCase().compareTo(b.staffLabel.toLowerCase()),
-      );
+    final sortedMaterials = List<RawMaterial>.from(widget.rawMaterials);
+    if (line.rawMaterialId != null &&
+        !sortedMaterials.any((material) => material.id == line.rawMaterialId)) {
+      final saved = widget.allMaterialsById[line.rawMaterialId];
+      if (saved != null) {
+        sortedMaterials.add(saved);
+      }
+    }
+    sortedMaterials.sort(
+      (a, b) =>
+          a.staffLabel.toLowerCase().compareTo(b.staffLabel.toLowerCase()),
+    );
 
     return Padding(
       padding:
@@ -2880,8 +2947,7 @@ class _ComboEditorDialogState
                 int>(
               isExpanded: true,
               isDense: true,
-              value:
-              line.rawMaterialId,
+              value: line.rawMaterialId,
               decoration:
               const InputDecoration(
                 labelText:
