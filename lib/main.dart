@@ -17,8 +17,8 @@ import 'screens/dashboard_screen.dart';
 import 'screens/simple_masters_screen.dart';
 import 'screens/raw_material_master_screen.dart';
 import 'screens/purchase_screen.dart';
-import 'screens/inventory_screen.dart';
 import 'screens/pos_screen.dart';
+import 'package:foodstock/services/user_roles.dart';
 import 'screens/reports_screen.dart';
 import 'screens/printer_settings_screen.dart';
 import 'screens/backup_screen.dart';
@@ -449,10 +449,12 @@ class MainShell extends StatefulWidget {
 class _MainShellState extends State<MainShell> {
   int _shellGeneration = 0;
 
-  bool get _isAdmin => widget.role.toLowerCase() == 'admin';
+  bool get _isAdmin => UserRoles.isAdmin(widget.role);
 
-  bool get _hasFullAppAccess =>
-      _isAdmin || Repository.instance.hasFullAppAccess;
+  bool get _isLocationStaff =>
+      UserRoles.isLocationStaff(widget.role, locationId: Repository.instance.sessionLocationId);
+
+  bool get _hasFullAppAccess => Repository.instance.hasFullAppAccess;
 
   @override
   void initState() {
@@ -484,64 +486,73 @@ class _MainShellState extends State<MainShell> {
       page: const PosScreen(),
     );
 
-    final items = _hasFullAppAccess
-        ? <NavEntry>[
+    final dashboardItem = NavItem(
+      icon: Icons.dashboard_outlined,
+      label: 'Dashboard',
+      page: DashboardScreen(isAdmin: _isAdmin),
+    );
+    final purchaseItem = NavItem(
+      icon: Icons.shopping_cart_outlined,
+      label: 'Purchase',
+      page: const PurchaseScreen(),
+    );
+    final reportsItem = NavItem(
+      icon: Icons.bar_chart_outlined,
+      label: 'Reports',
+      page: const ReportsScreen(),
+    );
+
+    final List<NavEntry> items;
+    if (_isLocationStaff) {
+      items = [
+        dashboardItem,
+        salesItem,
+        purchaseItem,
+        reportsItem,
+      ];
+    } else if (_hasFullAppAccess) {
+      items = [
+        dashboardItem,
+        salesItem,
+        purchaseItem,
+        NavItem(
+          icon: Icons.warehouse_outlined,
+          label: 'Menu Items',
+          page: const RawMaterialMasterScreen(),
+        ),
+        NavItem(
+          icon: Icons.category_outlined,
+          label: 'Masters',
+          page: const SimpleMastersScreen(),
+        ),
+        reportsItem,
+        NavItem(
+          icon: Icons.print_outlined,
+          label: 'Printers',
+          page: const PrinterSettingsScreen(),
+        ),
+        NavGroup(
+          icon: Icons.settings_outlined,
+          label: 'Settings',
+          children: [
             NavItem(
-              icon: Icons.dashboard_outlined,
-              label: 'Dashboard',
-              page: DashboardScreen(isAdmin: _isAdmin),
-            ),
-            salesItem,
-            NavItem(
-              icon: Icons.inventory_2_outlined,
-              label: 'Inventory',
-              page: const InventoryScreen(),
+              icon: Icons.backup_outlined,
+              label: 'Backup',
+              page: const BackupScreen(),
             ),
             NavItem(
-              icon: Icons.shopping_cart_outlined,
-              label: 'Purchase',
-              page: const PurchaseScreen(),
+              icon: Icons.restart_alt,
+              label: 'Reset',
+              page: ResetScreen(
+                onSessionReset: _handleSessionReset,
+              ),
             ),
-            NavItem(
-              icon: Icons.warehouse_outlined,
-              label: 'Menu Items',
-              page: const RawMaterialMasterScreen(),
-            ),
-            NavItem(
-              icon: Icons.category_outlined,
-              label: 'Masters',
-              page: const SimpleMastersScreen(),
-            ),
-            NavItem(
-              icon: Icons.bar_chart_outlined,
-              label: 'Reports',
-              page: const ReportsScreen(),
-            ),
-            NavItem(
-              icon: Icons.print_outlined,
-              label: 'Printers',
-              page: const PrinterSettingsScreen(),
-            ),
-            NavGroup(
-              icon: Icons.settings_outlined,
-              label: 'Settings',
-              children: [
-                NavItem(
-                  icon: Icons.backup_outlined,
-                  label: 'Backup',
-                  page: const BackupScreen(),
-                ),
-                NavItem(
-                  icon: Icons.restart_alt,
-                  label: 'Reset',
-                  page: ResetScreen(
-                    onSessionReset: _handleSessionReset,
-                  ),
-                ),
-              ],
-            ),
-          ]
-        : <NavEntry>[salesItem];
+          ],
+        ),
+      ];
+    } else {
+      items = [salesItem];
+    }
 
     return ResponsiveShell(
       key: ValueKey(_shellGeneration),
