@@ -469,7 +469,8 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
                       'opening pieces; total stock = (opening packets × pieces per packet) '
                       '+ opening pieces (auto, in pieces). '
                       'Pieces sold per customer = qty per POS order. '
-                      'Variant Group / Label / Stock source: pick any menu item from the dropdown.',
+                      'Variant Group / Label: type a new name or pick from the list. '
+                      'Stock source: pick an existing menu item to share its stock.',
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
                             color: Theme.of(context).colorScheme.primary,
                           ),
@@ -754,6 +755,7 @@ class _CategoryGridSection extends StatelessWidget {
                             readOnly: readOnly,
                             allowEmpty: true,
                             searchable: true,
+                            allowCustomValue: true,
                             menuWidth: _headers[5].menuWidth,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
@@ -764,6 +766,7 @@ class _CategoryGridSection extends StatelessWidget {
                             readOnly: readOnly,
                             allowEmpty: true,
                             searchable: true,
+                            allowCustomValue: true,
                             menuWidth: _headers[6].menuWidth,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
@@ -1010,6 +1013,7 @@ class _GridSelectCell extends StatefulWidget {
     required this.onCommit,
     this.allowEmpty = false,
     this.searchable = false,
+    this.allowCustomValue = false,
     this.menuWidth,
   });
 
@@ -1020,6 +1024,7 @@ class _GridSelectCell extends StatefulWidget {
   final VoidCallback onCommit;
   final bool allowEmpty;
   final bool searchable;
+  final bool allowCustomValue;
   final double? menuWidth;
 
   @override
@@ -1052,7 +1057,18 @@ class _GridSelectCellState extends State<_GridSelectCell> {
       _committedValue = current;
       return;
     }
+    if (widget.allowCustomValue && (widget.allowEmpty || current.isNotEmpty)) {
+      _commitCustomValue(current);
+      return;
+    }
     widget.controller.text = _committedValue;
+  }
+
+  void _commitCustomValue(String value) {
+    widget.controller.text = value;
+    _committedValue = value;
+    onChanged();
+    onCommit();
   }
 
   String _labelFor(String value) => value.isEmpty ? '—' : value;
@@ -1141,17 +1157,27 @@ class _GridSelectCellState extends State<_GridSelectCell> {
               contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             ),
             onEditingComplete: () {
+              final typed = controller.text.trim();
               final matches = _filteredChoices(controller.text);
               if (matches.length == 1) {
                 _select(matches.first);
+              } else if (widget.allowCustomValue &&
+                  (widget.allowEmpty || typed.isNotEmpty)) {
+                _commitCustomValue(typed);
+                _focus.unfocus();
               } else {
                 onFieldSubmitted();
               }
             },
             onSubmitted: (_) {
+              final typed = controller.text.trim();
               final matches = _filteredChoices(controller.text);
               if (matches.length == 1) {
                 _select(matches.first);
+              } else if (widget.allowCustomValue &&
+                  (widget.allowEmpty || typed.isNotEmpty)) {
+                _commitCustomValue(typed);
+                _focus.unfocus();
               }
             },
           );
