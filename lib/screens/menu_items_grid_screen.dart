@@ -542,6 +542,7 @@ class _CategoryGridSection extends StatelessWidget {
   int get _dirtyInSection => rows.where((row) => row.isDirty).length;
 
   static const _headers = [
+    _GridColumnSpec('#', width: 36, tooltip: 'Row number'),
     _GridColumnSpec('', width: 36, tooltip: 'Delete row'),
     _GridColumnSpec('Barcode', width: 72),
     _GridColumnSpec('Item name', width: 152, wrapText: true),
@@ -682,14 +683,28 @@ class _CategoryGridSection extends StatelessWidget {
                           )
                           .toList(),
                     ),
-                    ...rows.map(
-                      (row) => TableRow(
+                    ...rows.asMap().entries.map(
+                      (entry) {
+                        final rowNumber = entry.key + 1;
+                        final row = entry.value;
+                        return TableRow(
                         decoration: row.isDirty
                             ? BoxDecoration(
                                 color: Colors.amber.shade50,
                               )
                             : null,
                         children: [
+                          Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 4,
+                              vertical: 8,
+                            ),
+                            child: Text(
+                              '$rowNumber',
+                              textAlign: TextAlign.center,
+                              style: Theme.of(context).textTheme.bodySmall,
+                            ),
+                          ),
                           Padding(
                             padding: const EdgeInsets.all(2),
                             child: IconButton(
@@ -736,7 +751,7 @@ class _CategoryGridSection extends StatelessWidget {
                             options: itemNameOptions,
                             readOnly: readOnly,
                             allowEmpty: true,
-                            menuWidth: _headers[4].menuWidth,
+                            menuWidth: _headers[5].menuWidth,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
@@ -745,7 +760,7 @@ class _CategoryGridSection extends StatelessWidget {
                             options: itemNameOptions,
                             readOnly: readOnly,
                             allowEmpty: true,
-                            menuWidth: _headers[5].menuWidth,
+                            menuWidth: _headers[6].menuWidth,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
@@ -760,7 +775,7 @@ class _CategoryGridSection extends StatelessWidget {
                                 .toList(),
                             readOnly: readOnly,
                             allowEmpty: true,
-                            menuWidth: _headers[6].menuWidth,
+                            menuWidth: _headers[7].menuWidth,
                             onChanged: onFieldChanged,
                             onCommit: () => onFieldCommitted(row),
                           ),
@@ -834,7 +849,8 @@ class _CategoryGridSection extends StatelessWidget {
                             onCommit: () => onFieldCommitted(row),
                           ),
                         ],
-                      ),
+                      );
+                      },
                     ),
                   ],
                 ),
