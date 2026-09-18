@@ -200,26 +200,23 @@ void main() {
       );
     });
 
-    test('saveCombo rejects combo self-reference as ingredient', () async {
-      expect(
-        () => Repository.instance.saveCombo(
-          Combo(
-            name: 'Chicken roll',
-            categoryId: 2,
-            price: 75,
-          ),
-          [
-            ComboRawMaterial(comboId: 0, rawMaterialId: 4, qty: 2),
-          ],
+    test('saveCombo stores the exact selected raw material id', () async {
+      final comboId = await Repository.instance.saveCombo(
+        Combo(
+          name: 'Big juicy burger',
+          categoryId: 1,
+          price: 129,
         ),
-        throwsA(
-          isA<InvalidInventoryException>().having(
-            (e) => e.toString(),
-            'message',
-            contains('cannot include itself'),
-          ),
-        ),
+        [
+          ComboRawMaterial(comboId: 0, rawMaterialId: 1, qty: 5),
+        ],
       );
+
+      final items = await Repository.instance.comboItems(comboId);
+      expect(items, hasLength(1));
+      expect(items.first.rawMaterialId, 1);
+      expect(items.first.materialName, 'Big juicy burger');
+      expect(items.first.qty, 5);
     });
 
     test('combo export rows keep saved component names and qty', () async {

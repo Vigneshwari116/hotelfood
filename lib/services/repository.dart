@@ -1767,7 +1767,7 @@ class Repository {
 
                         final materialRows = await txn.query(
                               'raw_materials',
-                              columns: ['id', 'name', 'sub_item', 'listed'],
+                              columns: ['id'],
                               where: 'id = ?',
                               whereArgs: [item.rawMaterialId],
                               limit: 1,
@@ -1776,34 +1776,6 @@ class Repository {
                         if (materialRows.isEmpty) {
                               throw InvalidInventoryException(
                                     'A raw material in the combo no longer exists.',
-                              );
-                        }
-
-                        final materialName =
-                            materialRows.first['name']?.toString().trim() ??
-                                '';
-                        final materialSub =
-                            materialRows.first['sub_item']?.toString().trim() ??
-                                '';
-                        final listed =
-                            (materialRows.first['listed'] as num?)?.toInt() ??
-                                1;
-
-                        if (materialName.toLowerCase() ==
-                            combo.name.trim().toLowerCase()) {
-                              throw InvalidInventoryException(
-                                    'Combo cannot include itself as an ingredient.',
-                              );
-                        }
-
-                        if (listed == 1 &&
-                            materialSub.isNotEmpty &&
-                            materialSub.toLowerCase() !=
-                                materialName.toLowerCase()) {
-                              throw InvalidInventoryException(
-                                    'Combo ingredients must be stock items '
-                                    '(patty, bun, paratha, etc.), not finished '
-                                    'menu items like "$materialName".',
                               );
                         }
 

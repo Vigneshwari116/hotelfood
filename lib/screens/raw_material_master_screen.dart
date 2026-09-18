@@ -9,7 +9,6 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:foodstock/model/models.dart';
-import '../services/combo_material_picker.dart';
 import '../services/combo_only_categories.dart';
 import '../database/api_config.dart';
 import '../services/item_import_service.dart';
@@ -557,11 +556,11 @@ class _RawMaterialMasterScreenState
     final allItems = await Repository.instance.rawMaterials(
       includeHidden: true,
     );
-    final comboNames = _combos.map((combo) => combo.name);
-    final pickerItems = materialsForComboPicker(
-      allItems,
-      comboNames: comboNames,
-    );
+    final pickerItems = List<RawMaterial>.from(allItems)
+      ..sort(
+        (a, b) =>
+            a.staffLabel.toLowerCase().compareTo(b.staffLabel.toLowerCase()),
+      );
     final allMaterialsById = {
       for (final item in allItems)
         if (item.id != null) item.id!: item,
@@ -575,7 +574,6 @@ class _RawMaterialMasterScreenState
           categories: _categories,
           rawMaterials: pickerItems,
           allMaterialsById: allMaterialsById,
-          comboNames: comboNames.toList(),
           unitName: _unitName,
           onPickImage: () {
             return _pickAndSaveImage(
@@ -2302,7 +2300,6 @@ class ComboEditorDialog
   final List<Category> categories;
   final List<RawMaterial> rawMaterials;
   final Map<int, RawMaterial> allMaterialsById;
-  final List<String> comboNames;
   final String Function(int?) unitName;
   final Future<String?> Function()
   onPickImage;
@@ -2313,7 +2310,6 @@ class ComboEditorDialog
     required this.categories,
     required this.rawMaterials,
     required this.allMaterialsById,
-    this.comboNames = const [],
     required this.unitName,
     required this.onPickImage,
   });
@@ -2534,24 +2530,6 @@ class _ComboEditorDialogState
           const SnackBar(
             content: Text(
               'Quantity must be greater than zero.',
-            ),
-          ),
-        );
-        return;
-      }
-
-      final material = widget.allMaterialsById[materialId];
-      if (material == null ||
-          !isValidComboIngredient(
-            material,
-            comboName: name,
-            comboNames: widget.comboNames,
-          )) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              '“${material?.name ?? 'Item'}” cannot be used as a combo ingredient. '
-              'Pick a stock item such as patty, bun, or paratha.',
             ),
           ),
         );
@@ -2944,20 +2922,18 @@ class _ComboEditorDialogState
       return 'Uncategorized';
     }
 
-    final dropdownMaterials = comboDropdownMaterials(
-      pickerMaterials: widget.rawMaterials,
-      allMaterialsById: widget.allMaterialsById,
-      selectedMaterialId: line.rawMaterialId,
-      usedMaterialIds: _lines
-          .where((other) => other != line)
-          .map((other) => other.rawMaterialId)
-          .whereType<int>(),
+    final sortedMaterials = List<RawMaterial>.from(widget.rawMaterials);
+    if (line.rawMaterialId != null &&
+        !sortedMaterials.any((material) => material.id == line.rawMaterialId)) {
+      final saved = widget.allMaterialsById[line.rawMaterialId];
+      if (saved != null) {
+        sortedMaterials.add(saved);
+      }
+    }
+    sortedMaterials.sort(
+      (a, b) =>
+          a.staffLabel.toLowerCase().compareTo(b.staffLabel.toLowerCase()),
     );
-    final dropdownValue = dropdownMaterials.any(
-          (material) => material.id == line.rawMaterialId,
-        )
-        ? line.rawMaterialId
-        : null;
 
     return Padding(
       padding:
@@ -2973,7 +2949,7 @@ class _ComboEditorDialogState
                 int>(
               isExpanded: true,
               isDense: true,
-              value: dropdownValue,
+              value: line.rawMaterialId,
               decoration:
               const InputDecoration(
                 labelText:
@@ -2982,7 +2958,23 @@ class _ComboEditorDialogState
                 border:
                 OutlineInputBorder(),
               ),
-              items: dropdownMaterials
+              items: sortedMaterials
+                  .where(
+                    (material) {
+                  return !_lines.any(
+                        (other) =>
+                    other !=
+                        line &&
+                        other
+                            .rawMaterialId ==
+                            material
+                                .id,
+                  ) ||
+                      material.id ==
+                          line
+                              .rawMaterialId;
+                },
+              )
                   .map(
                     (material) {
                   return DropdownMenuItem<
