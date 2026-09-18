@@ -77,4 +77,39 @@ void main() {
       {'Thai Crispy', 'Crunchy Masala'},
     );
   });
+
+  test('materialsForComboPicker returns canonical stock holder id per pool', () {
+    final materials = materialsForComboPicker([
+      RawMaterial(
+        id: 27,
+        name: 'Thai Crispy',
+        subItem: 'Thai Crispy',
+        listed: true,
+        currentStock: 240,
+      ),
+      RawMaterial(
+        id: 36,
+        name: 'Big Buckets',
+        subItem: 'Thai Crispy',
+        listed: false,
+        stockSourceId: 27,
+      ),
+      RawMaterial(
+        id: 13,
+        name: 'Crunchy Masala',
+        subItem: 'Crunchy Masala',
+        listed: true,
+        currentStock: 150,
+      ),
+      RawMaterial(
+        id: 62,
+        name: 'crunchy masal Mini  bucket',
+        subItem: 'Crunchy Masala',
+        listed: false,
+        stockSourceId: 13,
+      ),
+    ]);
+
+    expect(materials.map((item) => item.id).toSet(), {13, 27});
+  });
 }

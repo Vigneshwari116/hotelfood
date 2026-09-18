@@ -51,14 +51,23 @@ List<RawMaterial> materialsForComboPicker(Iterable<RawMaterial> all) {
     winners[entry.key] = family.first;
   }
 
-  final deduped = SubItemStock.deduplicateToCanonicalStockHolders(winners.values);
-  final uniqueById = <int, RawMaterial>{};
-  for (final material in deduped) {
+  final byId = {
+    for (final material in list) if (material.id != null) material.id!: material,
+  };
+  final canonicalIdByMaterialId = SubItemStock.buildCanonicalStockIdMap(list);
+
+  final canonicalByHolderId = <int, RawMaterial>{};
+  for (final material in winners.values) {
     final id = material.id;
     if (id == null) continue;
-    uniqueById[id] = material;
+    final holderId = canonicalIdByMaterialId[id] ?? id;
+    canonicalByHolderId.putIfAbsent(
+      holderId,
+      () => byId[holderId] ?? material,
+    );
   }
-  return uniqueById.values.toList()
+
+  return canonicalByHolderId.values.toList()
     ..sort(
       (a, b) =>
           a.staffLabel.toLowerCase().compareTo(b.staffLabel.toLowerCase()),
