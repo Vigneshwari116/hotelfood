@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:archive/archive.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foodstock/database/sqlite_app_db.dart';
 import 'package:foodstock/model/models.dart';
@@ -153,6 +156,16 @@ void main() {
     expect(comboRows[0][0], contains('Big juicy burger'));
     expect(comboRows.map((row) => row[1]), contains('Hot Crispy Patty'));
     expect(comboRows.map((row) => row[1]), contains('Burger Bun With Sesame'));
+
+    final backupBytes = await service.exportBackupWorkbookForLocation(1);
+    final archive = ZipDecoder().decodeBytes(backupBytes);
+    final workbook = utf8.decode(
+      archive.findFile('xl/workbook.xml')!.content as List<int>,
+    );
+    expect(workbook, contains('Menu Items'));
+    expect(workbook, contains('Combos'));
+    expect(archive.findFile('xl/worksheets/sheet1.xml'), isNotNull);
+    expect(archive.findFile('xl/worksheets/sheet2.xml'), isNotNull);
 
     Repository.instance.setAppDbForTesting(null);
     await database.close();
