@@ -516,9 +516,9 @@ class ComboItem {
 
   /// Component item name for Sales/POS cart and receipts.
   String get itemNameLabel {
-    final trimmed = materialName?.trim();
-    if (trimmed != null && trimmed.isNotEmpty) return trimmed;
-    return staffLabel;
+    final staff = staffLabel.trim();
+    if (staff.isNotEmpty) return staff;
+    return materialName?.trim() ?? '';
   }
 
   factory ComboItem.fromMap(

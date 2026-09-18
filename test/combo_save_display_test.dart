@@ -219,6 +219,30 @@ void main() {
       expect(items.first.qty, 5);
     });
 
+    test('combo export groups by combo and writes every item name', () async {
+      await Repository.instance.saveCombo(
+        Combo(
+          name: 'Big juicy burger',
+          categoryId: 1,
+          price: 129,
+        ),
+        [
+          ComboRawMaterial(comboId: 0, rawMaterialId: 2, qty: 5),
+          ComboRawMaterial(comboId: 0, rawMaterialId: 3, qty: 1),
+        ],
+      );
+
+      final comboRows = await ItemImportService().comboExportRows();
+      expect(comboRows, hasLength(3));
+      expect(comboRows[0][0], 'Big juicy burger — ₹129 (Burgers)');
+      final itemNames = comboRows.skip(1).map((row) => row[1]).toList();
+      expect(itemNames, containsAll(['Hot Crispy Patty', 'Burger Bun With Sesame']));
+      final pattyRow = comboRows.firstWhere((row) => row[1] == 'Hot Crispy Patty');
+      final bunRow = comboRows.firstWhere((row) => row[1] == 'Burger Bun With Sesame');
+      expect(pattyRow[2], '5');
+      expect(bunRow[2], '1');
+    });
+
     test('combo export rows keep saved component names and qty', () async {
       await Repository.instance.saveCombo(
         Combo(
@@ -232,13 +256,12 @@ void main() {
       );
 
       final comboRows = await ItemImportService().comboExportRows();
-      expect(comboRows, hasLength(1));
-      expect(comboRows.first[0], 'Chicken roll');
-      expect(comboRows.first[2], '75');
-      expect(comboRows.first[3], 'spicy fingers');
-      expect(comboRows.first[4], '2');
-      expect(comboRows.first[6], '0');
-      expect(comboRows.first[7], '0');
+      expect(comboRows, hasLength(2));
+      expect(comboRows[0][0], 'Chicken roll — ₹75 (Rolls)');
+      expect(comboRows[1][1], 'spicy fingers');
+      expect(comboRows[1][2], '2');
+      expect(comboRows[1][4], '0');
+      expect(comboRows[1][5], '0');
     });
   });
 }

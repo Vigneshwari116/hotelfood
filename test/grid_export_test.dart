@@ -149,8 +149,10 @@ void main() {
     expect(bunRow[10], '22');
 
     final comboRows = await service.comboExportRows();
-    expect(comboRows, hasLength(2));
-    expect(comboRows.map((row) => row[3]), contains('Hot Crispy Patty'));
+    expect(comboRows, hasLength(3));
+    expect(comboRows[0][0], contains('Big juicy burger'));
+    expect(comboRows.map((row) => row[1]), contains('Hot Crispy Patty'));
+    expect(comboRows.map((row) => row[1]), contains('Burger Bun With Sesame'));
 
     Repository.instance.setAppDbForTesting(null);
     await database.close();

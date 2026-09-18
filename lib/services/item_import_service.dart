@@ -202,9 +202,7 @@ class ItemImportService {
   ];
 
   static const comboExportHeaders = [
-    'combo_name',
-    'category',
-    'combo_price',
+    'combo',
     'item_name',
     'item_qty',
     'unit',
@@ -347,6 +345,10 @@ class ItemImportService {
       for (final category in categories)
         if (category.id != null) category.id!: category.name,
     };
+    final materialById = {
+      for (final material in materials)
+        if (material.id != null) material.id!: material,
+    };
     final unitPriceById = {
       for (final material in materials)
         if (material.id != null) material.id!: material.sellingPrice ?? 0.0,
@@ -359,36 +361,50 @@ class ItemImportService {
       return number.toString();
     }
 
-    final rows = <List<String>>[];
-    for (final combo in combos) {
-      final categoryName = displayCategoryName(categoryNameById[combo.categoryId]);
-      if (combo.items.isEmpty) {
-        rows.add([
-          combo.name,
-          categoryName,
-          cell(combo.price),
-          '',
-          '',
-          '',
-          '',
-          '',
-        ]);
-        continue;
+    String comboHeaderLine(Combo combo, String categoryName) {
+      final price = cell(combo.price);
+      if (categoryName.isEmpty) {
+        return '${combo.name} — ₹$price';
       }
+      return '${combo.name} — ₹$price ($categoryName)';
+    }
+
+    String comboItemExportName(ComboItem item) {
+      final material = materialById[item.rawMaterialId];
+      final fromMaterial = material?.staffLabel.trim() ?? '';
+      if (fromMaterial.isNotEmpty) return fromMaterial;
+      return item.itemNameLabel.trim();
+    }
+
+    final rows = <List<String>>[];
+    for (var comboIndex = 0; comboIndex < combos.length; comboIndex++) {
+      final combo = combos[comboIndex];
+      final categoryName = displayCategoryName(categoryNameById[combo.categoryId]);
+
+      rows.add([
+        comboHeaderLine(combo, categoryName),
+        '',
+        '',
+        '',
+        '',
+        '',
+      ]);
 
       for (final item in combo.items) {
         final unitPrice = unitPriceById[item.rawMaterialId] ?? 0.0;
         final amount = unitPrice * item.qty;
         rows.add([
-          combo.name,
-          categoryName,
-          cell(combo.price),
-          item.itemNameLabel,
+          '',
+          comboItemExportName(item),
           cell(item.qty),
           item.unit ?? '',
           cell(unitPrice),
           cell(amount),
         ]);
+      }
+
+      if (comboIndex < combos.length - 1) {
+        rows.add(['', '', '', '', '', '']);
       }
     }
     return rows;
