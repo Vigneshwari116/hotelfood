@@ -244,20 +244,44 @@ class SubItemStock {
     }
 
     for (final item in family) {
+      final name = item.name.trim().toLowerCase();
+      final sub = item.subItem?.trim().toLowerCase() ?? '';
+      if (sub.isNotEmpty && name == sub) {
+        return item;
+      }
+    }
+
+    final linkedTargetIds = family
+        .map((item) => item.stockSourceId)
+        .whereType<int>()
+        .toSet();
+    for (final targetId in linkedTargetIds) {
+      final linked = family.where((item) => item.id == targetId);
+      if (linked.isNotEmpty) return linked.first;
+    }
+
+    final byStock = List<RawMaterial>.from(family)
+      ..sort((a, b) => b.currentStock.compareTo(a.currentStock));
+    if (byStock.first.currentStock > 0) {
+      return byStock.first;
+    }
+
+    for (final item in family) {
       final sub = item.subItem?.trim().toLowerCase();
       if (sub == stockKey) {
         return item;
       }
     }
 
-    family.sort((a, b) {
-      final orderA = a.menuSortOrder ?? 1 << 30;
-      final orderB = b.menuSortOrder ?? 1 << 30;
-      final byOrder = orderA.compareTo(orderB);
-      if (byOrder != 0) return byOrder;
-      return a.name.toLowerCase().compareTo(b.name.toLowerCase());
-    });
-    return family.first;
+    final sorted = List<RawMaterial>.from(family)
+      ..sort((a, b) {
+        final orderA = a.menuSortOrder ?? 1 << 30;
+        final orderB = b.menuSortOrder ?? 1 << 30;
+        final byOrder = orderA.compareTo(orderB);
+        if (byOrder != 0) return byOrder;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+    return sorted.first;
   }
 
   static String posGroupKey(RawMaterial item) {
