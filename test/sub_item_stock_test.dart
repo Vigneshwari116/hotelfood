@@ -70,6 +70,25 @@ void main() {
       );
     });
 
+    test('keeps stock-linked sellable items visible without variant label', () {
+      final chicken65 = RawMaterial(
+        id: 1,
+        name: 'Chicken 65',
+        subItem: 'chicken 65',
+        listed: true,
+      );
+      final krusty = RawMaterial(
+        id: 2,
+        name: 'Krusty Bites',
+        subItem: 'chicken 65',
+        stockSourceId: 1,
+        listed: true,
+      );
+      final byId = {1: chicken65, 2: krusty};
+
+      expect(SubItemStock.isListedStockShadow(krusty, byId), isFalse);
+    });
+
     test('keeps explicit POS variants visible even when name matches sub_item pool', () {
       final holder = RawMaterial(
         id: 1,

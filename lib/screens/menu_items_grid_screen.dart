@@ -10,6 +10,7 @@ import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/combo_only_categories.dart';
 import 'package:foodstock/services/item_import_service.dart';
+import 'package:foodstock/services/krusty_bites_stock.dart';
 import 'package:foodstock/services/menu_item_edit_helpers.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/widgets/responsive_shell.dart';
@@ -776,7 +777,10 @@ class _CategoryGridSection extends StatelessWidget {
                             readOnly: readOnly,
                             allowEmpty: true,
                             menuWidth: _headers[7].menuWidth,
-                            onChanged: onFieldChanged,
+                            onChanged: () {
+                              row.refreshStockSourcePoolingDisplay();
+                              onFieldChanged();
+                            },
                             onCommit: () => onFieldCommitted(row),
                           ),
                           _GridTextCell(
@@ -793,7 +797,7 @@ class _CategoryGridSection extends StatelessWidget {
                           ),
                           _GridTextCell(
                             controller: row.packets,
-                            readOnly: readOnly,
+                            readOnly: readOnly || row.stockFieldsReadOnly,
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
                             ),
@@ -805,7 +809,7 @@ class _CategoryGridSection extends StatelessWidget {
                           ),
                           _GridTextCell(
                             controller: row.openingPieces,
-                            readOnly: readOnly,
+                            readOnly: readOnly || row.stockFieldsReadOnly,
                             keyboardType: const TextInputType.numberWithOptions(
                               decimal: true,
                             ),
@@ -1158,22 +1162,7 @@ class _MenuGridRow {
           ? ''
           : MenuItemEditHelpers.formatNumber(item.unitsPerPacket!),
     );
-    stock = TextEditingController(
-      text: MenuItemEditHelpers.formatNumber(item.currentStock),
-    );
-    packets = TextEditingController(
-      text: MenuItemEditHelpers.packetsTextFromStock(
-            item.currentStock,
-            item.unitsPerPacket,
-            openingPieces: item.openingPieces,
-          ) ??
-          '',
-    );
-    openingPieces = TextEditingController(
-      text: item.openingPieces == 0
-          ? ''
-          : MenuItemEditHelpers.formatNumber(item.openingPieces),
-    );
+    _initStockFields(item);
     costPrice = TextEditingController(
       text: item.costPrice == null
           ? ''
@@ -1209,6 +1198,59 @@ class _MenuGridRow {
 
   late String _snapshot;
 
+  bool get stockFieldsReadOnly =>
+      KrustyBitesStock.usesStockSourcePool(
+        item,
+        stockSourceName: stockSourceName.text,
+      );
+
+  RawMaterial _displayItemForStock(RawMaterial source) {
+    return stockFieldsReadOnly
+        ? KrustyBitesStock.withZeroOwnStock(source)
+        : source;
+  }
+
+  void _initStockFields(RawMaterial source) {
+    final displayItem = _displayItemForStock(source);
+    stock = TextEditingController(
+      text: MenuItemEditHelpers.formatNumber(displayItem.currentStock),
+    );
+    packets = TextEditingController(
+      text: MenuItemEditHelpers.packetsTextFromStock(
+            displayItem.currentStock,
+            displayItem.unitsPerPacket,
+            openingPieces: displayItem.openingPieces,
+          ) ??
+          '',
+    );
+    openingPieces = TextEditingController(
+      text: displayItem.openingPieces == 0
+          ? ''
+          : MenuItemEditHelpers.formatNumber(displayItem.openingPieces),
+    );
+  }
+
+  void _syncStockDisplayFromItem(RawMaterial source) {
+    final displayItem = _displayItemForStock(source);
+    stock.text = MenuItemEditHelpers.formatNumber(displayItem.currentStock);
+    packets.text = MenuItemEditHelpers.packetsTextFromStock(
+          displayItem.currentStock,
+          displayItem.unitsPerPacket,
+          openingPieces: displayItem.openingPieces,
+        ) ??
+        '';
+    openingPieces.text = displayItem.openingPieces == 0
+        ? ''
+        : MenuItemEditHelpers.formatNumber(displayItem.openingPieces);
+  }
+
+  void refreshStockSourcePoolingDisplay() {
+    if (!stockFieldsReadOnly) return;
+    stock.text = '0';
+    packets.text = '0';
+    openingPieces.text = '';
+  }
+
   static void linkStockSourceNames(
     List<_MenuGridRow> rows,
     List<RawMaterial> items,
@@ -1224,6 +1266,7 @@ class _MenuGridRow {
         continue;
       }
       row.stockSourceName.text = nameById[sourceId] ?? '';
+      row._syncStockDisplayFromItem(row.item);
     }
   }
 
@@ -1249,6 +1292,10 @@ class _MenuGridRow {
   bool get isDirty => _snapshot != _captureSnapshot();
 
   void recalculateStockFromPackets() {
+    if (stockFieldsReadOnly) {
+      refreshStockSourcePoolingDisplay();
+      return;
+    }
     final recalculated = MenuItemEditHelpers.stockFromPacketsAndUnitsPerPacket(
       packetsText: packets.text,
       unitsPerPacketText: unitsPerPacket.text,
@@ -1274,7 +1321,7 @@ class _MenuGridRow {
       }
     }
 
-    return MenuItemEditHelpers.buildForSave(
+    final built = MenuItemEditHelpers.buildForSave(
       existing: item,
       barcodeText: barcode.text,
       itemName: itemName.text,
@@ -1291,6 +1338,13 @@ class _MenuGridRow {
       variantLabelText: variantLabel.text,
       stockSourceId: sourceName.isEmpty ? null : stockSourceId,
     );
+    if (KrustyBitesStock.usesStockSourcePool(
+      built,
+      stockSourceName: stockSourceName.text,
+    )) {
+      return KrustyBitesStock.withZeroOwnStock(built);
+    }
+    return built;
   }
 
   void commitSaved(RawMaterial saved, List<_MenuGridRow> allRows) {
@@ -1304,16 +1358,8 @@ class _MenuGridRow {
     unitsPerPacket.text = saved.unitsPerPacket == null
         ? ''
         : MenuItemEditHelpers.formatNumber(saved.unitsPerPacket!);
-    stock.text = MenuItemEditHelpers.formatNumber(saved.currentStock);
-    packets.text = MenuItemEditHelpers.packetsTextFromStock(
-          saved.currentStock,
-          saved.unitsPerPacket,
-          openingPieces: saved.openingPieces,
-        ) ??
-        '';
-    openingPieces.text = saved.openingPieces == 0
-        ? ''
-        : MenuItemEditHelpers.formatNumber(saved.openingPieces);
+    item = saved;
+    _syncStockDisplayFromItem(saved);
     costPrice.text = saved.costPrice == null
         ? ''
         : MenuItemEditHelpers.formatNumber(saved.costPrice!);

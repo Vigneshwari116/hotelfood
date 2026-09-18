@@ -13,6 +13,7 @@ import 'package:foodstock/database/category_cleanup.dart';
 import 'package:foodstock/database/raw_material_integrity.dart';
 import 'package:foodstock/services/inventory_search.dart';
 import 'package:foodstock/services/item_import_service.dart';
+import 'package:foodstock/services/krusty_bites_stock.dart';
 import 'package:foodstock/services/sub_item_stock.dart';
 import 'package:foodstock/services/variant_helpers.dart';
 
@@ -969,6 +970,10 @@ class Repository {
                   }
             }
 
+            if (KrustyBitesStock.usesStockSourcePool(rm)) {
+                  rm = KrustyBitesStock.withZeroOwnStock(rm);
+            }
+
             final map = rm.toMap()..remove('id');
             map['barcode'] = normalizeBarcodeValue(rm.barcode);
 
@@ -1158,6 +1163,46 @@ class Repository {
                         rm.id!,
                         reorderLevel: rm.reorderLevel,
                   );
+
+                  if (KrustyBitesStock.usesStockSourcePool(rm)) {
+                        final updateMap = Map<String, Object?>.from(map)
+                          ..remove('created_at')
+                          ..remove('current_stock')
+                          ..remove('opening_stock');
+
+                        await txn.update(
+                              'raw_materials',
+                              {
+                                    ...updateMap,
+                                    'opening_stock': 0,
+                                    'opening_pieces': 0,
+                                    'current_stock': 0,
+                              },
+                              where: 'id = ?',
+                              whereArgs: [rm.id],
+                        );
+
+                        await txn.update(
+                              'location_stock',
+                              {
+                                    'current_stock': 0,
+                                    'opening_stock': 0,
+                                    'reorder_level': rm.reorderLevel,
+                              },
+                              where:
+                                  'location_id = ? AND raw_material_id = ?',
+                              whereArgs: [stockLocationId, rm.id],
+                        );
+
+                        await txn.delete(
+                              'stock_batches',
+                              where: 'raw_material_id = ?',
+                              whereArgs: [rm.id],
+                        );
+
+                        await _syncRawMaterialAggregateStock(txn, rm.id!);
+                        return rm.id!;
+                  }
 
                   final locationRows = await txn.query(
                         'location_stock',
