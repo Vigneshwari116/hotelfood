@@ -340,8 +340,8 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
       await File(path).writeAsBytes(bytes);
       _showMessage(
         ApiConfig.enabled
-            ? 'Grid and combos saved to $path (shop server data).'
-            : 'Grid and combos saved to $path',
+            ? 'Menu grid saved to $path (shop server data).'
+            : 'Menu grid saved to $path',
       );
     } catch (e) {
       _showMessage('Download failed: $e', isError: true);
@@ -411,7 +411,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
           title: const Text('Menu Items Grid'),
           actions: [
             IconButton(
-              tooltip: 'Download grid and combos as Excel',
+              tooltip: 'Download menu grid as Excel',
               onPressed: _loading ? null : _downloadExcel,
               icon: const Icon(Icons.download_outlined),
             ),

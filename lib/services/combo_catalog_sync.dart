@@ -66,7 +66,7 @@ Future<int> syncBurgerRollCombos(AppDb db) async {
     if (itemName.toLowerCase() == subItem.toLowerCase()) continue;
 
     final componentName = subItem.toLowerCase();
-    final componentId = byName[componentName];
+    final componentId = _resolveIngredientId(materials, componentName, byName);
     if (componentId == null) continue;
 
     final qty = (row['qty_needed'] as num?)?.toDouble() ?? 1;
@@ -122,4 +122,35 @@ Future<int> syncBurgerRollCombos(AppDb db) async {
   }
 
   return synced;
+}
+
+/// Prefer unlisted stock-holder rows over listed menu rows for the same ingredient.
+int? _resolveIngredientId(
+  List<Map<String, Object?>> materials,
+  String componentName,
+  Map<String, int> byName,
+) {
+  int? bestId;
+  var bestScore = -1;
+
+  for (final row in materials) {
+    final id = row['id'] as int?;
+    if (id == null) continue;
+
+    final name = (row['name'] as String?)?.trim().toLowerCase() ?? '';
+    final sub = (row['sub_item'] as String?)?.trim().toLowerCase() ?? '';
+    final listed = (row['listed'] as num?)?.toInt() ?? 1;
+    final matches = name == componentName || sub == componentName;
+    if (!matches) continue;
+
+    var score = 0;
+    if (listed == 0) score += 10;
+    if (name == componentName) score += 5;
+    if (score > bestScore) {
+      bestScore = score;
+      bestId = id;
+    }
+  }
+
+  return bestId ?? byName[componentName];
 }

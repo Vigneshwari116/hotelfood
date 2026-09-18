@@ -223,6 +223,46 @@ class _RawMaterialMasterScreenState
     );
   }
 
+  Future<void> _exportCombosExcel() async {
+    final locationName = Repository.instance.sessionLocationName;
+    if (locationName == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Combo export is only available for location accounts.'),
+        ),
+      );
+      return;
+    }
+
+    final service = ItemImportService();
+    final bytes = await service.exportCombosXlsx();
+    final fileName = '$locationName combos.xlsx';
+
+    String? path;
+    if (!kIsWeb &&
+        (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
+      path = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save combos Excel',
+        fileName: fileName,
+        type: FileType.custom,
+        allowedExtensions: const ['xlsx'],
+      );
+    }
+    path ??= p.join(
+      (await getApplicationDocumentsDirectory()).path,
+      fileName,
+    );
+    if (!path.toLowerCase().endsWith('.xlsx')) {
+      path = '$path.xlsx';
+    }
+    await File(path).writeAsBytes(bytes);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Combos saved to $path')),
+    );
+  }
+
   Future<void> _importItemsFile() async {
     final repo = Repository.instance;
     final locationName = repo.sessionLocationName;
@@ -391,13 +431,13 @@ class _RawMaterialMasterScreenState
 
   Future<void> _openMenuItemsGrid() async {
     if (!mounted) return;
-    final refreshed = await Navigator.of(context).push<bool>(
+    await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => const MenuItemsGridScreen(),
       ),
     );
 
-    if (refreshed == true && mounted) {
+    if (mounted) {
       await _loadAll();
     }
   }
@@ -517,7 +557,15 @@ class _RawMaterialMasterScreenState
     final allItems = await Repository.instance.rawMaterials(
       includeHidden: true,
     );
-    final pickerItems = materialsForComboPicker(allItems);
+    final comboNames = _combos.map((combo) => combo.name);
+    final pickerItems = materialsForComboPicker(
+      allItems,
+      comboNames: comboNames,
+    );
+    final allMaterialsById = {
+      for (final item in allItems)
+        if (item.id != null) item.id!: item,
+    };
 
     final saved = await showDialog<bool>(
       context: context,
@@ -526,6 +574,8 @@ class _RawMaterialMasterScreenState
           existing: existing,
           categories: _categories,
           rawMaterials: pickerItems,
+          allMaterialsById: allMaterialsById,
+          comboNames: comboNames.toList(),
           unitName: _unitName,
           onPickImage: () {
             return _pickAndSaveImage(
@@ -715,7 +765,7 @@ class _RawMaterialMasterScreenState
                 if (!_readOnly) ...[
                   const SizedBox(width: 8),
                   IconButton(
-                    tooltip: 'Download grid view and saved combos as Excel',
+                    tooltip: 'Download menu grid as Excel',
                     onPressed: _saveImportTemplate,
                     icon: const Icon(Icons.download_outlined),
                   ),
@@ -1188,12 +1238,23 @@ class _RawMaterialMasterScreenState
               ),
             ),
             if (!_readOnly)
-              FilledButton.icon(
-                onPressed: () {
-                  _openComboEditor();
-                },
-                icon: const Icon(Icons.add),
-                label: Text(isMobile ? 'Add' : 'Add Combo'),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: 'Download combos as Excel',
+                    onPressed: _exportCombosExcel,
+                    icon: const Icon(Icons.download_outlined),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: () {
+                      _openComboEditor();
+                    },
+                    icon: const Icon(Icons.add),
+                    label: Text(isMobile ? 'Add' : 'Add Combo'),
+                  ),
+                ],
               ),
           ],
         ),
@@ -1866,6 +1927,11 @@ class _RawMaterialEditorDialogState
         imagePath:
         _imagePath,
         listed: _visibleInSales,
+        createdAt: widget.existing?.createdAt,
+        menuSortOrder: widget.existing?.menuSortOrder,
+        variantGroup: widget.existing?.variantGroup,
+        variantLabel: widget.existing?.variantLabel,
+        stockSourceId: widget.existing?.stockSourceId,
       );
 
       await Repository.instance
@@ -2235,6 +2301,8 @@ class ComboEditorDialog
   final Combo? existing;
   final List<Category> categories;
   final List<RawMaterial> rawMaterials;
+  final Map<int, RawMaterial> allMaterialsById;
+  final List<String> comboNames;
   final String Function(int?) unitName;
   final Future<String?> Function()
   onPickImage;
@@ -2244,6 +2312,8 @@ class ComboEditorDialog
     this.existing,
     required this.categories,
     required this.rawMaterials,
+    required this.allMaterialsById,
+    this.comboNames = const [],
     required this.unitName,
     required this.onPickImage,
   });
@@ -2445,8 +2515,8 @@ class _ComboEditorDialogState
     }
 
     for (final line in _lines) {
-      if (line.rawMaterialId ==
-          null) {
+      final materialId = line.rawMaterialId;
+      if (materialId == null) {
         ScaffoldMessenger.of(context)
             .showSnackBar(
           const SnackBar(
@@ -2464,6 +2534,24 @@ class _ComboEditorDialogState
           const SnackBar(
             content: Text(
               'Quantity must be greater than zero.',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final material = widget.allMaterialsById[materialId];
+      if (material == null ||
+          !isValidComboIngredient(
+            material,
+            comboName: name,
+            comboNames: widget.comboNames,
+          )) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '“${material?.name ?? 'Item'}” cannot be used as a combo ingredient. '
+              'Pick a stock item such as patty, bun, or paratha.',
             ),
           ),
         );
@@ -2856,11 +2944,20 @@ class _ComboEditorDialogState
       return 'Uncategorized';
     }
 
-    final sortedMaterials = List<RawMaterial>.from(widget.rawMaterials)
-      ..sort(
-        (a, b) =>
-            a.staffLabel.toLowerCase().compareTo(b.staffLabel.toLowerCase()),
-      );
+    final dropdownMaterials = comboDropdownMaterials(
+      pickerMaterials: widget.rawMaterials,
+      allMaterialsById: widget.allMaterialsById,
+      selectedMaterialId: line.rawMaterialId,
+      usedMaterialIds: _lines
+          .where((other) => other != line)
+          .map((other) => other.rawMaterialId)
+          .whereType<int>(),
+    );
+    final dropdownValue = dropdownMaterials.any(
+          (material) => material.id == line.rawMaterialId,
+        )
+        ? line.rawMaterialId
+        : null;
 
     return Padding(
       padding:
@@ -2876,8 +2973,7 @@ class _ComboEditorDialogState
                 int>(
               isExpanded: true,
               isDense: true,
-              value:
-              line.rawMaterialId,
+              value: dropdownValue,
               decoration:
               const InputDecoration(
                 labelText:
@@ -2886,23 +2982,7 @@ class _ComboEditorDialogState
                 border:
                 OutlineInputBorder(),
               ),
-              items: sortedMaterials
-                  .where(
-                    (material) {
-                  return !_lines.any(
-                        (other) =>
-                    other !=
-                        line &&
-                        other
-                            .rawMaterialId ==
-                            material
-                                .id,
-                  ) ||
-                      material.id ==
-                          line
-                              .rawMaterialId;
-                },
-              )
+              items: dropdownMaterials
                   .map(
                     (material) {
                   return DropdownMenuItem<

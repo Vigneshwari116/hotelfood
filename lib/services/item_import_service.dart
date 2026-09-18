@@ -208,6 +208,8 @@ class ItemImportService {
     'item_name',
     'item_qty',
     'unit',
+    'item_unit_price',
+    'item_amount',
   ];
 
   void validateImportFilename(String filePath, String expectedLocationName) {
@@ -254,14 +256,16 @@ class ItemImportService {
     return exportGridWorkbookForLocation(locationId);
   }
 
-  /// Grid-aligned menu export with a second sheet listing saved combos.
+  /// Grid-aligned menu export (menu items only — combos have their own export).
   Future<Uint8List> exportGridWorkbookForLocation(int locationId) async {
     final menuRows = await _gridRowsForLocation(locationId);
+    return SpreadsheetExport.buildXlsx(gridExportHeaders, menuRows);
+  }
+
+  /// Dedicated combos export for the Combos screen.
+  Future<Uint8List> exportCombosXlsx() async {
     final comboRows = await _comboRowsForExport();
-    return SpreadsheetExport.buildMultiSheetXlsx({
-      'Menu Items': (headers: gridExportHeaders, rows: menuRows),
-      'Combos': (headers: comboExportHeaders, rows: comboRows),
-    });
+    return SpreadsheetExport.buildXlsx(comboExportHeaders, comboRows);
   }
 
   Future<List<List<String>>> gridExportRowsForLocation(int locationId) {
@@ -338,9 +342,14 @@ class ItemImportService {
   Future<List<List<String>>> _comboRowsForExport() async {
     final combos = await Repository.instance.combosWithItems();
     final categories = await Repository.instance.categories(type: 'raw_material');
+    final materials = await Repository.instance.rawMaterials(includeHidden: true);
     final categoryNameById = {
       for (final category in categories)
         if (category.id != null) category.id!: category.name,
+    };
+    final unitPriceById = {
+      for (final material in materials)
+        if (material.id != null) material.id!: material.sellingPrice ?? 0.0,
     };
 
     String cell(num? value) {
@@ -361,11 +370,15 @@ class ItemImportService {
           '',
           '',
           '',
+          '',
+          '',
         ]);
         continue;
       }
 
       for (final item in combo.items) {
+        final unitPrice = unitPriceById[item.rawMaterialId] ?? 0.0;
+        final amount = unitPrice * item.qty;
         rows.add([
           combo.name,
           categoryName,
@@ -373,6 +386,8 @@ class ItemImportService {
           item.itemNameLabel,
           cell(item.qty),
           item.unit ?? '',
+          cell(unitPrice),
+          cell(amount),
         ]);
       }
     }
