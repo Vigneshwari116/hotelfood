@@ -1032,45 +1032,6 @@ class _GridSelectCell extends StatefulWidget {
 }
 
 class _GridSelectCellState extends State<_GridSelectCell> {
-  final _focus = FocusNode();
-  String _committedValue = '';
-
-  @override
-  void initState() {
-    super.initState();
-    _committedValue = widget.controller.text.trim();
-    _focus.addListener(_handleFocusChange);
-  }
-
-  @override
-  void dispose() {
-    _focus.removeListener(_handleFocusChange);
-    _focus.dispose();
-    super.dispose();
-  }
-
-  void _handleFocusChange() {
-    if (_focus.hasFocus) return;
-    final current = widget.controller.text.trim();
-    final choices = _choices();
-    if (choices.contains(current)) {
-      _committedValue = current;
-      return;
-    }
-    if (widget.allowCustomValue && (widget.allowEmpty || current.isNotEmpty)) {
-      _commitCustomValue(current);
-      return;
-    }
-    widget.controller.text = _committedValue;
-  }
-
-  void _commitCustomValue(String value) {
-    widget.controller.text = value;
-    _committedValue = value;
-    onChanged();
-    onCommit();
-  }
-
   String _labelFor(String value) => value.isEmpty ? '—' : value;
 
   List<String> _choices() {
@@ -1106,23 +1067,23 @@ class _GridSelectCellState extends State<_GridSelectCell> {
     }).toList();
   }
 
-  void _select(String value) {
-    widget.controller.text = value;
-    _committedValue = value;
-    onChanged();
-    onCommit();
-    _focus.unfocus();
-  }
-
-  VoidCallback get onChanged => widget.onChanged;
-  VoidCallback get onCommit => widget.onCommit;
-
   @override
   Widget build(BuildContext context) {
     if (widget.readOnly) {
       return _GridTextCell(
         controller: widget.controller,
         readOnly: true,
+        onChanged: widget.onChanged,
+        onCommit: widget.onCommit,
+      );
+    }
+
+    if (widget.allowCustomValue) {
+      return _GridSuggestTextCell(
+        controller: widget.controller,
+        options: widget.options,
+        allowEmpty: widget.allowEmpty,
+        menuWidth: widget.menuWidth,
         onChanged: widget.onChanged,
         onCommit: widget.onCommit,
       );
@@ -1139,12 +1100,15 @@ class _GridSelectCellState extends State<_GridSelectCell> {
       padding: const EdgeInsets.all(2),
       child: RawAutocomplete<String>(
         textEditingController: widget.controller,
-        focusNode: _focus,
         displayStringForOption: _labelFor,
         optionsBuilder: (textEditingValue) {
           return _filteredChoices(textEditingValue.text);
         },
-        onSelected: _select,
+        onSelected: (value) {
+          widget.controller.text = value;
+          widget.onChanged();
+          widget.onCommit();
+        },
         fieldViewBuilder: (context, controller, focusNode, onFieldSubmitted) {
           return TextField(
             controller: controller,
@@ -1156,30 +1120,8 @@ class _GridSelectCellState extends State<_GridSelectCell> {
               border: OutlineInputBorder(),
               contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             ),
-            onEditingComplete: () {
-              final typed = controller.text.trim();
-              final matches = _filteredChoices(controller.text);
-              if (matches.length == 1) {
-                _select(matches.first);
-              } else if (widget.allowCustomValue &&
-                  (widget.allowEmpty || typed.isNotEmpty)) {
-                _commitCustomValue(typed);
-                _focus.unfocus();
-              } else {
-                onFieldSubmitted();
-              }
-            },
-            onSubmitted: (_) {
-              final typed = controller.text.trim();
-              final matches = _filteredChoices(controller.text);
-              if (matches.length == 1) {
-                _select(matches.first);
-              } else if (widget.allowCustomValue &&
-                  (widget.allowEmpty || typed.isNotEmpty)) {
-                _commitCustomValue(typed);
-                _focus.unfocus();
-              }
-            },
+            onEditingComplete: widget.onCommit,
+            onSubmitted: (_) => widget.onCommit(),
           );
         },
         optionsViewBuilder: (context, onSelected, options) {
@@ -1273,10 +1215,202 @@ class _GridSelectCellState extends State<_GridSelectCell> {
         onChanged: (value) {
           if (value == null) return;
           widget.controller.text = value;
-          _committedValue = value;
           widget.onChanged();
           widget.onCommit();
         },
+      ),
+    );
+  }
+}
+
+/// Free-text grid cell with optional filtered suggestions (keeps any typed value).
+class _GridSuggestTextCell extends StatefulWidget {
+  const _GridSuggestTextCell({
+    required this.controller,
+    required this.options,
+    required this.onChanged,
+    required this.onCommit,
+    this.allowEmpty = false,
+    this.menuWidth,
+  });
+
+  final TextEditingController controller;
+  final List<String> options;
+  final VoidCallback onChanged;
+  final VoidCallback onCommit;
+  final bool allowEmpty;
+  final double? menuWidth;
+
+  @override
+  State<_GridSuggestTextCell> createState() => _GridSuggestTextCellState();
+}
+
+class _GridSuggestTextCellState extends State<_GridSuggestTextCell> {
+  static const _tapGroup = 'grid-suggest-text';
+
+  final _focus = FocusNode();
+  final _fieldKey = GlobalKey();
+  final _link = LayerLink();
+  final _portal = OverlayPortalController();
+  double _fieldWidth = 220;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_handleTextChanged);
+    _focus.addListener(_handleFocusChange);
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_handleTextChanged);
+    _focus.removeListener(_handleFocusChange);
+    _focus.dispose();
+    super.dispose();
+  }
+
+  List<String> get _matches {
+    final query = widget.controller.text;
+    if (query.trim().isEmpty) {
+      return widget.options.take(12).toList();
+    }
+    return widget.options
+        .where(
+          (value) => matchesInventorySearchQuery(value.toLowerCase(), query),
+        )
+        .take(12)
+        .toList();
+  }
+
+  void _handleTextChanged() {
+    widget.onChanged();
+    if (mounted) setState(() {});
+    if (_focus.hasFocus && !_portal.isShowing) {
+      _openSuggestions();
+    }
+  }
+
+  void _handleFocusChange() {
+    if (_focus.hasFocus) {
+      _openSuggestions();
+      return;
+    }
+    _portal.hide();
+    widget.onCommit();
+  }
+
+  void _openSuggestions() {
+    final box = _fieldKey.currentContext?.findRenderObject() as RenderBox?;
+    _fieldWidth = box?.size.width ?? widget.menuWidth ?? 220;
+    if (!_portal.isShowing) {
+      _portal.show();
+    } else if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _pick(String value) {
+    widget.controller.text = value;
+    widget.onChanged();
+    widget.onCommit();
+    _portal.hide();
+    _focus.unfocus();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final matches = _matches;
+
+    return Padding(
+      padding: const EdgeInsets.all(2),
+      child: TapRegion(
+        groupId: _tapGroup,
+        onTapOutside: (_) {
+          _portal.hide();
+          _focus.unfocus();
+        },
+        child: OverlayPortal(
+          controller: _portal,
+          overlayChildBuilder: (context) {
+            return CompositedTransformFollower(
+              link: _link,
+              showWhenUnlinked: false,
+              targetAnchor: Alignment.bottomLeft,
+              followerAnchor: Alignment.topLeft,
+              offset: const Offset(0, 4),
+              child: Align(
+                alignment: Alignment.topLeft,
+                widthFactor: 1,
+                heightFactor: 1,
+                child: TapRegion(
+                  groupId: _tapGroup,
+                  child: Material(
+                    elevation: 4,
+                    borderRadius: BorderRadius.circular(4),
+                    child: SizedBox(
+                      width: _fieldWidth,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 220),
+                        child: matches.isEmpty
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: Text(
+                                  'Press Enter to keep typed name',
+                                  style: TextStyle(
+                                    color: Colors.black54,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              )
+                            : ListView.builder(
+                                padding: EdgeInsets.zero,
+                                shrinkWrap: true,
+                                itemCount: matches.length,
+                                itemBuilder: (context, index) {
+                                  final value = matches[index];
+                                  return ListTile(
+                                    dense: true,
+                                    title: Text(
+                                      value,
+                                      style:
+                                          Theme.of(context).textTheme.bodySmall,
+                                    ),
+                                    onTap: () => _pick(value),
+                                  );
+                                },
+                              ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+          child: CompositedTransformTarget(
+            link: _link,
+            child: TextField(
+              key: _fieldKey,
+              controller: widget.controller,
+              focusNode: _focus,
+              style: Theme.of(context).textTheme.bodySmall,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(
+                isDense: true,
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              ),
+              onTap: _openSuggestions,
+              onEditingComplete: () {
+                widget.onCommit();
+                _focus.unfocus();
+              },
+              onSubmitted: (_) {
+                widget.onCommit();
+                _focus.unfocus();
+              },
+            ),
+          ),
+        ),
       ),
     );
   }
