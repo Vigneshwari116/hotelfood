@@ -360,12 +360,9 @@ class SubItemStock {
     final variantGroup = material.variantGroup?.trim();
     if (variantGroup != null && variantGroup.isNotEmpty) return false;
 
-    final variantLabel = material.variantLabel?.trim();
-    if (variantLabel != null &&
-        variantLabel.isNotEmpty &&
-        material.stockSourceId != null) {
-      return false;
-    }
+    // Stock-linked sellable menu items (e.g. Krusty Bites → Chicken 65) must
+    // stay visible on POS even without an explicit variant label.
+    if (material.stockSourceId != null) return false;
 
     final holderId = resolveCanonicalStockHolderId(material, byId);
     if (holderId == id) return false;
