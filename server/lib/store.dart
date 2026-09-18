@@ -30,8 +30,8 @@ class DbStore {
       username: Env.pgUser,
       password: Env.pgPassword,
     );
-    final pool = Pool(
-      endpoint,
+    final pool = Pool.withEndpoints(
+      [endpoint],
       settings: const PoolSettings(
         maxConnectionCount: 16,
         sslMode: SslMode.disable,
