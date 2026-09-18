@@ -1,5 +1,7 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:foodstock/services/user_roles.dart';
+
 class AuthSession {
   static const _userKey = 'auth_username';
   static const _roleKey = 'auth_role';
@@ -18,7 +20,16 @@ class AuthSession {
     this.locationName,
   });
 
-  bool get isAdmin => role.toLowerCase() == 'admin';
+  bool get isAdmin => UserRoles.isAdmin(role);
+
+  bool get isLocationManager =>
+      UserRoles.isLocationManager(role) && locationId != null;
+
+  bool get isLocationStaff =>
+      UserRoles.isLocationStaff(role, locationId: locationId);
+
+  bool get hasFullAppAccess =>
+      UserRoles.hasFullAppAccess(role, locationId: locationId);
 
   static Future<void> save({
     required String username,

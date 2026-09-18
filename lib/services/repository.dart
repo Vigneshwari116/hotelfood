@@ -15,6 +15,7 @@ import 'package:foodstock/services/inventory_search.dart';
 import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/krusty_bites_stock.dart';
 import 'package:foodstock/services/sub_item_stock.dart';
+import 'package:foodstock/services/user_roles.dart';
 import 'package:foodstock/services/variant_helpers.dart';
 
 // ============================================================
@@ -107,7 +108,14 @@ class Repository {
       String? _sessionLocationName;
       int? _adminSaleLocationId;
 
-      bool get isAdmin => _sessionRole?.toLowerCase() == 'admin';
+      bool get isAdmin => UserRoles.isAdmin(_sessionRole);
+
+      bool get isLocationManager =>
+          UserRoles.isLocationManager(_sessionRole) &&
+          _sessionLocationId != null;
+
+      bool get isLocationStaff =>
+          UserRoles.isLocationStaff(_sessionRole, locationId: _sessionLocationId);
 
       int? get sessionLocationId => _sessionLocationId;
 
@@ -142,7 +150,11 @@ class Repository {
       int? get _effectiveSaleLocationId =>
           _sessionLocationId ?? _adminSaleLocationId;
 
-      bool get hasFullAppAccess => isAdmin || _sessionLocationId != null;
+      bool get hasFullAppAccess =>
+          UserRoles.hasFullAppAccess(
+            _sessionRole,
+            locationId: _sessionLocationId,
+          );
 
       int? get _stockLocationId => _effectiveSaleLocationId;
 
@@ -710,7 +722,7 @@ class Repository {
                   );
             }
 
-            Future<void> insertIfMissing({
+            Future<void> ensureUser({
                   required String username,
                   required String password,
                   required String role,
@@ -722,51 +734,81 @@ class Repository {
                         whereArgs: [username],
                         limit: 1,
                   );
-                  if (rows.isNotEmpty) return;
+                  final values = <String, Object?>{
+                        'username': username,
+                        'password_hash': hashPin(password),
+                        'role': role,
+                        'location_id': locationId,
+                  };
+                  if (rows.isEmpty) {
+                        await db.insert(
+                              'users',
+                              {
+                                    ...values,
+                                    'created_at': now,
+                              },
+                        );
+                        return;
+                  }
 
-                  await db.insert(
+                  await db.update(
                         'users',
-                        {
-                              'username': username,
-                              'password_hash': hashPin(password),
-                              'role': role,
-                              'location_id': locationId,
-                              'created_at': now,
-                        },
+                        values,
+                        where: 'username = ?',
+                        whereArgs: [username],
                   );
             }
 
             final gtWorldMall = await ensureLocation('Gt world mall');
             final magadiRoad = await ensureLocation('Magadi road');
             final subbannaGarden = await ensureLocation('Subbanna garden');
+            const locationPassword = 'Shilpa@0902';
 
-            await insertIfMissing(
+            await ensureUser(
                   username: 'admin',
                   password: 'admin123',
-                  role: 'admin',
+                  role: UserRoles.admin,
             );
-            await insertIfMissing(
+            await ensureUser(
                   username: 'Gt mall five star',
-                  password: 'Shilpa@0902',
-                  role: 'staff',
+                  password: locationPassword,
+                  role: UserRoles.location,
                   locationId: gtWorldMall,
             );
-            await insertIfMissing(
+            await ensureUser(
+                  username: 'Gt mall staff',
+                  password: locationPassword,
+                  role: UserRoles.staff,
+                  locationId: gtWorldMall,
+            );
+            await ensureUser(
                   username: 'Magadi road five star',
-                  password: 'Shilpa@0902',
-                  role: 'staff',
+                  password: locationPassword,
+                  role: UserRoles.location,
                   locationId: magadiRoad,
             );
-            await insertIfMissing(
+            await ensureUser(
+                  username: 'Magadi road staff',
+                  password: locationPassword,
+                  role: UserRoles.staff,
+                  locationId: magadiRoad,
+            );
+            await ensureUser(
                   username: 'Subbanna garden five star',
-                  password: 'Shilpa@0902',
-                  role: 'staff',
+                  password: locationPassword,
+                  role: UserRoles.location,
                   locationId: subbannaGarden,
             );
-            await insertIfMissing(
+            await ensureUser(
+                  username: 'Subbanna garden staff',
+                  password: locationPassword,
+                  role: UserRoles.staff,
+                  locationId: subbannaGarden,
+            );
+            await ensureUser(
                   username: 'staff',
                   password: 'staff123',
-                  role: 'staff',
+                  role: UserRoles.staff,
             );
       }
 
