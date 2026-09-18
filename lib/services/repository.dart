@@ -1783,7 +1783,7 @@ class Repository {
                               'combo_raw_materials',
                               {
                                     'combo_id': comboId,
-                                    'raw_material_id': item.rawMaterialId,
+                                    'raw_material_id': stockMaterialId,
                                     'qty': item.qty,
                               },
                         );

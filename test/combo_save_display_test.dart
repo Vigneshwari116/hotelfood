@@ -148,7 +148,7 @@ void main() {
       await database.close();
     });
 
-    test('saveCombo keeps the selected ingredient id instead of remapping', () async {
+    test('saveCombo stores canonical stock holder id for pooled ingredients', () async {
       final comboId = await Repository.instance.saveCombo(
         Combo(
           name: 'Big juicy burger',
@@ -170,6 +170,36 @@ void main() {
       expect(patty.qty, 5);
       expect(bun.materialName, 'Burger Bun With Sesame');
       expect(bun.qty, 1);
+    });
+
+    test('saveCombo remaps variant row to canonical holder id', () async {
+      await database.insert('raw_materials', {
+        'id': 27,
+        'name': 'Thai Crispy',
+        'sub_item': 'Thai Crispy',
+        'category_id': 3,
+        'listed': 1,
+        'current_stock': 240,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+      await database.insert('raw_materials', {
+        'id': 36,
+        'name': 'Big Buckets',
+        'sub_item': 'Thai Crispy',
+        'category_id': 3,
+        'listed': 0,
+        'stock_source_id': 27,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+
+      final comboId = await Repository.instance.saveCombo(
+        Combo(name: 'Thai combo', categoryId: 3, price: 99),
+        [ComboRawMaterial(comboId: 0, rawMaterialId: 36, qty: 2)],
+      );
+
+      final items = await Repository.instance.comboItems(comboId);
+      expect(items.single.rawMaterialId, 27);
+      expect(items.single.materialName, 'Thai Crispy');
     });
 
     test('syncBurgerRollCombos does not replace manually saved combo items', () async {
@@ -200,7 +230,7 @@ void main() {
       );
     });
 
-    test('saveCombo stores the exact selected raw material id', () async {
+    test('saveCombo remaps menu row pick to canonical patty holder', () async {
       final comboId = await Repository.instance.saveCombo(
         Combo(
           name: 'Big juicy burger',
@@ -214,8 +244,8 @@ void main() {
 
       final items = await Repository.instance.comboItems(comboId);
       expect(items, hasLength(1));
-      expect(items.first.rawMaterialId, 1);
-      expect(items.first.materialName, 'Big juicy burger');
+      expect(items.first.rawMaterialId, 2);
+      expect(items.first.materialName, 'Hot Crispy Patty');
       expect(items.first.qty, 5);
     });
 

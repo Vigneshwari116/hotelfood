@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:foodstock/model/models.dart';
+import '../services/combo_material_picker.dart';
 import '../services/combo_only_categories.dart';
 import '../database/api_config.dart';
 import '../services/item_import_service.dart';
@@ -556,11 +557,8 @@ class _RawMaterialMasterScreenState
     final allItems = await Repository.instance.rawMaterials(
       includeHidden: true,
     );
-    final pickerItems = List<RawMaterial>.from(allItems)
-      ..sort(
-        (a, b) =>
-            a.staffLabel.toLowerCase().compareTo(b.staffLabel.toLowerCase()),
-      );
+    // One picker row per stock ingredient (e.g. one Thai Crispy, not per category copy).
+    final pickerItems = materialsForComboPicker(allItems);
     final allMaterialsById = {
       for (final item in allItems)
         if (item.id != null) item.id!: item,
