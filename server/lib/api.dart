@@ -6,6 +6,7 @@ import 'package:shelf/shelf_io.dart' as io;
 import 'package:shelf_router/shelf_router.dart';
 
 import 'env.dart';
+import 'license.dart';
 import 'store.dart';
 
 Response _json(Object body, {int status = 200}) {
@@ -55,16 +56,50 @@ Handler buildApi(DbStore store) {
       'ok': true,
       'database': Env.pgDatabase,
       'menu_export_metadata': true,
+      'license_expires_at': License.expiresAt?.toIso8601String(),
+      'license_expired': License.isExpired,
+      'license_days_remaining': License.daysRemaining,
+      'license_warning': License.showWarning,
     });
   });
 
+  Response? _licenseBlocked(Request request, Map<String, dynamic>? body) {
+    final path = request.url.path;
+    if (License.blocksTransaction(path)) {
+      return _json(
+        {
+          'ok': false,
+          'error': 'Trial period has ended. Contact us to continue.',
+          'code': 'LICENSE_EXPIRED',
+        },
+        status: 403,
+      );
+    }
+
+    if (body != null && License.blocksDbMethod('${body['method'] ?? ''}', body)) {
+      return _json(
+        {
+          'ok': false,
+          'error': 'Trial period has ended. Contact us to continue.',
+          'code': 'LICENSE_EXPIRED',
+        },
+        status: 403,
+      );
+    }
+
+    return null;
+  }
+
   Future<Response> guarded(
     Request request,
-    Future<Response> Function() action,
-  ) async {
+    Future<Response> Function() action, {
+    Map<String, dynamic>? body,
+  }) async {
     if (!_authorized(request)) {
       return _json({'ok': false, 'error': 'Unauthorized'}, status: 401);
     }
+    final blocked = _licenseBlocked(request, body);
+    if (blocked != null) return blocked;
     try {
       return await action();
     } catch (error) {
@@ -95,9 +130,9 @@ Handler buildApi(DbStore store) {
     });
   });
 
-  router.post('/v1/db', (Request request) {
+  router.post('/v1/db', (Request request) async {
+    final body = await _readJson(request);
     return guarded(request, () async {
-      final body = await _readJson(request);
       final tx = body['tx']?.toString();
       final method = '${body['method'] ?? ''}';
       final result = await store.withDb(tx, (db) async {
@@ -148,7 +183,7 @@ Handler buildApi(DbStore store) {
         }
       });
       return _json(result);
-    });
+    }, body: body);
   });
 
   return const Pipeline()

@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/services/repository.dart';
+import 'package:foodstock/services/trial_license.dart';
 
 /// Detects optional VPS features (e.g. menu export metadata columns).
 class RemoteCapabilities {
@@ -12,6 +13,7 @@ class RemoteCapabilities {
   static Future<void> refresh() async {
     if (!ApiConfig.enabled) {
       Repository.remoteMenuExportMetadataSupported = true;
+      TrialLicense.instance.clear();
       return;
     }
 
@@ -27,11 +29,13 @@ class RemoteCapabilities {
       if (body is Map<String, dynamic>) {
         Repository.remoteMenuExportMetadataSupported =
             body['menu_export_metadata'] == true;
+        TrialLicense.instance.applyFromHealth(body);
         return;
       }
     } catch (_) {
       // Older servers without the flag — import still works without metadata.
     }
     Repository.remoteMenuExportMetadataSupported = false;
+    TrialLicense.instance.clear();
   }
 }

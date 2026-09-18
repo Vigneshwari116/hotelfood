@@ -7,10 +7,12 @@ import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/services/app_bootstrap.dart';
 import 'package:foodstock/services/auth_session.dart';
 import 'package:foodstock/services/shop_server_connection.dart';
+import 'package:foodstock/services/trial_license.dart';
 import 'services/repository.dart';
 
 import 'widgets/brand_logo.dart';
 import 'widgets/responsive_shell.dart';
+import 'widgets/trial_banner.dart';
 import 'theme/brand_theme.dart';
 
 import 'screens/dashboard_screen.dart';
@@ -88,13 +90,23 @@ class _StartupGateState extends State<_StartupGate> {
   Future<void> _connectServer() async {
     await ShopServerConnection.instance.connect();
     if (!mounted) return;
-    if (ShopServerConnection.instance.ready) {
+
+    if (TrialLicense.instance.expired && _session != null) {
+      await AuthSession.clear();
+      Repository.instance.bindSession(role: 'staff');
+      setState(() {
+        _session = null;
+        _deferredInitStarted = false;
+      });
+    }
+
+    if (ShopServerConnection.instance.ready && !TrialLicense.instance.expired) {
       _startDeferredInit();
     }
   }
 
   void _startDeferredInit() {
-    if (_deferredInitStarted) return;
+    if (_deferredInitStarted || TrialLicense.instance.expired) return;
     _deferredInitStarted = true;
     unawaited(AppBootstrap.runDeferredInit());
   }
@@ -116,10 +128,12 @@ class _StartupGateState extends State<_StartupGate> {
         final session = _session;
 
         final child = session != null
-            ? MainShell(
-                username: session.username,
-                role: session.role,
-                locationName: session.locationName,
+            ? TrialBanner(
+                child: MainShell(
+                  username: session.username,
+                  role: session.role,
+                  locationName: session.locationName,
+                ),
               )
             : const LoginScreen();
 
@@ -260,6 +274,13 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
+    if (TrialLicense.instance.expired) {
+      setState(() {
+        _error = TrialLicense.expiredMessage;
+      });
+      return;
+    }
+
     setState(() {
       _loading = true;
       _error = null;
@@ -317,10 +338,12 @@ class _LoginScreenState extends State<LoginScreen> {
 
       Navigator.of(context).pushReplacement(
         MaterialPageRoute(
-          builder: (_) => MainShell(
-            username: username,
-            role: role,
-            locationName: locationName,
+          builder: (_) => TrialBanner(
+            child: MainShell(
+              username: username,
+              role: role,
+              locationName: locationName,
+            ),
           ),
         ),
       );
@@ -336,23 +359,42 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(
-              maxWidth: 380,
-            ),
-            child: Card(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const BrandLogo(height: 168),
+    return ListenableBuilder(
+      listenable: TrialLicense.instance,
+      builder: (context, _) {
+        final trialExpired =
+            TrialLicense.instance.isActiveOnServer &&
+                TrialLicense.instance.expired;
 
-                    const SizedBox(height: 28),
+        return Scaffold(
+          body: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(
+                  maxWidth: 380,
+                ),
+                child: Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const BrandLogo(height: 168),
+
+                        if (trialExpired) ...[
+                          const SizedBox(height: 20),
+                          Text(
+                            TrialLicense.expiredMessage,
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Colors.red.shade700,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+
+                        const SizedBox(height: 28),
 
                     // USERNAME
                     TextField(
@@ -394,34 +436,37 @@ class _LoginScreenState extends State<LoginScreen> {
 
                     const SizedBox(height: 22),
 
-                    SizedBox(
-                      width: double.infinity,
-                      height: 48,
-                      child: FilledButton(
-                        onPressed: _loading ? null : _login,
-                        child: _loading
-                            ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
-                        )
-                            : const Text(
-                          'Login',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
+                        SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: FilledButton(
+                            onPressed:
+                                _loading || trialExpired ? null : _login,
+                            child: _loading
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Login',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
                           ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

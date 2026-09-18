@@ -34,6 +34,12 @@ class HttpAppDb implements AppDb {
       );
     }
     if (response.statusCode >= 400 || decoded['ok'] != true) {
+      if (decoded['code'] == 'LICENSE_EXPIRED') {
+        throw StateError(
+          decoded['error']?.toString() ??
+              'Trial period has ended. Contact us to continue.',
+        );
+      }
       throw StateError(
         decoded['error']?.toString() ??
             'Shop server error (${response.statusCode}).',
