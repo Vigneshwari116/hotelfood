@@ -174,35 +174,6 @@ class Repository {
             return {'location_id': locationId};
       }
 
-      int? get _menuCatalogLocationId => _effectiveSaleLocationId;
-
-      /// Limits menu catalog queries to the active shop location.
-      String _sqlMenuLocationFilter(String tableAlias, List<Object> args) {
-            final locationId = _menuCatalogLocationId;
-            if (locationId == null) {
-                  return '';
-            }
-            args.add(locationId);
-            return ' AND ($tableAlias.location_id IS NULL OR '
-                '$tableAlias.location_id = ?)';
-      }
-
-      void _requireMenuCatalogLocation() {
-            if (_menuCatalogLocationId == null) {
-                  throw InvalidInventoryException(
-                        'Select a location before editing menu items or combos.',
-                  );
-            }
-      }
-
-      int? _catalogLocationIdForSave(RawMaterial rm) {
-            return rm.locationId ?? _menuCatalogLocationId;
-      }
-
-      int? _catalogLocationIdForComboSave(Combo combo) {
-            return combo.locationId ?? _menuCatalogLocationId;
-      }
-
       Future<void> _ensureLocationStockRow(
             AppDb txn,
             int locationId,
@@ -1029,7 +1000,7 @@ class Repository {
             if (rm.stockSourceId != null) {
                   final sourceRows = await db.query(
                         'raw_materials',
-                        columns: ['id', 'location_id'],
+                        columns: ['id'],
                         where: 'id = ?',
                         whereArgs: [rm.stockSourceId],
                         limit: 1,
@@ -1040,17 +1011,6 @@ class Repository {
                                   'Clear the stock source and save again.',
                         );
                   }
-                  final catalogLocation = _catalogLocationIdForSave(rm);
-                  final sourceLocation =
-                      (sourceRows.first['location_id'] as num?)?.toInt();
-                  if (catalogLocation != null &&
-                      sourceLocation != null &&
-                      sourceLocation != catalogLocation) {
-                        throw InvalidInventoryException(
-                              'Stock source must belong to the same location '
-                                  'as this menu item.',
-                        );
-                  }
             }
 
             if (KrustyBitesStock.usesStockSourcePool(rm)) {
@@ -1059,10 +1019,6 @@ class Repository {
 
             final map = rm.toMap()..remove('id');
             map['barcode'] = normalizeBarcodeValue(rm.barcode);
-            final catalogLocationId = _catalogLocationIdForSave(rm);
-            if (catalogLocationId != null) {
-                  map['location_id'] = catalogLocationId;
-            }
 
             if (fromMenuImport && _includeMenuExportMetadata(fromMenuImport)) {
                   if (menuExportRow != null) {
@@ -1107,34 +1063,26 @@ class Repository {
                               map,
                         );
 
-                        if (locationId != null) {
+                        final locations = await txn.query(
+                              'locations',
+                              orderBy: 'id ASC',
+                        );
+                        for (final location in locations) {
+                              final locId = location['id'] as int;
+                              final stockForLocation =
+                                  locationId != null && locId == locationId
+                                      ? openingStock
+                                      : 0.0;
                               await txn.insert(
                                     'location_stock',
                                     {
-                                          'location_id': locationId,
+                                          'location_id': locId,
                                           'raw_material_id': id,
-                                          'current_stock': openingStock,
-                                          'opening_stock': openingStock,
+                                          'current_stock': stockForLocation,
+                                          'opening_stock': stockForLocation,
                                           'reorder_level': rm.reorderLevel,
                                     },
                               );
-                        } else {
-                              final locations = await txn.query(
-                                    'locations',
-                                    orderBy: 'id ASC',
-                              );
-                              for (final location in locations) {
-                                    await txn.insert(
-                                          'location_stock',
-                                          {
-                                                'location_id': location['id'],
-                                                'raw_material_id': id,
-                                                'current_stock': 0.0,
-                                                'opening_stock': 0.0,
-                                                'reorder_level': rm.reorderLevel,
-                                          },
-                                    );
-                              }
                         }
 
                         if (openingStock > 0.0 && locationId != null) {
@@ -1187,7 +1135,7 @@ class Repository {
                         await _syncRawMaterialAggregateStock(txn, id);
                         return id;
                   });
-                  if (!skipVariantRefresh && !fromGridSave) {
+                  if (!skipVariantRefresh) {
                         await refreshVariantLinks();
                   }
                   return id;
@@ -1463,7 +1411,7 @@ class Repository {
                   await _syncRawMaterialAggregateStock(txn, rm.id!);
                   return rm.id!;
             });
-            if (!skipVariantRefresh && !fromGridSave) {
+            if (!skipVariantRefresh) {
                   await refreshVariantLinks();
             }
             return updatedId;
@@ -1534,12 +1482,8 @@ class Repository {
                 ? ''
                 : ' AND (rm.listed IS NULL OR rm.listed = 1)';
 
-            final queryArgs = <Object>[];
-            final menuFilter = _sqlMenuLocationFilter('rm', queryArgs);
-
             List<Map<String, dynamic>> rows;
             if (locationId != null) {
-                  queryArgs.insert(0, locationId);
                   rows = await db.rawQuery(
                         '''
       SELECT
@@ -1554,10 +1498,10 @@ class Repository {
         AND ls.location_id = ?
       LEFT JOIN categories c
         ON c.id = rm.category_id
-      WHERE 1=1$listedFilter$menuFilter
+      WHERE 1=1$listedFilter
       ORDER BY rm.name ASC
       ''',
-                        queryArgs,
+                        [locationId],
                   );
             } else {
                   rows = await db.rawQuery(
@@ -1568,10 +1512,9 @@ class Repository {
       FROM raw_materials rm
       LEFT JOIN categories c
         ON c.id = rm.category_id
-      WHERE 1=1${includeHidden ? '' : ' AND (rm.listed IS NULL OR rm.listed = 1)'}$menuFilter
+      WHERE 1=1${includeHidden ? '' : ' AND (rm.listed IS NULL OR rm.listed = 1)'}
       ORDER BY rm.name ASC
       ''',
-                        queryArgs,
                   );
             }
 
@@ -1610,8 +1553,6 @@ class Repository {
             final locationId = _stockLocationId;
 
             if (locationId != null) {
-                  final args = <Object>[locationId, locationId, id];
-                  final menuFilter = _sqlMenuLocationFilter('rm', args);
                   final rows = await db.rawQuery(
                         '''
       SELECT
@@ -1632,10 +1573,10 @@ class Repository {
       LEFT JOIN location_stock ls_source
         ON ls_source.raw_material_id = rm.stock_source_id
         AND ls_source.location_id = ?
-      WHERE rm.id = ?$menuFilter
+      WHERE rm.id = ?
       LIMIT 1
       ''',
-                        args,
+                        [locationId, locationId, id],
                   );
                   if (rows.isEmpty) return null;
                   return RawMaterial.fromMap(rows.first);
@@ -1849,11 +1790,6 @@ class Repository {
 
             return db.transaction((txn) async {
                   int comboId;
-                  final catalogLocationId = _catalogLocationIdForComboSave(combo);
-                  final comboMap = combo.toMap()..remove('id');
-                  if (catalogLocationId != null) {
-                        comboMap['location_id'] = catalogLocationId;
-                  }
 
                   // ==========================================================
                   // CREATE
@@ -1862,7 +1798,7 @@ class Repository {
                   if (combo.id == null) {
                         comboId = await txn.insert(
                               'combos',
-                              comboMap,
+                              combo.toMap()..remove('id'),
                         );
                   }
 
@@ -1887,7 +1823,8 @@ class Repository {
 
                         comboId = combo.id!;
 
-                        final map = Map<String, Object?>.from(comboMap)
+                        final map = combo.toMap()
+                              ..remove('id')
                               ..remove('created_at');
 
                         await txn.update(
@@ -1968,27 +1905,14 @@ class Repository {
             bool activeOnly = true,
       }) async {
             final db = await _db;
-            final args = <Object>[];
-            final menuFilter = _sqlMenuLocationFilter('combos', args);
-            final activeFilter = activeOnly ? 'is_active = 1' : '1=1';
 
             final rows = await db.query(
                   'combos',
-                  where: '$activeFilter$menuFilter',
-                  whereArgs: args.isEmpty ? null : args,
-                  orderBy: 'name ASC, id ASC',
+                  where: activeOnly ? 'is_active = 1' : null,
+                  orderBy: 'name ASC',
             );
 
-            final seen = <int>{};
-            final comboList = <Combo>[];
-            for (final row in rows) {
-                  final combo = Combo.fromMap(row);
-                  if (combo.id != null && !seen.add(combo.id!)) {
-                        continue;
-                  }
-                  comboList.add(combo);
-            }
-            return comboList;
+            return rows.map(Combo.fromMap).toList();
       }
 
       Future<List<Combo>> combosWithItems({
@@ -2051,12 +1975,10 @@ class Repository {
             }
 
             for (final candidate in candidates) {
-                  final args = <Object>[candidate];
-                  final menuFilter = _sqlMenuLocationFilter('combos', args);
                   final rows = await db.query(
                         'combos',
-                        where: 'barcode = ? AND is_active = 1$menuFilter',
-                        whereArgs: args,
+                        where: 'barcode = ? AND is_active = 1',
+                        whereArgs: [candidate],
                         limit: 1,
                   );
 

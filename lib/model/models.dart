@@ -204,9 +204,6 @@ class RawMaterial {
   /// When set, sales deduct stock from this raw material instead of [id].
   final int? stockSourceId;
 
-  /// Shop location that owns this menu row (null on legacy rows until migration).
-  final int? locationId;
-
   RawMaterial({
     this.id,
     this.barcode,
@@ -231,7 +228,6 @@ class RawMaterial {
     this.variantGroup,
     this.variantLabel,
     this.stockSourceId,
-    this.locationId,
   });
 
   factory RawMaterial.fromMap(Map<String, dynamic> map) {
@@ -271,7 +267,6 @@ class RawMaterial {
       variantGroup: map['variant_group']?.toString(),
       variantLabel: map['variant_label']?.toString(),
       stockSourceId: (map['stock_source_id'] as num?)?.toInt(),
-      locationId: (map['location_id'] as num?)?.toInt(),
     );
   }
 
@@ -306,9 +301,6 @@ class RawMaterial {
     map['variant_group'] = variantGroup;
     map['variant_label'] = variantLabel;
     map['stock_source_id'] = stockSourceId;
-    if (locationId != null) {
-      map['location_id'] = locationId;
-    }
 
     return map;
   }
@@ -375,8 +367,6 @@ class Combo {
 
   final DateTime? createdAt;
 
-  final int? locationId;
-
   Combo({
     this.id,
     required this.name,
@@ -387,7 +377,6 @@ class Combo {
     this.isActive = true,
     this.items = const [],
     this.createdAt,
-    this.locationId,
   });
 
   /// Reads the configured combo price from legacy or current DB columns.
@@ -416,7 +405,6 @@ class Combo {
       isActive: ((map['is_active'] as num?)?.toInt() ?? 1) != 0,
       items: const [],
       createdAt: _parseDate(map['created_at']),
-      locationId: (map['location_id'] as num?)?.toInt(),
     );
   }
 
@@ -433,7 +421,6 @@ class Combo {
       'created_at':
       createdAt?.toIso8601String() ??
           DateTime.now().toIso8601String(),
-      if (locationId != null) 'location_id': locationId,
     };
   }
 }

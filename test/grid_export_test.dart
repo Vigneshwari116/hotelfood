@@ -72,8 +72,7 @@ void main() {
             reorder_level REAL NOT NULL DEFAULT 0,
             cost_price REAL,
             selling_price REAL,
-            created_at TEXT NOT NULL,
-            location_id INTEGER
+            created_at TEXT NOT NULL
           )
         ''');
         await db.execute('''
@@ -86,7 +85,6 @@ void main() {
             selling_price REAL NOT NULL DEFAULT 0,
             image_path TEXT,
             is_active INTEGER NOT NULL DEFAULT 1,
-            location_id INTEGER,
             created_at TEXT NOT NULL
           )
         ''');

@@ -8,7 +8,6 @@ import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/database/http_app_db.dart';
 import 'package:foodstock/database/sqlite_app_db.dart';
-import 'package:foodstock/database/location_menu_scoping.dart';
 import 'package:foodstock/database/sub_item_migration.dart';
 import 'package:foodstock/database/category_cleanup.dart';
 import 'package:foodstock/database/raw_material_integrity.dart';
@@ -115,7 +114,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 31,
+      version: 30,
 
       onConfigure: (db) async {
         await db.execute(
@@ -297,8 +296,6 @@ class DBHelper {
         variant_label TEXT,
 
         stock_source_id INTEGER,
-
-        location_id INTEGER,
 
         created_at TEXT NOT NULL,
 
@@ -1705,10 +1702,6 @@ class DBHelper {
         CREATE INDEX IF NOT EXISTS idx_pending_order_items_order
         ON pending_order_items(pending_order_id)
       ''');
-    }
-
-    if (oldVersion < 31) {
-      await migrateMenuCatalogToLocationScope(db);
     }
   }
 

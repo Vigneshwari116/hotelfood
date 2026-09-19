@@ -90,7 +90,6 @@ class MenuItemEditHelpers {
     String? variantGroupText,
     String? variantLabelText,
     int? stockSourceId,
-    bool clearStockSource = false,
   }) {
     final name = itemName.trim();
     final subItem = subItemText.trim().isEmpty ? name : subItemText.trim();
@@ -142,34 +141,7 @@ class MenuItemEditHelpers {
       menuSortOrder: existing.menuSortOrder,
       variantGroup: variantGroup.isEmpty ? null : variantGroup,
       variantLabel: variantLabel.isEmpty ? null : variantLabel,
-      stockSourceId:
-          clearStockSource ? null : (stockSourceId ?? existing.stockSourceId),
-      locationId: existing.locationId,
+      stockSourceId: stockSourceId ?? existing.stockSourceId,
     );
-  }
-
-  /// Resolves a grid stock-source name to a raw material id within the grid.
-  static int? resolveStockSourceIdFromGrid({
-    required String stockSourceNameText,
-    required int? selfItemId,
-    required Iterable<RawMaterial> menuItems,
-  }) {
-    final sourceName = stockSourceNameText.trim().toLowerCase();
-    if (sourceName.isEmpty) return null;
-
-    for (final item in menuItems) {
-      if (item.id == null || item.id == selfItemId) continue;
-      if (item.name.trim().toLowerCase() == sourceName) {
-        return item.id;
-      }
-      final sub = item.subItem?.trim().toLowerCase();
-      if (sub != null && sub.isNotEmpty && sub == sourceName) {
-        return item.id;
-      }
-      if (item.staffLabel.trim().toLowerCase() == sourceName) {
-        return item.id;
-      }
-    }
-    return null;
   }
 }
