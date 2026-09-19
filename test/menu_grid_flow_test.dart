@@ -1,5 +1,7 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/screens/menu_items_grid_screen.dart';
 import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/menu_item_edit_helpers.dart';
 import 'package:foodstock/services/repository.dart';
@@ -186,6 +188,29 @@ void main() {
       expect(teaRow[10], '40');
 
       await tearDownStockTestSession(database);
+    });
+  });
+
+  group('grid stock source column UI', () {
+    testWidgets('searchable stock source cell renders with preset link',
+        (tester) async {
+      final controller = TextEditingController(text: 'Chicken 65');
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: buildMenuGridSelectCellForTesting(
+              controller: controller,
+              options: const ['Chicken 65', 'Krusty Bites'],
+            ),
+          ),
+        ),
+      );
+
+      expect(tester.takeException(), isNull);
+      expect(find.byType(ErrorWidget), findsNothing);
+      expect(find.text('Chicken 65'), findsOneWidget);
     });
   });
 }

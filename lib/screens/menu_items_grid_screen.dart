@@ -986,6 +986,14 @@ class _GridSelectCell extends StatefulWidget {
 }
 
 class _GridSelectCellState extends State<_GridSelectCell> {
+  final FocusNode _autocompleteFocusNode = FocusNode();
+
+  @override
+  void dispose() {
+    _autocompleteFocusNode.dispose();
+    super.dispose();
+  }
+
   String _labelFor(String value) => value.isEmpty ? '—' : value;
 
   List<String> _choices() {
@@ -1054,6 +1062,7 @@ class _GridSelectCellState extends State<_GridSelectCell> {
       padding: const EdgeInsets.all(2),
       child: RawAutocomplete<String>(
         textEditingController: widget.controller,
+        focusNode: _autocompleteFocusNode,
         displayStringForOption: _labelFor,
         optionsBuilder: (textEditingValue) {
           return _filteredChoices(textEditingValue.text);
@@ -1725,4 +1734,22 @@ class _AddItemNameDialogState extends State<_AddItemNameDialog> {
       ],
     );
   }
+}
+
+/// Builds the same searchable select cell used for Stock source (and similar columns).
+@visibleForTesting
+Widget buildMenuGridSelectCellForTesting({
+  required TextEditingController controller,
+  required List<String> options,
+  bool allowEmpty = true,
+}) {
+  return _GridSelectCell(
+    controller: controller,
+    options: options,
+    readOnly: false,
+    allowEmpty: allowEmpty,
+    searchable: true,
+    onChanged: () {},
+    onCommit: () {},
+  );
 }
