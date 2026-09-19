@@ -38,7 +38,7 @@ class _ResetScreenState extends State<ResetScreen> {
         title: const Text('Reset data?'),
         content: const Text(
           'This will delete all sales and purchases and restore stock to the '
-          'values from your originally imported menu Excel file. '
+          'opening stock values from your last saved menu grid. '
           'This cannot be undone.',
         ),
         actions: [
@@ -68,7 +68,7 @@ class _ResetScreenState extends State<ResetScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Sales and purchases cleared. Stock restored to imported values.',
+            'Sales and purchases cleared. Stock restored to saved menu grid values.',
           ),
           backgroundColor: Colors.green,
         ),
@@ -118,9 +118,9 @@ class _ResetScreenState extends State<ResetScreen> {
                     const SizedBox(height: 8),
                     Text(
                       'Deletes all sales and purchase records, then restores '
-                      'each location\'s stock to the values from the imported '
-                      'menu Excel file. Menu items, categories, units, and '
-                      'customers are not affected.',
+                      'each location\'s stock to the opening stock saved in '
+                      'the menu grid (including values you edited after import). '
+                      'Menu items, categories, units, and customers are not affected.',
                       style: TextStyle(
                         color: Colors.grey.shade700,
                         height: 1.35,

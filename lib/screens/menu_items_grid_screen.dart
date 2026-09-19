@@ -283,7 +283,10 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
       setState(() {});
 
       try {
-        final savedId = await Repository.instance.saveRawMaterial(item);
+        final savedId = await Repository.instance.saveRawMaterial(
+          item,
+          fromGridSave: true,
+        );
         final id = item.id ?? savedId;
         final refreshed = await Repository.instance.rawMaterialById(id);
         row.commitSaved(refreshed ?? item, _rows);
