@@ -180,5 +180,79 @@ void main() {
 
       await tearDownStockTestSession(database);
     });
+
+    test('recordSale deducts Chicken 65 stock when selling Krusty Bites', () async {
+      final database = await openStockTestDatabase();
+      bindStockTestSession(database);
+
+      final now = DateTime.now().toIso8601String();
+      await database.insert('categories', {
+        'id': 1,
+        'name': 'Snacks',
+        'type': 'raw_material',
+      });
+      await database.insert('categories', {
+        'id': 2,
+        'name': 'Fried Items',
+        'type': 'raw_material',
+      });
+      await database.insert('raw_materials', {
+        'id': 1,
+        'name': 'Chicken 65',
+        'sub_item': 'chicken 65',
+        'category_id': 1,
+        'listed': 1,
+        'opening_stock': 100,
+        'current_stock': 100,
+        'qty_needed': 1,
+        'selling_price': 95,
+        'created_at': now,
+      });
+      await database.insert('raw_materials', {
+        'id': 2,
+        'name': 'Krusty Bites',
+        'sub_item': 'chicken 65',
+        'category_id': 2,
+        'listed': 1,
+        'stock_source_id': 1,
+        'opening_stock': 0,
+        'current_stock': 0,
+        'qty_needed': 1,
+        'selling_price': 99,
+        'created_at': now,
+      });
+      await seedLocationStock(database, 1, stock: 100);
+      await seedLocationStock(database, 2, stock: 0);
+      await database.insert('stock_batches', {
+        'raw_material_id': 1,
+        'qty_remaining': 100,
+        'rate': 10,
+        'location_id': 1,
+        'created_at': now,
+      });
+
+      await Repository.instance.recordSale(
+        lines: [
+          CartLine(
+            rawMaterialId: 2,
+            name: 'Krusty Bites',
+            subItem: 'chicken 65',
+            qty: 1,
+            price: 99,
+          ),
+        ],
+        tax: 0,
+        discount: 0,
+        paymentType: 'cash',
+      );
+
+      final chickenStock = await locationStock(database, 1);
+      final krustyStock = await locationStock(database, 2);
+
+      expect(chickenStock, 99);
+      expect(krustyStock, 0);
+
+      await tearDownStockTestSession(database);
+    });
   });
 }

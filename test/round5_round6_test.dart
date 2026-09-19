@@ -63,6 +63,10 @@ void main() {
         item.soldLineLabel(variantLabel: 'Regular'),
         'Chicken Popcorn',
       );
+      expect(
+        item.soldLineLabel(variantLabel: 'Chicken Popcorn'),
+        'Chicken Popcorn',
+      );
     });
   });
 

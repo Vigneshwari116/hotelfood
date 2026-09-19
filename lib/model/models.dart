@@ -326,7 +326,8 @@ class RawMaterial {
     final variant = variantLabel?.trim();
     if (variant != null &&
         variant.isNotEmpty &&
-        variant.toLowerCase() != 'regular') {
+        variant.toLowerCase() != 'regular' &&
+        variant.toLowerCase() != salesLabel.trim().toLowerCase()) {
       return '$salesLabel — $variant';
     }
     return salesLabel;
