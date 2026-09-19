@@ -67,6 +67,7 @@ Future<Database> openStockTestDatabase() async {
           variant_group TEXT,
           variant_label TEXT,
           stock_source_id INTEGER,
+          location_id INTEGER,
           created_at TEXT NOT NULL
         )
       ''');
@@ -181,10 +182,13 @@ Future<Database> openStockTestDatabase() async {
         CREATE TABLE combos (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           name TEXT NOT NULL,
+          barcode TEXT,
           price REAL NOT NULL DEFAULT 0,
           selling_price REAL NOT NULL DEFAULT 0,
           is_active INTEGER NOT NULL DEFAULT 1,
           category_id INTEGER,
+          image_path TEXT,
+          location_id INTEGER,
           created_at TEXT NOT NULL
         )
       ''');
