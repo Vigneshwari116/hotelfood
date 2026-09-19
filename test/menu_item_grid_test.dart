@@ -36,6 +36,43 @@ void main() {
       );
     });
 
+    test('captureGridRowSnapshot detects stock source link as a change', () {
+      final before = MenuItemEditHelpers.captureGridRowSnapshot(
+        barcodeText: '',
+        itemName: 'Krusty Bites',
+        subItemText: 'chicken 65',
+        variantGroupText: '',
+        variantLabelText: '',
+        stockSourceNameText: '',
+        qtyPerSaleText: '1',
+        packetsText: '',
+        openingPiecesText: '',
+        unitsPerPacketText: '90',
+        stockText: '0',
+        costPriceText: '',
+        sellingPriceText: '99',
+        unitId: null,
+      );
+      final after = MenuItemEditHelpers.captureGridRowSnapshot(
+        barcodeText: '',
+        itemName: 'Krusty Bites',
+        subItemText: 'chicken 65',
+        variantGroupText: '',
+        variantLabelText: '',
+        stockSourceNameText: 'Chicken 65',
+        qtyPerSaleText: '1',
+        packetsText: '',
+        openingPiecesText: '',
+        unitsPerPacketText: '90',
+        stockText: '0',
+        costPriceText: '',
+        sellingPriceText: '99',
+        unitId: null,
+      );
+
+      expect(before == after, isFalse);
+    });
+
     test('buildForSave keeps qty per sale separate from units per packet', () {
       final existing = RawMaterial(
         id: 1,

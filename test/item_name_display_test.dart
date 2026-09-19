@@ -27,6 +27,19 @@ void main() {
       expect(line.displayLabel, 'Chicken Popcorn — popcorn large');
     });
 
+    test('cart line displayLabel avoids repeating the item name', () {
+      final line = CartLine(
+        rawMaterialId: 1,
+        name: 'Chicken 65',
+        subItem: 'Chicken 65',
+        variantLabel: 'Chicken 65',
+        qty: 1,
+        price: 95,
+      );
+
+      expect(line.displayLabel, 'Chicken 65');
+    });
+
     test('receipt uses item name for raw material sales', () {
       final lines = expandReceiptLines([
         CartLine(

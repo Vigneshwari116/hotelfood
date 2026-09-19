@@ -84,6 +84,8 @@ class _RawMaterialMasterScreenState
 
     setState(() {
       _loading = true;
+      _items = [];
+      _combos = [];
     });
 
     try {
@@ -105,7 +107,12 @@ class _RawMaterialMasterScreenState
         _items = results[0] as List<RawMaterial>;
         _categories = results[1] as List<Category>;
         _units = results[2] as List<UnitM>;
-        _combos = results[3] as List<Combo>;
+        final loadedCombos = results[3] as List<Combo>;
+        final seenComboIds = <int>{};
+        _combos = loadedCombos.where((combo) {
+          if (combo.id == null) return true;
+          return seenComboIds.add(combo.id!);
+        }).toList(growable: false);
         _comboOnlyCategoryIds = ComboOnlyCategories.categoryIds(
           materials: _items,
           combos: _combos,
@@ -759,17 +766,6 @@ class _RawMaterialMasterScreenState
                   label: Text(isMobile ? 'Grid' : 'Grid view'),
                 ),
                 if (!_readOnly) ...[
-                  const SizedBox(width: 8),
-                  IconButton(
-                    tooltip: 'Download menu grid as Excel',
-                    onPressed: _saveImportTemplate,
-                    icon: const Icon(Icons.download_outlined),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _importItemsFile,
-                    icon: const Icon(Icons.upload_file),
-                    label: Text(isMobile ? 'Import' : 'Import CSV / Excel'),
-                  ),
                   const SizedBox(width: 8),
                   FilledButton.icon(
                     onPressed: () {

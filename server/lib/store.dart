@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:postgres/postgres.dart';
 
 import 'env.dart';
+import 'location_menu_scoping.dart';
 import 'postgres_app_db.dart';
 
 class DbStore {
@@ -203,6 +204,7 @@ class DbStore {
         locationId: subbannaGarden,
       );
       await ensureUser('staff', 'staff123', 'staff');
+      await migrateMenuCatalogToLocationScope(db);
     });
   }
 
