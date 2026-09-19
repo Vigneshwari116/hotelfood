@@ -235,12 +235,13 @@ Future<void> seedLocationStock(
   Database database,
   int rawMaterialId, {
   double stock = 0,
+  double? openingStock,
 }) async {
   await database.insert('location_stock', {
     'location_id': 1,
     'raw_material_id': rawMaterialId,
     'current_stock': stock,
-    'opening_stock': stock,
+    'opening_stock': openingStock ?? stock,
     'reorder_level': 0,
   });
 }
