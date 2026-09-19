@@ -9,6 +9,7 @@ class ReceiptProfile {
 
   static const defaultShopName = 'FIVE STAR';
   static const defaultAddress = 'SUBBANNA GARDEN, BANGALORE-560040';
+  static const addressCitySuffix = ', BANGALORE-560040';
   static const defaultPhone = '9739577651';
   static const defaultEmail = 'shilpaenterprise@gmail.com';
   static const footerBrand = 'SHILPA ENTERPRISE';
@@ -58,5 +59,14 @@ class ReceiptProfile {
 
   static Future<ReceiptProfile> load() async {
     return ReceiptProfile.defaults();
+  }
+
+  /// Address line for a bill: location name plus the fixed city/postal suffix.
+  static String addressLineForLocation(String? locationName) {
+    final trimmed = locationName?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      return defaultAddress;
+    }
+    return '${trimmed.toUpperCase()}$addressCitySuffix';
   }
 }

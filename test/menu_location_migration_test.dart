@@ -52,6 +52,11 @@ void main() {
         'is_active': 1,
         'created_at': now,
       });
+      await database.insert('combo_raw_materials', {
+        'combo_id': 1,
+        'raw_material_id': 1,
+        'qty': 1,
+      });
 
       final purchaseId = await database.insert('purchases', {
         'purchase_date': now,
@@ -148,6 +153,15 @@ void main() {
       expect(combos.length, 2);
       expect(combos.first['name'], 'Big juicy burger');
       expect(combos.last['name'], 'Big juicy burger');
+
+      final loc2ComboId = combos.last['id'] as int;
+      final comboLinks = await database.query(
+        'combo_raw_materials',
+        where: 'combo_id = ?',
+        whereArgs: [loc2ComboId],
+      );
+      expect(comboLinks, hasLength(1));
+      expect(comboLinks.single['raw_material_id'], loc2MaterialId);
 
       await migrateMenuCatalogToLocationScope(database);
       final materialsAfter = await database.query('raw_materials');

@@ -1,3 +1,6 @@
+import 'combo_ingredient_location_repair.dart';
+import 'listed_location_clone_repair.dart';
+
 /// One-time data fixes for restored production databases. These must never run
 /// on every server boot — only once, tracked in [schema_migrations].
 class PostgresDataMigration {
@@ -10,6 +13,8 @@ class PostgresDataMigration {
 const postgresOneTimeDataMigrations = <PostgresDataMigration>[
   PostgresDataMigration('postgres_listed_material_dedup_v1', [
     '''
+    -- NOTE: Global partition (no location_id) incorrectly unlisted cloned rows
+    -- at locations 2+ after PR #88. [listed_location_clone_repair_v1] fixes data.
     WITH ranked AS (
       SELECT id,
         ROW_NUMBER() OVER (
@@ -31,6 +36,7 @@ const postgresOneTimeDataMigrations = <PostgresDataMigration>[
   ]),
   PostgresDataMigration('postgres_listed_variant_dedup_v1', [
     '''
+    -- NOTE: Same location-scope issue as material dedup v1.
     WITH ranked AS (
       SELECT id,
         ROW_NUMBER() OVER (
@@ -96,5 +102,13 @@ const postgresOneTimeDataMigrations = <PostgresDataMigration>[
         AND crm.raw_material_id = ci.raw_material_id
     )
     ''',
+  ]),
+  PostgresDataMigration(
+    comboIngredientLocationRepairV1,
+    [postgresComboIngredientLocationRepairSql],
+  ),
+  PostgresDataMigration(listedLocationCloneRepairV1, [
+    postgresListedMaterialsRepairBody,
+    postgresListedCombosIsActiveRepairBody,
   ]),
 ];
