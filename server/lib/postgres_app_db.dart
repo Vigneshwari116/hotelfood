@@ -135,6 +135,15 @@ class PostgresAppDb implements AppDb {
     ];
   }
 
+  /// Runs SQL that does not return rows (DDL, UPDATE without RETURNING).
+  Future<void> execute(
+    String sql, [
+    List<Object?>? arguments,
+  ]) async {
+    final converted = sqliteToPostgres(sql, arguments);
+    await _session.execute(converted.$1, parameters: converted.$2);
+  }
+
   @override
   Future<T> transaction<T>(Future<T> Function(AppDb txn) action) {
     final conn = _connection;

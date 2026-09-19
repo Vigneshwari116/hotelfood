@@ -25,6 +25,7 @@ void main() {
       await database.insert('raw_materials', {
         'name': 'Tea',
         'sub_item': 'Tea',
+        'barcode': 'TEA-001',
         'opening_stock': 10,
         'current_stock': 10,
         'created_at': now,
@@ -45,7 +46,7 @@ void main() {
       });
 
       await database.insert('combos', {
-        'name': 'Combo A',
+        'name': 'Big juicy burger',
         'price': 99,
         'selling_price': 99,
         'is_active': 1,
@@ -118,6 +119,8 @@ void main() {
       expect(materials.length, 2);
       expect(materials.first['location_id'], 1);
       expect(materials.last['location_id'], 2);
+      expect(materials.first['barcode'], 'TEA-001');
+      expect(materials.last['barcode'], 'TEA-001');
       final loc2MaterialId = materials.last['id'] as int;
 
       final purchaseLine = await database.query('purchase_items');
@@ -143,6 +146,8 @@ void main() {
 
       final combos = await database.query('combos', orderBy: 'id ASC');
       expect(combos.length, 2);
+      expect(combos.first['name'], 'Big juicy burger');
+      expect(combos.last['name'], 'Big juicy burger');
 
       await migrateMenuCatalogToLocationScope(database);
       final materialsAfter = await database.query('raw_materials');

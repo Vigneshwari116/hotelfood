@@ -59,6 +59,8 @@ Future<void> migrateMenuCatalogToLocationScope(Database db) async {
       where: 'location_id IS NULL',
     );
 
+    await _relaxGlobalMenuUniqueConstraintsForLocationClone(txn);
+
     for (var locIndex = 1; locIndex < locations.length; locIndex++) {
       final locationId = locations[locIndex]['id'] as int;
       final materialIdMap = <int, int>{};
@@ -304,6 +306,90 @@ Future<void> _remapTransactionalComboIds(
       [newId, oldId, locationId],
     );
   }
+}
+
+/// Recreates menu tables without legacy global UNIQUE constraints (SQLite
+/// cannot DROP autoindexes backing UNIQUE columns).
+Future<void> _relaxGlobalMenuUniqueConstraintsForLocationClone(
+  DatabaseExecutor txn,
+) async {
+  await txn.execute('PRAGMA foreign_keys = OFF');
+
+  await txn.execute('''
+    CREATE TABLE raw_materials__loc_scope (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      barcode TEXT,
+      name TEXT NOT NULL,
+      sub_item TEXT,
+      qty_needed REAL NOT NULL DEFAULT 1,
+      category_id INTEGER,
+      unit_id INTEGER,
+      image_path TEXT,
+      opening_stock REAL NOT NULL DEFAULT 0,
+      opening_pieces REAL NOT NULL DEFAULT 0,
+      current_stock REAL NOT NULL DEFAULT 0,
+      reorder_level REAL NOT NULL DEFAULT 0,
+      shelf_life_days INTEGER,
+      units_per_packet REAL,
+      entry_password_hash TEXT,
+      cost_price REAL,
+      selling_price REAL,
+      listed INTEGER NOT NULL DEFAULT 1,
+      menu_sort_order INTEGER,
+      menu_export_row TEXT,
+      variant_group TEXT,
+      variant_label TEXT,
+      stock_source_id INTEGER,
+      location_id INTEGER,
+      created_at TEXT NOT NULL
+    )
+  ''');
+  await txn.execute('''
+    INSERT INTO raw_materials__loc_scope SELECT * FROM raw_materials
+  ''');
+  await txn.execute('DROP TABLE raw_materials');
+  await txn.execute(
+    'ALTER TABLE raw_materials__loc_scope RENAME TO raw_materials',
+  );
+
+  await txn.execute('''
+    CREATE TABLE combos__loc_scope (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      barcode TEXT,
+      price REAL NOT NULL DEFAULT 0,
+      selling_price REAL NOT NULL DEFAULT 0,
+      is_active INTEGER NOT NULL DEFAULT 1,
+      category_id INTEGER,
+      image_path TEXT,
+      location_id INTEGER,
+      created_at TEXT NOT NULL
+    )
+  ''');
+  await txn.execute('''
+    INSERT INTO combos__loc_scope (
+      id, name, barcode, price, selling_price, is_active,
+      category_id, image_path, location_id, created_at
+    )
+    SELECT
+      id, name, barcode, price, selling_price, is_active,
+      category_id, image_path, location_id, created_at
+    FROM combos
+  ''');
+  await txn.execute('DROP TABLE combos');
+  await txn.execute('ALTER TABLE combos__loc_scope RENAME TO combos');
+
+  await txn.execute('PRAGMA foreign_keys = ON');
+
+  await txn.execute(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_combos_location_name '
+    'ON combos (location_id, name)',
+  );
+  await txn.execute(
+    'CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_materials_location_barcode '
+    'ON raw_materials (location_id, barcode) '
+    "WHERE barcode IS NOT NULL AND trim(barcode) <> ''",
+  );
 }
 
 Future<void> _ensureLocationColumns(Database db) async {

@@ -45,7 +45,7 @@ Future<Database> openStockTestDatabase() async {
       await db.execute('''
         CREATE TABLE raw_materials (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          barcode TEXT,
+          barcode TEXT UNIQUE,
           name TEXT NOT NULL,
           sub_item TEXT,
           qty_needed REAL NOT NULL DEFAULT 1,
@@ -181,7 +181,7 @@ Future<Database> openStockTestDatabase() async {
       await db.execute('''
         CREATE TABLE combos (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
+          name TEXT NOT NULL UNIQUE,
           barcode TEXT,
           price REAL NOT NULL DEFAULT 0,
           selling_price REAL NOT NULL DEFAULT 0,
