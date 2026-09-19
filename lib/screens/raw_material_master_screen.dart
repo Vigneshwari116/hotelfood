@@ -760,17 +760,6 @@ class _RawMaterialMasterScreenState
                 ),
                 if (!_readOnly) ...[
                   const SizedBox(width: 8),
-                  IconButton(
-                    tooltip: 'Download menu grid as Excel',
-                    onPressed: _saveImportTemplate,
-                    icon: const Icon(Icons.download_outlined),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _importItemsFile,
-                    icon: const Icon(Icons.upload_file),
-                    label: Text(isMobile ? 'Import' : 'Import CSV / Excel'),
-                  ),
-                  const SizedBox(width: 8),
                   FilledButton.icon(
                     onPressed: () {
                       _openRawMaterialEditor();

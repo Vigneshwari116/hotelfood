@@ -1,12 +1,5 @@
-import 'dart:io';
-
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
-import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/combo_only_categories.dart';
 import 'package:foodstock/services/inventory_search.dart';
@@ -98,6 +91,10 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
         _rows.add(_MenuGridRow(item: item));
       }
       _MenuGridRow.linkStockSourceNames(_rows, items);
+      for (final row in _rows) {
+        row.resetDirtyBaseline();
+      }
+      _changed = false;
     } catch (e) {
       if (!mounted) return;
       _showMessage('Failed to load menu items: $e', isError: true);
@@ -283,7 +280,10 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
       setState(() {});
 
       try {
-        final savedId = await Repository.instance.saveRawMaterial(item);
+        final savedId = await Repository.instance.saveRawMaterial(
+          item,
+          fromGridSave: true,
+        );
         final id = item.id ?? savedId;
         final refreshed = await Repository.instance.rawMaterialById(id);
         row.commitSaved(refreshed ?? item, _rows);
@@ -297,56 +297,14 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
     }
 
     setState(() => _savingAll = false);
-    _markChanged();
-    if (_dirtyCount == 0 && _changed) {
-      setState(() => _changed = false);
+    _MenuGridRow.linkStockSourceNames(_rows, _rows.map((r) => r.item).toList());
+    for (final row in _rows) {
+      row.resetDirtyBaseline();
     }
+    _changed = false;
 
     if (saved > 0) {
       _showMessage('Saved');
-    }
-  }
-
-  Future<void> _downloadExcel() async {
-    final locationId = Repository.instance.sessionLocationId;
-    final locationName = Repository.instance.sessionLocationName;
-    if (locationId == null || locationName == null) {
-      _showMessage(
-        'Excel download is only available for location accounts.',
-        isError: true,
-      );
-      return;
-    }
-
-    try {
-      final bytes =
-          await ItemImportService().exportGridWorkbookForLocation(locationId);
-      final fileName = '$locationName.xlsx';
-      String? path;
-      if (!kIsWeb &&
-          (Platform.isWindows || Platform.isLinux || Platform.isMacOS)) {
-        path = await FilePicker.platform.saveFile(
-          dialogTitle: 'Save menu grid and combos Excel',
-          fileName: fileName,
-          type: FileType.custom,
-          allowedExtensions: const ['xlsx'],
-        );
-      }
-      path ??= p.join(
-        (await getApplicationDocumentsDirectory()).path,
-        fileName,
-      );
-      if (!path.toLowerCase().endsWith('.xlsx')) {
-        path = '$path.xlsx';
-      }
-      await File(path).writeAsBytes(bytes);
-      _showMessage(
-        ApiConfig.enabled
-            ? 'Menu grid saved to $path (shop server data).'
-            : 'Menu grid saved to $path',
-      );
-    } catch (e) {
-      _showMessage('Download failed: $e', isError: true);
     }
   }
 
@@ -412,11 +370,6 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
         appBar: AppBar(
           title: const Text('Menu Items Grid'),
           actions: [
-            IconButton(
-              tooltip: 'Download menu grid as Excel',
-              onPressed: _loading ? null : _downloadExcel,
-              icon: const Icon(Icons.download_outlined),
-            ),
             IconButton(
               tooltip: 'Refresh',
               onPressed: _loading ? null : () => _load(),
@@ -1586,25 +1539,29 @@ class _MenuGridRow {
   }
 
   String _captureSnapshot() {
-    return [
-      barcode.text,
-      itemName.text,
-      subItemName.text,
-      variantGroup.text,
-      variantLabel.text,
-      stockSourceName.text,
-      qtyPerSale.text,
-      packets.text,
-      openingPieces.text,
-      unitsPerPacket.text,
-      stock.text,
-      costPrice.text,
-      sellingPrice.text,
-      unitId?.toString() ?? '',
-    ].join('\u0001');
+    return MenuItemEditHelpers.captureGridRowSnapshot(
+      barcodeText: barcode.text,
+      itemName: itemName.text,
+      subItemText: subItemName.text,
+      variantGroupText: variantGroup.text,
+      variantLabelText: variantLabel.text,
+      stockSourceNameText: stockSourceName.text,
+      qtyPerSaleText: qtyPerSale.text,
+      packetsText: packets.text,
+      openingPiecesText: openingPieces.text,
+      unitsPerPacketText: unitsPerPacket.text,
+      stockText: stock.text,
+      costPriceText: costPrice.text,
+      sellingPriceText: sellingPrice.text,
+      unitId: unitId,
+    );
   }
 
   bool get isDirty => _snapshot != _captureSnapshot();
+
+  void resetDirtyBaseline() {
+    _snapshot = _captureSnapshot();
+  }
 
   void recalculateStockFromPackets() {
     if (stockFieldsReadOnly) {

@@ -199,6 +199,20 @@ Future<Database> openStockTestDatabase() async {
       ''');
 
       await db.execute('''
+        CREATE TABLE pending_orders (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          token_number INTEGER NOT NULL,
+          location_id INTEGER,
+          customer_name TEXT,
+          customer_phone TEXT,
+          tax REAL NOT NULL DEFAULT 0,
+          discount REAL NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+      ''');
+
+      await db.execute('''
         CREATE TABLE pending_order_items (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           pending_order_id INTEGER NOT NULL,
@@ -209,7 +223,10 @@ Future<Database> openStockTestDatabase() async {
           component_labels TEXT,
           qty REAL NOT NULL,
           price REAL NOT NULL,
-          amount REAL NOT NULL
+          amount REAL NOT NULL,
+          FOREIGN KEY (pending_order_id)
+            REFERENCES pending_orders (id)
+            ON DELETE CASCADE
         )
       ''');
     },
@@ -235,12 +252,13 @@ Future<void> seedLocationStock(
   Database database,
   int rawMaterialId, {
   double stock = 0,
+  double? openingStock,
 }) async {
   await database.insert('location_stock', {
     'location_id': 1,
     'raw_material_id': rawMaterialId,
     'current_stock': stock,
-    'opening_stock': stock,
+    'opening_stock': openingStock ?? stock,
     'reorder_level': 0,
   });
 }

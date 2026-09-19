@@ -39,6 +39,41 @@ class MenuItemEditHelpers {
     return (packets * unitsPerPacket) + openingPieces;
   }
 
+  /// Stable field snapshot for grid dirty-state tracking (also used in tests).
+  static String captureGridRowSnapshot({
+    required String barcodeText,
+    required String itemName,
+    required String subItemText,
+    required String variantGroupText,
+    required String variantLabelText,
+    required String stockSourceNameText,
+    required String qtyPerSaleText,
+    required String packetsText,
+    required String openingPiecesText,
+    required String unitsPerPacketText,
+    required String stockText,
+    required String costPriceText,
+    required String sellingPriceText,
+    required int? unitId,
+  }) {
+    return [
+      barcodeText,
+      itemName,
+      subItemText,
+      variantGroupText,
+      variantLabelText,
+      stockSourceNameText,
+      qtyPerSaleText,
+      packetsText,
+      openingPiecesText,
+      unitsPerPacketText,
+      stockText,
+      costPriceText,
+      sellingPriceText,
+      unitId?.toString() ?? '',
+    ].join('\u0001');
+  }
+
   static RawMaterial buildForSave({
     required RawMaterial existing,
     required String barcodeText,
