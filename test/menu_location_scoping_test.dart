@@ -272,4 +272,125 @@ void main() {
       await tearDownStockTestSession(database);
     });
   });
+
+  group('variant label uniqueness', () {
+    test('allows same variant label at different locations', () async {
+      final database = await openStockTestDatabase();
+      await seedSecondLocation(database);
+      final now = DateTime.now().toIso8601String();
+
+      await database.insert('categories', {
+        'name': 'Buckets',
+        'type': 'raw_material',
+      });
+
+      final loc1Id = await database.insert('raw_materials', {
+        'name': 'Big Buckets',
+        'sub_item': 'Thai Crispy',
+        'variant_label': 'Buckets',
+        'category_id': 1,
+        'location_id': 1,
+        'listed': 1,
+        'created_at': now,
+      });
+      await seedLocationStock(database, loc1Id);
+
+      final loc2Id = await database.insert('raw_materials', {
+        'name': 'Big Buckets',
+        'sub_item': 'Thai Crispy',
+        'variant_label': 'Buckets',
+        'category_id': 1,
+        'location_id': 2,
+        'listed': 0,
+        'created_at': now,
+      });
+      await database.insert('location_stock', {
+        'location_id': 2,
+        'raw_material_id': loc2Id,
+        'current_stock': 0,
+        'opening_stock': 0,
+        'reorder_level': 0,
+      });
+
+      bindStockTestSession(database);
+      Repository.instance.bindSession(
+        role: 'location',
+        locationId: 2,
+        locationName: 'Magadi road',
+      );
+
+      final existing = (await Repository.instance.rawMaterialById(loc2Id))!;
+      await Repository.instance.saveRawMaterial(
+        RawMaterial(
+          id: existing.id,
+          name: existing.name,
+          subItem: existing.subItem,
+          variantLabel: 'Buckets',
+          categoryId: 1,
+          locationId: 2,
+          listed: true,
+          sellingPrice: 199,
+        ),
+      );
+
+      final row = (await database.query(
+        'raw_materials',
+        where: 'id = ?',
+        whereArgs: [loc2Id],
+      ))
+          .single;
+      expect(row['listed'], 1);
+
+      await tearDownStockTestSession(database);
+    });
+
+    test('still rejects duplicate variant label within one location', () async {
+      final database = await openStockTestDatabase();
+      bindStockTestSession(database);
+      final now = DateTime.now().toIso8601String();
+
+      await database.insert('categories', {
+        'name': 'Buckets',
+        'type': 'raw_material',
+      });
+
+      await database.insert('raw_materials', {
+        'name': 'Big Buckets',
+        'sub_item': 'Thai Crispy',
+        'variant_label': 'Buckets',
+        'category_id': 1,
+        'location_id': 1,
+        'listed': 1,
+        'created_at': now,
+      });
+      final secondId = await database.insert('raw_materials', {
+        'name': 'Mini Buckets',
+        'sub_item': 'Thai Crispy',
+        'variant_label': 'Buckets',
+        'category_id': 1,
+        'location_id': 1,
+        'listed': 0,
+        'created_at': now,
+      });
+      await seedLocationStock(database, 1);
+      await seedLocationStock(database, secondId);
+
+      await expectLater(
+        Repository.instance.saveRawMaterial(
+          RawMaterial(
+            id: secondId,
+            name: 'Mini Buckets',
+            subItem: 'Thai Crispy',
+            variantLabel: 'Buckets',
+            categoryId: 1,
+            locationId: 1,
+            listed: true,
+          ),
+        ),
+        throwsA(isA<InvalidInventoryException>()),
+      );
+
+      await tearDownStockTestSession(database);
+    });
+  });
 }
