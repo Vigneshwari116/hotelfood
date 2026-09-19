@@ -1246,6 +1246,7 @@ class _PosScreenState extends State<PosScreen> {
                 customerName.isEmpty ? null : customerName,
             customerPhone:
                 customerPhone.isEmpty ? null : customerPhone,
+            locationName: _repo.sessionLocationName,
           ),
         ),
       );

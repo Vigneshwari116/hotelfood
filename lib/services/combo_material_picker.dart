@@ -3,7 +3,16 @@ import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/sub_item_stock.dart';
 
 /// Builds a deduplicated raw-material list for combo component pickers.
-List<RawMaterial> materialsForComboPicker(Iterable<RawMaterial> all) {
+List<RawMaterial> materialsForComboPicker(
+  Iterable<RawMaterial> all, {
+  int? catalogLocationId,
+}) {
+  Iterable<RawMaterial> scoped = all;
+  if (catalogLocationId != null) {
+    scoped = all.where(
+      (material) => material.locationId == catalogLocationId,
+    );
+  }
   bool isStockComponent(RawMaterial material) {
     final labels = [
       material.name.trim().toLowerCase(),
@@ -35,7 +44,7 @@ List<RawMaterial> materialsForComboPicker(Iterable<RawMaterial> all) {
     return sub != null && sub.isNotEmpty;
   }
 
-  final list = all.where((material) => material.id != null).toList();
+  final list = scoped.where((material) => material.id != null).toList();
   final byPool = <String, List<RawMaterial>>{};
   for (final material in list) {
     if (!shouldInclude(material)) continue;

@@ -1909,7 +1909,11 @@ class Repository {
                   // ==========================================================
 
                   final uniqueMaterials = <int>{};
-                  final stockIdMap = await _buildStockMaterialIdMap(txn);
+                  final stockIdMap = await _buildStockMaterialIdMap(
+                        txn,
+                        scopeLocationId: catalogLocationId,
+                        strictLocationScope: catalogLocationId != null,
+                  );
 
                   for (final item in items) {
                         if (combo.id != null && item.comboId != comboId) {
@@ -1936,18 +1940,50 @@ class Repository {
                               );
                         }
 
-                        final materialRows = await txn.query(
-                              'raw_materials',
-                              columns: ['id'],
-                              where: 'id = ?',
-                              whereArgs: [item.rawMaterialId],
-                              limit: 1,
-                        );
-
-                        if (materialRows.isEmpty) {
-                              throw InvalidInventoryException(
-                                    'A raw material in the combo no longer exists.',
+                        if (catalogLocationId != null) {
+                              final materialRows = await txn.query(
+                                    'raw_materials',
+                                    columns: ['id'],
+                                    where: 'id = ? AND location_id = ?',
+                                    whereArgs: [
+                                          item.rawMaterialId,
+                                          catalogLocationId,
+                                    ],
+                                    limit: 1,
                               );
+
+                              if (materialRows.isEmpty) {
+                                    final existsElsewhere = await txn.query(
+                                          'raw_materials',
+                                          columns: ['id'],
+                                          where: 'id = ?',
+                                          whereArgs: [item.rawMaterialId],
+                                          limit: 1,
+                                    );
+                                    if (existsElsewhere.isEmpty) {
+                                          throw InvalidInventoryException(
+                                                'A raw material in the combo no longer exists.',
+                                          );
+                                    }
+                                    throw InvalidInventoryException(
+                                          'Combo ingredients must belong to the '
+                                          'same location as the combo.',
+                                    );
+                              }
+                        } else {
+                              final materialRows = await txn.query(
+                                    'raw_materials',
+                                    columns: ['id'],
+                                    where: 'id = ?',
+                                    whereArgs: [item.rawMaterialId],
+                                    limit: 1,
+                              );
+
+                              if (materialRows.isEmpty) {
+                                    throw InvalidInventoryException(
+                                          'A raw material in the combo no longer exists.',
+                                    );
+                              }
                         }
 
                         await txn.insert(
@@ -2314,7 +2350,10 @@ class Repository {
                   // PURCHASE ITEMS
                   // ----------------------------------------------------------
 
-                  final stockIdMap = await _buildStockMaterialIdMap(txn);
+                  final stockIdMap = await _buildStockMaterialIdMap(
+                        txn,
+                        scopeLocationId: _stockLocationId,
+                  );
 
                   for (final line in lines) {
                         final rawMaterialId =
@@ -2569,7 +2608,10 @@ class Repository {
             return db.transaction((txn) async {
                   _requireStockLocation();
 
-                  final stockIdMap = await _buildStockMaterialIdMap(txn);
+                  final stockIdMap = await _buildStockMaterialIdMap(
+                        txn,
+                        scopeLocationId: _stockLocationId,
+                  );
                   final stockMaterialId = await _stockMaterialIdForSale(
                         txn,
                         rawMaterialId,
@@ -4339,7 +4381,10 @@ class Repository {
           List<CartLine> lines,
           ) async {
             final totalNeeded = <int, double>{};
-            final stockIdMap = await _buildStockMaterialIdMap(txn);
+            final stockIdMap = await _buildStockMaterialIdMap(
+                  txn,
+                  scopeLocationId: _stockLocationId,
+            );
 
             for (final line in lines) {
                   // --------------------------------------------------------
@@ -4474,18 +4519,56 @@ class Repository {
             return value <= 0 ? 1 : value;
       }
 
-      Future<Map<int, int>> _buildStockMaterialIdMap(AppDb txn) async {
-            final rows = await txn.query(
-                  'raw_materials',
-                  columns: [
-                        'id',
-                        'name',
-                        'sub_item',
-                        'category_id',
-                        'menu_sort_order',
-                        'stock_source_id',
-                  ],
+      /// Counts combo ingredient rows whose raw material belongs to another location.
+      Future<int> countCrossLocationComboIngredients() async {
+            final db = await _db;
+            final rows = await db.rawQuery(
+                  '''
+      SELECT COUNT(*) AS c
+      FROM combo_raw_materials crm
+      JOIN combos c ON c.id = crm.combo_id
+      JOIN raw_materials rm ON rm.id = crm.raw_material_id
+      WHERE c.location_id IS NOT NULL
+        AND rm.location_id IS NOT NULL
+        AND c.location_id != rm.location_id
+      ''',
             );
+            return (rows.first['c'] as num?)?.toInt() ?? 0;
+      }
+
+      Future<Map<int, int>> _buildStockMaterialIdMap(
+            AppDb txn, {
+            int? scopeLocationId,
+            bool strictLocationScope = false,
+      }) async {
+            final rows = scopeLocationId == null
+                ? await txn.query(
+                      'raw_materials',
+                      columns: [
+                            'id',
+                            'name',
+                            'sub_item',
+                            'category_id',
+                            'menu_sort_order',
+                            'stock_source_id',
+                      ],
+                )
+                : await txn.query(
+                      'raw_materials',
+                      columns: [
+                            'id',
+                            'name',
+                            'sub_item',
+                            'category_id',
+                            'menu_sort_order',
+                            'stock_source_id',
+                            'location_id',
+                      ],
+                      where: strictLocationScope
+                          ? 'location_id = ?'
+                          : 'location_id = ? OR location_id IS NULL',
+                      whereArgs: [scopeLocationId],
+                );
 
             final byId = <int, RawMaterial>{};
             for (final row in rows) {
@@ -4517,8 +4600,13 @@ class Repository {
             AppDb txn,
             int materialId, {
             Map<int, int>? stockIdMap,
+            int? scopeLocationId,
       }) async {
-            final resolvedMap = stockIdMap ?? await _buildStockMaterialIdMap(txn);
+            final resolvedMap = stockIdMap ??
+                await _buildStockMaterialIdMap(
+                      txn,
+                      scopeLocationId: scopeLocationId,
+                    );
             if (!resolvedMap.containsKey(materialId)) {
                   final rows = await txn.query(
                         'raw_materials',

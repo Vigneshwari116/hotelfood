@@ -108,6 +108,7 @@ void main() {
           'opening_pieces': 2,
           'current_stock': 22,
           'opening_stock': 22,
+          'location_id': 1,
           'created_at': now,
         });
         await db.insert('location_stock', {
@@ -122,6 +123,7 @@ void main() {
           'sub_item': 'Hot Crispy Patty',
           'category_id': 1,
           'qty_needed': 5,
+          'location_id': 1,
           'created_at': now,
         });
         await db.insert('raw_materials', {
@@ -130,6 +132,7 @@ void main() {
           'sub_item': 'Popcorn Small',
           'category_id': 3,
           'selling_price': 49,
+          'location_id': 1,
           'created_at': now,
         });
         await db.insert('raw_materials', {
@@ -137,6 +140,7 @@ void main() {
           'name': 'Kathi Roll Paratha',
           'sub_item': 'Kathi Roll Paratha',
           'category_id': 4,
+          'location_id': 1,
           'created_at': now,
         });
       },
@@ -150,7 +154,12 @@ void main() {
     );
 
     await Repository.instance.saveCombo(
-      Combo(name: 'Big juicy burger', categoryId: 1, price: 129),
+      Combo(
+        name: 'Big juicy burger',
+        categoryId: 1,
+        price: 129,
+        locationId: 1,
+      ),
       [
         ComboRawMaterial(comboId: 0, rawMaterialId: 2, qty: 5),
         ComboRawMaterial(comboId: 0, rawMaterialId: 1, qty: 1),
@@ -186,6 +195,7 @@ void main() {
     expect(archive.findFile('xl/worksheets/sheet2.xml'), isNotNull);
 
     Repository.instance.setAppDbForTesting(null);
+    Repository.instance.clearSession();
     await database.close();
   });
 
@@ -331,6 +341,7 @@ void main() {
     );
 
     Repository.instance.setAppDbForTesting(null);
+    Repository.instance.clearSession();
     await database.close();
   });
 }

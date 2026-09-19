@@ -34,9 +34,10 @@ class EscPosReceiptBuilder {
       ),
     );
 
-    if (profile.address.isNotEmpty) {
+    final addressLine = document.headerAddressLine;
+    if (addressLine.isNotEmpty) {
       bytes += generator.text(
-        profile.address,
+        addressLine,
         styles: const PosStyles(align: PosAlign.center),
       );
     }

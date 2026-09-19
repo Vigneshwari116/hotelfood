@@ -560,14 +560,23 @@ class _RawMaterialMasterScreenState
   }) async {
     if (!mounted) return;
 
-    // Combo picker must list every menu item, not the Items-tab search filter.
+    // Combo picker must list every menu item at the active location only.
+    final catalogLocationId = Repository.instance.sessionLocationId;
     final allItems = await Repository.instance.rawMaterials(
       includeHidden: true,
     );
+    final locationItems = catalogLocationId == null
+        ? allItems
+        : allItems
+            .where((item) => item.locationId == catalogLocationId)
+            .toList();
     // One picker row per stock ingredient (e.g. one Thai Crispy, not per category copy).
-    final pickerItems = materialsForComboPicker(allItems);
+    final pickerItems = materialsForComboPicker(
+      locationItems,
+      catalogLocationId: catalogLocationId,
+    );
     final allMaterialsById = {
-      for (final item in allItems)
+      for (final item in locationItems)
         if (item.id != null) item.id!: item,
     };
 
@@ -2546,6 +2555,7 @@ class _ComboEditorDialogState
         isActive: widget.existing?.isActive ?? true,
       );
 
+      final catalogLocationId = Repository.instance.sessionLocationId;
       final comboRawMaterials = _lines.map((line) {
         return ComboRawMaterial(
           id: null,
@@ -2558,6 +2568,27 @@ class _ComboEditorDialogState
           qty: line.qty,
         );
       }).toList();
+
+      if (catalogLocationId != null) {
+        for (final line in comboRawMaterials) {
+          final material =
+              widget.allMaterialsById[line.rawMaterialId];
+          if (material == null ||
+              material.locationId != catalogLocationId) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Each combo ingredient must belong to the current location.',
+                ),
+              ),
+            );
+            setState(() {
+              _saving = false;
+            });
+            return;
+          }
+        }
+      }
 
       await Repository.instance.saveCombo(
         combo,

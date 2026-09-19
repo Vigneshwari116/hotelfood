@@ -1,4 +1,5 @@
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/receipt_profile.dart';
 
 /// Shared receipt payload for PDF preview and Bluetooth ESC/POS printing.
 class ReceiptDocument {
@@ -11,6 +12,7 @@ class ReceiptDocument {
   final double grandTotal;
   final String? customerName;
   final String? customerPhone;
+  final String? locationName;
   final DateTime billedAt;
 
   ReceiptDocument({
@@ -23,8 +25,12 @@ class ReceiptDocument {
     required this.grandTotal,
     this.customerName,
     this.customerPhone,
+    this.locationName,
     DateTime? billedAt,
   }) : billedAt = billedAt ?? DateTime.now();
+
+  String get headerAddressLine =>
+      ReceiptProfile.addressLineForLocation(locationName);
 
   bool get hasCustomer =>
       (customerName?.trim().isNotEmpty ?? false) ||

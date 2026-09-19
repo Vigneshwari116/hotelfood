@@ -93,6 +93,7 @@ class ReceiptScreen extends StatefulWidget {
   final double grandTotal;
   final String? customerName;
   final String? customerPhone;
+  final String? locationName;
 
   const ReceiptScreen({
     super.key,
@@ -105,6 +106,7 @@ class ReceiptScreen extends StatefulWidget {
     required this.grandTotal,
     this.customerName,
     this.customerPhone,
+    this.locationName,
   });
 
   ReceiptDocument get _document => ReceiptDocument(
@@ -117,6 +119,7 @@ class ReceiptScreen extends StatefulWidget {
         grandTotal: grandTotal,
         customerName: customerName,
         customerPhone: customerPhone,
+        locationName: locationName,
       );
 
   @override
@@ -358,10 +361,10 @@ class _ReceiptScreenState
                 ),
               ),
 
-              if (_profile.address.isNotEmpty)
+              if (widget._document.headerAddressLine.isNotEmpty)
                 pw.Center(
                   child: pw.Text(
-                    _profile.address,
+                    widget._document.headerAddressLine,
                     textAlign: pw.TextAlign.center,
                     style: pw.TextStyle(fontSize: _subtitleSize),
                   ),
