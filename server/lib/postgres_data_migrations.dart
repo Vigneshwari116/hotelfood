@@ -1,3 +1,5 @@
+import 'combo_ingredient_location_repair.dart';
+
 /// One-time data fixes for restored production databases. These must never run
 /// on every server boot — only once, tracked in [schema_migrations].
 class PostgresDataMigration {
@@ -97,4 +99,8 @@ const postgresOneTimeDataMigrations = <PostgresDataMigration>[
     )
     ''',
   ]),
+  PostgresDataMigration(
+    comboIngredientLocationRepairV1,
+    [postgresComboIngredientLocationRepairSql],
+  ),
 ];

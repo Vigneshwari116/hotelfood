@@ -8,6 +8,7 @@ import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/database/http_app_db.dart';
 import 'package:foodstock/database/sqlite_app_db.dart';
+import 'package:foodstock/database/combo_ingredient_location_repair.dart';
 import 'package:foodstock/database/location_menu_scoping.dart';
 import 'package:foodstock/database/sub_item_migration.dart';
 import 'package:foodstock/database/category_cleanup.dart';
@@ -115,7 +116,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 31,
+      version: 32,
 
       onConfigure: (db) async {
         await db.execute(
@@ -1709,6 +1710,10 @@ class DBHelper {
 
     if (oldVersion < 31) {
       await migrateMenuCatalogToLocationScope(db);
+    }
+
+    if (oldVersion < 32) {
+      await migrateComboIngredientLocationRepair(db);
     }
   }
 
