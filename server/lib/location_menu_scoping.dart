@@ -1,40 +1,23 @@
 import 'app_db.dart';
 
+const _migrationName = 'location_menu_catalog_scope_v1';
+
 /// Clones legacy shared menu rows into every shop location (Postgres VPS).
 Future<void> migrateMenuCatalogToLocationScope(AppDb db) async {
-  final materialInfo = await db.rawQuery(
-    'SELECT column_name FROM information_schema.columns '
-    "WHERE table_name = 'raw_materials' AND column_name = 'location_id'",
-  );
-  if (materialInfo.isEmpty) {
-    await db.rawQuery(
-      'ALTER TABLE raw_materials ADD COLUMN location_id INTEGER '
-      'REFERENCES locations (id)',
-    );
-  }
-
-  final comboInfo = await db.rawQuery(
-    'SELECT column_name FROM information_schema.columns '
-    "WHERE table_name = 'combos' AND column_name = 'location_id'",
-  );
-  if (comboInfo.isEmpty) {
-    await db.rawQuery(
-      'ALTER TABLE combos ADD COLUMN location_id INTEGER '
-      'REFERENCES locations (id)',
-    );
-  }
-
-  final already = await db.rawQuery(
-    'SELECT COUNT(*) AS c FROM raw_materials WHERE location_id IS NOT NULL',
-  );
-  if (((already.first['c'] as num?)?.toInt() ?? 0) > 0) {
+  await _ensureSchemaMigrationsTable(db);
+  if (await _migrationApplied(db, _migrationName)) {
     return;
   }
+
+  await _ensureLocationColumns(db);
 
   final locations = await db.query('locations', orderBy: 'id ASC');
   if (locations.isEmpty) {
+    await _recordMigration(db, _migrationName);
     return;
   }
+
+  await _createPreMigrationBackups(db);
 
   await db.transaction((txn) async {
     final legacyMaterials = await txn.query(
@@ -45,6 +28,22 @@ Future<void> migrateMenuCatalogToLocationScope(AppDb db) async {
       'combos',
       orderBy: 'id ASC',
     );
+
+    if (legacyMaterials.isEmpty && legacyCombos.isEmpty) {
+      final firstLoc = locations.first['id'] as int;
+      await txn.update(
+        'raw_materials',
+        {'location_id': firstLoc},
+        where: 'location_id IS NULL',
+      );
+      await txn.update(
+        'combos',
+        {'location_id': firstLoc},
+        where: 'location_id IS NULL',
+      );
+      await _recordMigrationTxn(txn, _migrationName);
+      return;
+    }
 
     final firstLocationId = locations.first['id'] as int;
     await txn.update(
@@ -58,13 +57,10 @@ Future<void> migrateMenuCatalogToLocationScope(AppDb db) async {
       where: 'location_id IS NULL',
     );
 
-    if (legacyMaterials.isEmpty && legacyCombos.isEmpty) {
-      return;
-    }
-
     for (var locIndex = 1; locIndex < locations.length; locIndex++) {
       final locationId = locations[locIndex]['id'] as int;
-      final idMap = <int, int>{};
+      final materialIdMap = <int, int>{};
+      final comboIdMap = <int, int>{};
 
       for (final row in legacyMaterials) {
         final oldId = row['id'] as int;
@@ -73,7 +69,7 @@ Future<void> migrateMenuCatalogToLocationScope(AppDb db) async {
           ..['location_id'] = locationId
           ..['stock_source_id'] = null;
         final newId = await txn.insert('raw_materials', copy);
-        idMap[oldId] = newId;
+        materialIdMap[oldId] = newId;
 
         final stockRows = await txn.query(
           'location_stock',
@@ -96,13 +92,13 @@ Future<void> migrateMenuCatalogToLocationScope(AppDb db) async {
         }
       }
 
-      for (final entry in idMap.entries) {
+      for (final entry in materialIdMap.entries) {
         final oldRow = legacyMaterials.firstWhere(
           (row) => row['id'] == entry.key,
         );
         final oldSource = oldRow['stock_source_id'] as int?;
         if (oldSource == null) continue;
-        final mapped = idMap[oldSource];
+        final mapped = materialIdMap[oldSource];
         if (mapped == null) continue;
         await txn.update(
           'raw_materials',
@@ -118,6 +114,7 @@ Future<void> migrateMenuCatalogToLocationScope(AppDb db) async {
           ..remove('id')
           ..['location_id'] = locationId;
         final newComboId = await txn.insert('combos', comboCopy);
+        comboIdMap[oldComboId] = newComboId;
 
         final links = await txn.query(
           'combo_raw_materials',
@@ -126,7 +123,7 @@ Future<void> migrateMenuCatalogToLocationScope(AppDb db) async {
         );
         for (final link in links) {
           final oldMaterialId = link['raw_material_id'] as int;
-          final mappedMaterialId = idMap[oldMaterialId];
+          final mappedMaterialId = materialIdMap[oldMaterialId];
           if (mappedMaterialId == null) continue;
           await txn.insert('combo_raw_materials', {
             'combo_id': newComboId,
@@ -135,6 +132,191 @@ Future<void> migrateMenuCatalogToLocationScope(AppDb db) async {
           });
         }
       }
+
+      await _remapTransactionalMaterialIds(
+        txn,
+        locationId: locationId,
+        materialIdMap: materialIdMap,
+      );
+      await _remapTransactionalComboIds(
+        txn,
+        locationId: locationId,
+        comboIdMap: comboIdMap,
+      );
+    }
+
+    await _recordMigrationTxn(txn, _migrationName);
+  });
+}
+
+Future<void> _ensureSchemaMigrationsTable(AppDb db) async {
+  await db.rawQuery('''
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id INTEGER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+      name TEXT NOT NULL UNIQUE,
+      applied_at TEXT NOT NULL
+    )
+  ''');
+}
+
+Future<bool> _migrationApplied(AppDb db, String name) async {
+  final rows = await db.query(
+    'schema_migrations',
+    columns: ['id'],
+    where: 'name = ?',
+    whereArgs: [name],
+    limit: 1,
+  );
+  return rows.isNotEmpty;
+}
+
+Future<void> _recordMigration(AppDb db, String name) async {
+  await db.insert('schema_migrations', {
+    'name': name,
+    'applied_at': DateTime.now().toIso8601String(),
+  });
+}
+
+Future<void> _recordMigrationTxn(AppDb txn, String name) async {
+  await txn.insert('schema_migrations', {
+    'name': name,
+    'applied_at': DateTime.now().toIso8601String(),
+  });
+}
+
+Future<void> _createPreMigrationBackups(AppDb db) async {
+  await db.transaction((txn) async {
+    await txn.rawQuery('DROP TABLE IF EXISTS raw_materials_pre_migration_backup');
+    await txn.rawQuery(
+      'CREATE TABLE raw_materials_pre_migration_backup AS '
+      'SELECT * FROM raw_materials',
+    );
+
+    await txn.rawQuery('DROP TABLE IF EXISTS combos_pre_migration_backup');
+    await txn.rawQuery(
+      'CREATE TABLE combos_pre_migration_backup AS SELECT * FROM combos',
+    );
+
+    await txn.rawQuery(
+      'DROP TABLE IF EXISTS combo_raw_materials_pre_migration_backup',
+    );
+    await txn.rawQuery(
+      'CREATE TABLE combo_raw_materials_pre_migration_backup AS '
+      'SELECT * FROM combo_raw_materials',
+    );
+
+    final comboItems = await txn.rawQuery('''
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'combo_items'
+    ''');
+    if (comboItems.isNotEmpty) {
+      await txn.rawQuery('DROP TABLE IF EXISTS combo_items_pre_migration_backup');
+      await txn.rawQuery(
+        'CREATE TABLE combo_items_pre_migration_backup AS '
+        'SELECT * FROM combo_items',
+      );
     }
   });
+}
+
+Future<void> _remapTransactionalMaterialIds(
+  AppDb txn, {
+  required int locationId,
+  required Map<int, int> materialIdMap,
+}) async {
+  for (final entry in materialIdMap.entries) {
+    final oldId = entry.key;
+    final newId = entry.value;
+
+    await txn.update(
+      'stock_ledger',
+      {'raw_material_id': newId},
+      where: 'location_id = ? AND raw_material_id = ?',
+      whereArgs: [locationId, oldId],
+    );
+
+    await txn.update(
+      'stock_batches',
+      {'raw_material_id': newId},
+      where: 'location_id = ? AND raw_material_id = ?',
+      whereArgs: [locationId, oldId],
+    );
+
+    await txn.update(
+      'stock_adjustments',
+      {'raw_material_id': newId},
+      where: 'location_id = ? AND raw_material_id = ?',
+      whereArgs: [locationId, oldId],
+    );
+
+    await txn.rawQuery(
+      '''
+      UPDATE purchase_items
+      SET raw_material_id = ?
+      WHERE raw_material_id = ?
+        AND purchase_id IN (
+          SELECT id FROM purchases WHERE location_id = ?
+        )
+      ''',
+      [newId, oldId, locationId],
+    );
+
+    await txn.rawQuery(
+      '''
+      UPDATE sale_items
+      SET raw_material_id = ?
+      WHERE raw_material_id = ?
+        AND sale_id IN (
+          SELECT id FROM sales WHERE location_id = ?
+        )
+      ''',
+      [newId, oldId, locationId],
+    );
+  }
+}
+
+Future<void> _remapTransactionalComboIds(
+  AppDb txn, {
+  required int locationId,
+  required Map<int, int> comboIdMap,
+}) async {
+  for (final entry in comboIdMap.entries) {
+    final oldId = entry.key;
+    final newId = entry.value;
+
+    await txn.rawQuery(
+      '''
+      UPDATE sale_items
+      SET combo_id = ?
+      WHERE combo_id = ?
+        AND sale_id IN (
+          SELECT id FROM sales WHERE location_id = ?
+        )
+      ''',
+      [newId, oldId, locationId],
+    );
+  }
+}
+
+Future<void> _ensureLocationColumns(AppDb db) async {
+  await db.rawQuery(
+    'ALTER TABLE raw_materials ADD COLUMN IF NOT EXISTS location_id INTEGER '
+    'REFERENCES locations (id)',
+  );
+  await db.rawQuery(
+    'ALTER TABLE combos ADD COLUMN IF NOT EXISTS location_id INTEGER '
+    'REFERENCES locations (id)',
+  );
+  await db.rawQuery(
+    'CREATE INDEX IF NOT EXISTS idx_raw_materials_location '
+    'ON raw_materials (location_id)',
+  );
+  await db.rawQuery(
+    'CREATE INDEX IF NOT EXISTS idx_combos_location ON combos (location_id)',
+  );
+  await db.rawQuery('''
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_materials_location_barcode
+    ON raw_materials (location_id, barcode)
+    WHERE barcode IS NOT NULL AND trim(barcode::text) <> ''
+  ''');
 }
