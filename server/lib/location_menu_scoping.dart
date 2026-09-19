@@ -88,6 +88,9 @@ Future<void> migrateMenuCatalogToLocationScope(AppDb db) async {
           materialColumns,
           overrides: {'location_id': locationId},
         );
+        if (materialColumns.contains('listed')) {
+          copy['listed'] = (row['listed'] as num?)?.toInt() ?? 1;
+        }
         if (materialColumns.contains('stock_source_id')) {
           copy['stock_source_id'] = null;
         }
@@ -139,6 +142,9 @@ Future<void> migrateMenuCatalogToLocationScope(AppDb db) async {
           comboColumns,
           overrides: {'location_id': locationId},
         );
+        if (comboColumns.contains('is_active')) {
+          comboCopy['is_active'] = (combo['is_active'] as num?)?.toInt() ?? 1;
+        }
         final newComboId = await txn.insert('combos', comboCopy);
         comboIdMap[oldComboId] = newComboId;
 

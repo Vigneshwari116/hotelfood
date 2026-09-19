@@ -1,23 +1,9 @@
 import 'package:sqflite/sqflite.dart';
 
+import 'menu_catalog_match.dart';
+
 /// Tracks one-time repair of combo ingredient FKs after per-location menu clone.
 const comboIngredientLocationRepairV1 = 'combo_ingredient_location_repair_v1';
-
-/// Same identity key used when PR #88 cloned [raw_materials] per location
-/// (name + effective sub_item label, optional barcode and category).
-String rawMaterialCatalogMatchKey({
-  required String name,
-  String? subItem,
-  String? barcode,
-  int? categoryId,
-}) {
-  final normalizedName = name.trim().toLowerCase();
-  final sub = (subItem ?? '').trim();
-  final effectiveSub = sub.isEmpty ? normalizedName : sub.toLowerCase();
-  final normalizedBarcode = (barcode ?? '').trim().toLowerCase();
-  final category = categoryId?.toString() ?? '';
-  return '$category|$normalizedBarcode|$normalizedName|$effectiveSub';
-}
 
 class ComboIngredientRepairResult {
   const ComboIngredientRepairResult({
