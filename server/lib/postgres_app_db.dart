@@ -1,6 +1,7 @@
 import 'package:postgres/postgres.dart';
 
 import 'app_db.dart';
+import 'postgres_data_migrations.dart';
 import 'postgres_schema.dart';
 import 'sql_placeholders.dart';
 
@@ -14,6 +15,35 @@ class PostgresAppDb implements AppDb {
   Future<void> ensureSchema() async {
     for (final statement in postgresSchemaStatements) {
       await _session.execute(statement);
+    }
+    await _runOneTimeDataMigrations();
+  }
+
+  Future<void> _runOneTimeDataMigrations() async {
+    for (final migration in postgresOneTimeDataMigrations) {
+      final existing = await _session.execute(
+        Sql(
+          'SELECT id FROM schema_migrations WHERE name = \$1 LIMIT 1',
+        ),
+        parameters: [migration.name],
+      );
+      if (existing.isNotEmpty) {
+        continue;
+      }
+
+      for (final statement in migration.statements) {
+        await _session.execute(statement);
+      }
+
+      await _session.execute(
+        Sql(
+          'INSERT INTO schema_migrations (name, applied_at) VALUES (\$1, \$2)',
+        ),
+        parameters: [
+          migration.name,
+          DateTime.now().toUtc().toIso8601String(),
+        ],
+      );
     }
   }
 
