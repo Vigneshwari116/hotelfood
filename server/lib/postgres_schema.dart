@@ -342,4 +342,13 @@ const postgresSchemaStatements = <String>[
       AND crm.raw_material_id = ci.raw_material_id
   )
   ''',
+  'ALTER TABLE raw_materials ADD COLUMN IF NOT EXISTS location_id INTEGER REFERENCES locations (id)',
+  'ALTER TABLE combos ADD COLUMN IF NOT EXISTS location_id INTEGER REFERENCES locations (id)',
+  'CREATE INDEX IF NOT EXISTS idx_raw_materials_location ON raw_materials (location_id)',
+  'CREATE INDEX IF NOT EXISTS idx_combos_location ON combos (location_id)',
+  '''
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_raw_materials_location_barcode
+  ON raw_materials (location_id, barcode)
+  WHERE barcode IS NOT NULL AND trim(barcode::text) <> ''
+  ''',
 ];

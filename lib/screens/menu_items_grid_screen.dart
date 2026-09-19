@@ -244,6 +244,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
           categoryId: categoryId,
           unitId: unitId,
           listed: true,
+          locationId: Repository.instance.sessionLocationId,
           createdAt: DateTime.now(),
         ),
       );
@@ -1581,16 +1582,17 @@ class _MenuGridRow {
   }
 
   RawMaterial buildItem(List<_MenuGridRow> allRows) {
-    final sourceName = stockSourceName.text.trim().toLowerCase();
-    int? stockSourceId;
-    if (sourceName.isNotEmpty) {
-      for (final row in allRows) {
-        if (row.item.id == item.id) continue;
-        if (row.itemName.text.trim().toLowerCase() == sourceName) {
-          stockSourceId = row.item.id;
-          break;
-        }
-      }
+    final sourceName = stockSourceName.text.trim();
+    final menuItems = allRows.map((row) => row.item).toList();
+    final stockSourceId = MenuItemEditHelpers.resolveStockSourceIdFromGrid(
+      stockSourceNameText: sourceName,
+      selfItemId: item.id,
+      menuItems: menuItems,
+    );
+    if (sourceName.isNotEmpty && stockSourceId == null) {
+      throw InvalidInventoryException(
+        'Stock source "$sourceName" was not found on this menu grid.',
+      );
     }
 
     final built = MenuItemEditHelpers.buildForSave(
@@ -1608,7 +1610,8 @@ class _MenuGridRow {
       unitId: unitId,
       variantGroupText: variantGroup.text,
       variantLabelText: variantLabel.text,
-      stockSourceId: sourceName.isEmpty ? null : stockSourceId,
+      stockSourceId: stockSourceId,
+      clearStockSource: sourceName.isEmpty,
     );
     if (KrustyBitesStock.usesStockSourcePool(
       built,

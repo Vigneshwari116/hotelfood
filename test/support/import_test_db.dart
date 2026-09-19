@@ -67,6 +67,7 @@ Future<Database> openImportTestDatabase() async {
           variant_group TEXT,
           variant_label TEXT,
           stock_source_id INTEGER,
+          location_id INTEGER,
           created_at TEXT NOT NULL
         )
       ''');
@@ -135,6 +136,7 @@ Future<Database> openImportTestDatabase() async {
           selling_price REAL NOT NULL DEFAULT 0,
           image_path TEXT,
           is_active INTEGER NOT NULL DEFAULT 1,
+          location_id INTEGER,
           created_at TEXT NOT NULL
         )
       ''');
