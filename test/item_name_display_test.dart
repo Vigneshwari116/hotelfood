@@ -54,7 +54,7 @@ void main() {
       expect(lines.single.label, 'star burger');
     });
 
-    test('combo receipt itemizes component item names not stock names', () {
+    test('combo receipt shows combo sales name only', () {
       final lines = expandReceiptLines([
         CartLine(
           comboId: 1,
@@ -68,9 +68,9 @@ void main() {
         ),
       ]);
 
-      expect(lines.first.label, 'Star burger combo');
-      expect(lines[1].label, '  Burger Bun');
-      expect(lines[2].label, '  star burger');
+      expect(lines, hasLength(1));
+      expect(lines.single.label, 'Star burger combo');
+      expect(lines.single.amount, 210);
     });
 
     test('combo item itemNameLabel prefers stock ingredient name', () {

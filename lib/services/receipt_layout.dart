@@ -1,7 +1,7 @@
 import 'package:foodstock/model/models.dart';
 import 'package:intl/intl.dart';
 
-/// One printed receipt row (combo sales may include kitchen-only detail lines).
+/// One printed receipt row for PDF and thermal bills.
 class ReceiptDisplayLine {
   final String label;
   final double qty;
@@ -26,16 +26,6 @@ List<ReceiptDisplayLine> expandReceiptLines(List<CartLine> lines) {
           amount: line.amount,
         ),
       );
-      for (final component in line.componentLabels) {
-        final trimmed = component.trim();
-        if (trimmed.isEmpty) continue;
-        output.add(
-          ReceiptDisplayLine(
-            label: '  $trimmed',
-            qty: line.qty,
-          ),
-        );
-      }
       continue;
     }
 

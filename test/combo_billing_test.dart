@@ -35,7 +35,7 @@ void main() {
     });
   });
 
-  test('combo receipt shows combo line at combo price with item names', () {
+  test('combo receipt shows combo sales name and price only', () {
     final lines = expandReceiptLines([
       CartLine(
         comboId: 1,
@@ -49,18 +49,9 @@ void main() {
       ),
     ]);
 
-    expect(lines.length, 3);
-    expect(lines.first.label, 'Star burger combo');
-    expect(lines.first.amount, 210);
-    expect(lines[1].label, '  Burger Bun With Sesame');
-    expect(lines[1].amount, isNull);
-    expect(lines[2].label, '  Crispy Chicken Patty');
-    expect(lines[2].amount, isNull);
-
-    final subtotal = lines
-        .where((line) => line.amount != null)
-        .fold<double>(0, (sum, line) => sum + line.amount!);
-    expect(subtotal, 210);
+    expect(lines.length, 1);
+    expect(lines.single.label, 'Star burger combo');
+    expect(lines.single.amount, 210);
   });
 
   test('raw material receipt shows item name not stock name', () {
