@@ -188,4 +188,149 @@ void main() {
     Repository.instance.setAppDbForTesting(null);
     await database.close();
   });
+
+  test('backup export includes only current location catalog rows', () async {
+    final database = await openDatabase(
+      inMemoryDatabasePath,
+      version: 1,
+      onCreate: (db, version) async {
+        final now = DateTime.now().toIso8601String();
+        await db.execute('''
+          CREATE TABLE locations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            created_at TEXT NOT NULL
+          )
+        ''');
+        await db.insert('locations', {'name': 'Shop A', 'created_at': now});
+        await db.insert('locations', {'name': 'Shop B', 'created_at': now});
+        await db.execute('''
+          CREATE TABLE categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            type TEXT NOT NULL DEFAULT 'raw_material'
+          )
+        ''');
+        await db.insert('categories', {'name': 'Snacks'});
+        await db.execute('''
+          CREATE TABLE units (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            short_code TEXT NOT NULL
+          )
+        ''');
+        await db.insert('units', {'name': 'Piece', 'short_code': 'pc'});
+        await db.execute('''
+          CREATE TABLE location_stock (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            location_id INTEGER NOT NULL,
+            raw_material_id INTEGER NOT NULL,
+            current_stock REAL NOT NULL DEFAULT 0,
+            opening_stock REAL NOT NULL DEFAULT 0,
+            reorder_level REAL NOT NULL DEFAULT 0
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE raw_materials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            sub_item TEXT,
+            listed INTEGER NOT NULL DEFAULT 1,
+            current_stock REAL NOT NULL DEFAULT 0,
+            opening_stock REAL NOT NULL DEFAULT 0,
+            reorder_level REAL NOT NULL DEFAULT 0,
+            qty_needed REAL NOT NULL DEFAULT 1,
+            category_id INTEGER,
+            unit_id INTEGER,
+            created_at TEXT NOT NULL,
+            location_id INTEGER
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE combos (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            price REAL NOT NULL DEFAULT 0,
+            selling_price REAL NOT NULL DEFAULT 0,
+            is_active INTEGER NOT NULL DEFAULT 1,
+            location_id INTEGER,
+            created_at TEXT NOT NULL
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE combo_raw_materials (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            combo_id INTEGER NOT NULL,
+            raw_material_id INTEGER NOT NULL,
+            qty REAL NOT NULL DEFAULT 1
+          )
+        ''');
+        await db.insert('raw_materials', {
+          'name': 'Tea Loc A',
+          'sub_item': 'Tea Loc A',
+          'category_id': 1,
+          'location_id': 1,
+          'created_at': now,
+        });
+        await db.insert('location_stock', {
+          'location_id': 1,
+          'raw_material_id': 1,
+          'current_stock': 1,
+          'opening_stock': 1,
+        });
+        await db.insert('raw_materials', {
+          'name': 'Tea Loc B',
+          'sub_item': 'Tea Loc B',
+          'category_id': 1,
+          'location_id': 2,
+          'created_at': now,
+        });
+        await db.insert('location_stock', {
+          'location_id': 2,
+          'raw_material_id': 2,
+          'current_stock': 1,
+          'opening_stock': 1,
+        });
+        await db.insert('combos', {
+          'name': 'Combo A',
+          'price': 99,
+          'selling_price': 99,
+          'location_id': 1,
+          'created_at': now,
+        });
+        await db.insert('combos', {
+          'name': 'Combo B',
+          'price': 88,
+          'selling_price': 88,
+          'location_id': 2,
+          'created_at': now,
+        });
+      },
+    );
+
+    Repository.instance.setAppDbForTesting(SqliteAppDb(database));
+    Repository.instance.bindSession(
+      role: 'location',
+      locationId: 1,
+      locationName: 'Shop A',
+    );
+
+    final service = ItemImportService();
+    final menuRows = await service.gridExportRowsForLocation(1);
+    expect(menuRows.map((row) => row[2]), contains('Tea Loc A'));
+    expect(menuRows.map((row) => row[2]), isNot(contains('Tea Loc B')));
+
+    final comboRows = await service.comboExportRows();
+    expect(
+      comboRows.map((row) => row[0]),
+      anyElement(contains('Combo A')),
+    );
+    expect(
+      comboRows.map((row) => row[0]),
+      isNot(anyElement(contains('Combo B'))),
+    );
+
+    Repository.instance.setAppDbForTesting(null);
+    await database.close();
+  });
 }
