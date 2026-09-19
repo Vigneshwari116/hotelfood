@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:postgres/postgres.dart';
 
 import 'env.dart';
+import 'location_menu_scoping.dart';
 import 'postgres_app_db.dart';
 
 class DbStore {
@@ -15,21 +16,22 @@ class DbStore {
   final Endpoint _endpoint;
   final _txs = <String, Connection>{};
 
-  static Future<DbStore> open() async {
-    if (Env.pgDatabase == 'db_accounting_testing' ||
-        Env.pgDatabase == 'db_accounting_live') {
+  static Future<DbStore> open({Endpoint? testEndpoint}) async {
+    final endpoint = testEndpoint ??
+        Endpoint(
+          host: Env.pgHost,
+          port: Env.pgPort,
+          database: Env.pgDatabase,
+          username: Env.pgUser,
+          password: Env.pgPassword,
+        );
+    if (endpoint.database == 'db_accounting_testing' ||
+        endpoint.database == 'db_accounting_live') {
       throw StateError('Refusing to use an accounting database.');
     }
-    if (Env.pgPassword.isEmpty) {
+    if (endpoint.password == null || endpoint.password!.isEmpty) {
       throw StateError('PGPASSWORD is not set.');
     }
-    final endpoint = Endpoint(
-      host: Env.pgHost,
-      port: Env.pgPort,
-      database: Env.pgDatabase,
-      username: Env.pgUser,
-      password: Env.pgPassword,
-    );
     final pool = Pool.withEndpoints(
       [endpoint],
       settings: const PoolSettings(
@@ -203,6 +205,7 @@ class DbStore {
         locationId: subbannaGarden,
       );
       await ensureUser('staff', 'staff123', 'staff');
+      await migrateMenuCatalogToLocationScope(db);
     });
   }
 
