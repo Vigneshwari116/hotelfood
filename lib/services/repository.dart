@@ -2470,11 +2470,18 @@ class Repository {
             return db.transaction((txn) async {
                   _requireStockLocation();
 
+                  final stockIdMap = await _buildStockMaterialIdMap(txn);
+                  final stockMaterialId = await _stockMaterialIdForSale(
+                        txn,
+                        rawMaterialId,
+                        stockIdMap: stockIdMap,
+                  );
+
                   final rows = await txn.query(
                         'raw_materials',
                         columns: ['name'],
                         where: 'id = ?',
-                        whereArgs: [rawMaterialId],
+                        whereArgs: [stockMaterialId],
                         limit: 1,
                   );
 
@@ -2486,7 +2493,7 @@ class Repository {
 
                   final double currentStock = await _getCurrentStock(
                         txn,
-                        rawMaterialId,
+                        stockMaterialId,
                   );
 
                   if (qtyDelta < 0.0) {
@@ -2504,7 +2511,7 @@ class Repository {
                   final adjustmentId = await txn.insert(
                         'stock_adjustments',
                         {
-                              'raw_material_id': rawMaterialId,
+                              'raw_material_id': stockMaterialId,
                               'adjust_date': DateTime.now().toIso8601String(),
                               'qty': qtyDelta,
                               'reason': reason.trim(),
@@ -2515,7 +2522,7 @@ class Repository {
                   if (qtyDelta < 0.0) {
                         await _deductFEFO(
                               txn,
-                              rawMaterialId,
+                              stockMaterialId,
                               -qtyDelta,
                               refType: 'adjustment',
                               refId: adjustmentId,
@@ -2524,7 +2531,7 @@ class Repository {
                         await txn.insert(
                               'stock_batches',
                               {
-                                    'raw_material_id': rawMaterialId,
+                                    'raw_material_id': stockMaterialId,
                                     'qty_remaining': qtyDelta,
                                     'rate': null,
                                     'expiry_date': null,
@@ -2536,20 +2543,94 @@ class Repository {
 
                         final double newBalance = await _bumpStock(
                               txn,
-                              rawMaterialId,
+                              stockMaterialId,
                               qtyDelta,
                         );
 
                         await _writeLedger(
                               txn: txn,
-                              rawMaterialId: rawMaterialId,
+                              rawMaterialId: stockMaterialId,
                               refType: 'adjustment',
                               refId: adjustmentId,
                               qtyIn: qtyDelta,
                               balanceAfter: newBalance,
                         );
                   }
+
+                  await _syncRawMaterialAggregateStock(txn, stockMaterialId);
             });
+      }
+
+      /// Lists saved stock adjustments with the closing balance after each row.
+      Future<List<Map<String, dynamic>>> stockAdjustments({
+            DateTime? from,
+            DateTime? to,
+      }) async {
+            final db = await _db;
+            final locationId = _stockLocationId;
+
+            final periodStart = from == null
+                ? null
+                : DateTime(from.year, from.month, from.day);
+            final periodEndExclusive = to == null
+                ? null
+                : DateTime(to.year, to.month, to.day).add(const Duration(days: 1));
+
+            final ledgerLocationFilter = locationId == null
+                ? ''
+                : 'AND sl.location_id = ?';
+            final where = <String>[];
+            final args = <Object>[];
+
+            if (locationId != null) {
+                  args.add(locationId);
+            }
+
+            if (periodStart != null) {
+                  where.add('sa.adjust_date >= ?');
+                  args.add(periodStart.toIso8601String());
+            }
+            if (periodEndExclusive != null) {
+                  where.add('sa.adjust_date < ?');
+                  args.add(periodEndExclusive.toIso8601String());
+            }
+            if (locationId != null) {
+                  where.add('sa.location_id = ?');
+                  args.add(locationId);
+            }
+
+            final whereClause =
+                where.isEmpty ? '' : 'WHERE ${where.join(' AND ')}';
+
+            final rows = await db.rawQuery(
+                  '''
+      SELECT
+        sa.id AS id,
+        sa.adjust_date AS adjust_date,
+        sa.qty AS qty,
+        sa.reason AS reason,
+        rm.name AS item_name,
+        rm.sub_item AS sub_item,
+        (
+          SELECT sl.balance_after
+          FROM stock_ledger sl
+          WHERE sl.ref_type = 'adjustment'
+            AND sl.ref_id = sa.id
+            AND sl.raw_material_id = sa.raw_material_id
+            $ledgerLocationFilter
+          ORDER BY sl.id DESC
+          LIMIT 1
+        ) AS closing_stock
+      FROM stock_adjustments sa
+      JOIN raw_materials rm
+        ON rm.id = sa.raw_material_id
+      $whereClause
+      ORDER BY sa.adjust_date DESC, sa.id DESC
+      ''',
+                  args,
+            );
+
+            return rows;
       }
 
       // ============================================================
