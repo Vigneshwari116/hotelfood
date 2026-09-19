@@ -64,7 +64,7 @@ class VariantHelpers {
   static String variantSelectorLabel(RawMaterial material) {
     final label = material.variantLabel?.trim();
     if (label != null && label.isNotEmpty) return label;
-    return material.salesLabel;
+    return '';
   }
 
   static String _normalizedFamilyKey(String text) {
