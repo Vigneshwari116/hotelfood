@@ -3335,6 +3335,9 @@ class Repository {
             if (label.isEmpty) return;
 
             final posKey = SubItemStock.posGroupKey(rm);
+            final catalogLocationId =
+                rm.locationId ?? _menuCatalogLocationId;
+
             final rows = await db.query(
                   'raw_materials',
                   columns: [
@@ -3345,6 +3348,7 @@ class Repository {
                         'variant_group',
                         'variant_label',
                         'listed',
+                        'location_id',
                   ],
             );
 
@@ -3352,6 +3356,14 @@ class Repository {
                   final id = row['id'] as int?;
                   if (id == null || id == rm.id) continue;
                   if ((row['listed'] as num?)?.toInt() == 0) continue;
+
+                  if (catalogLocationId != null) {
+                        final siblingLocationId =
+                            (row['location_id'] as num?)?.toInt();
+                        if (siblingLocationId != catalogLocationId) {
+                              continue;
+                        }
+                  }
 
                   final sibling = RawMaterial(
                         id: id,
