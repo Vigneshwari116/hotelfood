@@ -23,6 +23,7 @@ Future<void> migrateMenuCatalogToLocationScope(AppDb db) async {
   }
 
   await _ensureLocationColumns(db);
+  await _ensureMenuCloneColumnPrerequisites(db);
 
   final locations = await db.query('locations', orderBy: 'id ASC');
   if (locations.isEmpty) {
@@ -72,6 +73,9 @@ Future<void> migrateMenuCatalogToLocationScope(AppDb db) async {
 
     await _relaxGlobalMenuUniqueConstraintsForLocationClone(txn);
 
+    final materialColumns = await _rawMaterialsColumnNames(txn);
+    final comboColumns = await _combosColumnNames(txn);
+
     for (var locIndex = 1; locIndex < locations.length; locIndex++) {
       final locationId = locations[locIndex]['id'] as int;
       final materialIdMap = <int, int>{};
@@ -79,10 +83,14 @@ Future<void> migrateMenuCatalogToLocationScope(AppDb db) async {
 
       for (final row in legacyMaterials) {
         final oldId = row['id'] as int;
-        final copy = Map<String, Object?>.from(row)
-          ..remove('id')
-          ..['location_id'] = locationId
-          ..['stock_source_id'] = null;
+        final copy = _rowCopyForInsert(
+          row,
+          materialColumns,
+          overrides: {'location_id': locationId},
+        );
+        if (materialColumns.contains('stock_source_id')) {
+          copy['stock_source_id'] = null;
+        }
         final newId = await txn.insert('raw_materials', copy);
         materialIdMap[oldId] = newId;
 
@@ -108,6 +116,7 @@ Future<void> migrateMenuCatalogToLocationScope(AppDb db) async {
       }
 
       for (final entry in materialIdMap.entries) {
+        if (!materialColumns.contains('stock_source_id')) continue;
         final oldRow = legacyMaterials.firstWhere(
           (row) => row['id'] == entry.key,
         );
@@ -125,9 +134,11 @@ Future<void> migrateMenuCatalogToLocationScope(AppDb db) async {
 
       for (final combo in legacyCombos) {
         final oldComboId = combo['id'] as int;
-        final comboCopy = Map<String, Object?>.from(combo)
-          ..remove('id')
-          ..['location_id'] = locationId;
+        final comboCopy = _rowCopyForInsert(
+          combo,
+          comboColumns,
+          overrides: {'location_id': locationId},
+        );
         final newComboId = await txn.insert('combos', comboCopy);
         comboIdMap[oldComboId] = newComboId;
 
@@ -337,6 +348,49 @@ Future<void> _remapTransactionalComboIds(
       [newId, oldId, locationId],
     );
   }
+}
+
+Map<String, Object?> _rowCopyForInsert(
+  Map<String, Object?> row,
+  Set<String> columnNames, {
+  required Map<String, Object?> overrides,
+}) {
+  final copy = <String, Object?>{};
+  for (final key in row.keys) {
+    if (key == 'id') continue;
+    if (columnNames.contains(key)) {
+      copy[key] = row[key];
+    }
+  }
+  copy.addAll(overrides);
+  return copy;
+}
+
+Future<Set<String>> _rawMaterialsColumnNames(AppDb db) async {
+  final rows = await db.rawQuery('''
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'raw_materials'
+  ''');
+  return rows.map((row) => row['column_name']!.toString()).toSet();
+}
+
+Future<Set<String>> _combosColumnNames(AppDb db) async {
+  final rows = await db.rawQuery('''
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'combos'
+  ''');
+  return rows.map((row) => row['column_name']!.toString()).toSet();
+}
+
+/// Restored pg_dump databases may predate [stock_source_id]. The clone step
+/// must not depend on [PostgresAppDb.ensureSchema] having run first.
+Future<void> _ensureMenuCloneColumnPrerequisites(AppDb db) async {
+  await _pgExecute(
+    db,
+    'ALTER TABLE raw_materials ADD COLUMN IF NOT EXISTS stock_source_id INTEGER',
+  );
 }
 
 Future<void> _ensureLocationColumns(AppDb db) async {

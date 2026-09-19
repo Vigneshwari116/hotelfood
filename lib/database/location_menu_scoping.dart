@@ -12,6 +12,7 @@ Future<void> migrateMenuCatalogToLocationScope(Database db) async {
   }
 
   await _ensureLocationColumns(db);
+  await _ensureMenuCloneColumnPrerequisites(db);
 
   final locations = await db.query('locations', orderBy: 'id ASC');
   if (locations.isEmpty) {
@@ -61,6 +62,9 @@ Future<void> migrateMenuCatalogToLocationScope(Database db) async {
 
     await _relaxGlobalMenuUniqueConstraintsForLocationClone(txn);
 
+    final materialColumns = await _rawMaterialsColumnNames(txn);
+    final comboColumns = await _combosColumnNames(txn);
+
     for (var locIndex = 1; locIndex < locations.length; locIndex++) {
       final locationId = locations[locIndex]['id'] as int;
       final materialIdMap = <int, int>{};
@@ -68,10 +72,14 @@ Future<void> migrateMenuCatalogToLocationScope(Database db) async {
 
       for (final row in legacyMaterials) {
         final oldId = row['id'] as int;
-        final copy = Map<String, Object?>.from(row)
-          ..remove('id')
-          ..['location_id'] = locationId
-          ..['stock_source_id'] = null;
+        final copy = _rowCopyForInsert(
+          row,
+          materialColumns,
+          overrides: {'location_id': locationId},
+        );
+        if (materialColumns.contains('stock_source_id')) {
+          copy['stock_source_id'] = null;
+        }
         final newId = await txn.insert('raw_materials', copy);
         materialIdMap[oldId] = newId;
 
@@ -100,6 +108,7 @@ Future<void> migrateMenuCatalogToLocationScope(Database db) async {
       }
 
       for (final entry in materialIdMap.entries) {
+        if (!materialColumns.contains('stock_source_id')) continue;
         final oldRow = legacyMaterials.firstWhere(
           (row) => row['id'] == entry.key,
         );
@@ -117,9 +126,11 @@ Future<void> migrateMenuCatalogToLocationScope(Database db) async {
 
       for (final combo in legacyCombos) {
         final oldComboId = combo['id'] as int;
-        final comboCopy = Map<String, Object?>.from(combo)
-          ..remove('id')
-          ..['location_id'] = locationId;
+        final comboCopy = _rowCopyForInsert(
+          combo,
+          comboColumns,
+          overrides: {'location_id': locationId},
+        );
         final newComboId = await txn.insert('combos', comboCopy);
         comboIdMap[oldComboId] = newComboId;
 
@@ -390,6 +401,50 @@ Future<void> _relaxGlobalMenuUniqueConstraintsForLocationClone(
     'ON raw_materials (location_id, barcode) '
     "WHERE barcode IS NOT NULL AND trim(barcode) <> ''",
   );
+}
+
+Future<void> _ensureMenuCloneColumnPrerequisites(Database db) async {
+  final materialInfo = await db.rawQuery('PRAGMA table_info(raw_materials)');
+  final materialNames = materialInfo
+      .map((row) => row['name']?.toString() ?? '')
+      .toSet();
+  if (!materialNames.contains('stock_source_id')) {
+    await db.execute(
+      'ALTER TABLE raw_materials ADD COLUMN stock_source_id INTEGER',
+    );
+  }
+}
+
+Map<String, Object?> _rowCopyForInsert(
+  Map<String, Object?> row,
+  Set<String> columnNames, {
+  required Map<String, Object?> overrides,
+}) {
+  final copy = <String, Object?>{};
+  for (final key in row.keys) {
+    if (key == 'id') continue;
+    if (columnNames.contains(key)) {
+      copy[key] = row[key];
+    }
+  }
+  copy.addAll(overrides);
+  return copy;
+}
+
+Future<Set<String>> _rawMaterialsColumnNames(DatabaseExecutor db) async {
+  final materialInfo = await db.rawQuery('PRAGMA table_info(raw_materials)');
+  return materialInfo
+      .map((row) => row['name']?.toString() ?? '')
+      .where((name) => name.isNotEmpty)
+      .toSet();
+}
+
+Future<Set<String>> _combosColumnNames(DatabaseExecutor db) async {
+  final comboInfo = await db.rawQuery('PRAGMA table_info(combos)');
+  return comboInfo
+      .map((row) => row['name']?.toString() ?? '')
+      .where((name) => name.isNotEmpty)
+      .toSet();
 }
 
 Future<void> _ensureLocationColumns(Database db) async {
