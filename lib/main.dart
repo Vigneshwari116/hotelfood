@@ -25,6 +25,7 @@ import 'screens/reports_screen.dart';
 import 'screens/printer_settings_screen.dart';
 import 'screens/backup_screen.dart';
 import 'screens/reset_screen.dart';
+import 'screens/stock_adjustments_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -541,6 +542,11 @@ class _MainShellState extends State<MainShell> {
       label: 'Purchase',
       page: const PurchaseScreen(),
     );
+    final stockAdjustmentsItem = NavItem(
+      icon: Icons.tune_outlined,
+      label: 'Stock Adjustments',
+      page: const StockAdjustmentsScreen(),
+    );
     final reportsItem = NavItem(
       icon: Icons.bar_chart_outlined,
       label: 'Reports',
@@ -553,6 +559,7 @@ class _MainShellState extends State<MainShell> {
         dashboardItem,
         salesItem,
         purchaseItem,
+        stockAdjustmentsItem,
         reportsItem,
       ];
     } else if (_hasFullAppAccess) {
@@ -560,6 +567,7 @@ class _MainShellState extends State<MainShell> {
         dashboardItem,
         salesItem,
         purchaseItem,
+        stockAdjustmentsItem,
         NavItem(
           icon: Icons.warehouse_outlined,
           label: 'Menu Items',
