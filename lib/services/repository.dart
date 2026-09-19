@@ -946,6 +946,7 @@ class Repository {
           RawMaterial rm, {
                 String? pin,
                 bool fromMenuImport = false,
+                bool fromGridSave = false,
                 List<String>? menuExportRow,
                 int? menuSortOrder,
                 bool skipVariantRefresh = false,
@@ -1267,7 +1268,11 @@ class Repository {
                   final double delta = newStock - oldStock;
                   final bool openingChanged =
                       (newOpening - oldOpening).abs() > 0.000001;
-                  final bool baselineReset = openingChanged &&
+                  final bool gridBaselineChanged = fromGridSave &&
+                      (newStock - oldOpening).abs() > 0.000001;
+                  final bool updateOpeningBaseline =
+                      openingChanged || gridBaselineChanged;
+                  final bool baselineReset = updateOpeningBaseline &&
                       (newOpening - newStock).abs() < 0.000001 &&
                       !await _hasPurchaseOrSaleLedgerEntries(txn, rm.id!);
 
@@ -1311,7 +1316,7 @@ class Repository {
                               'raw_materials',
                               {
                                     ...updateMap,
-                                    'opening_stock': openingChanged
+                                    'opening_stock': updateOpeningBaseline
                                         ? newOpening
                                         : existing['opening_stock'],
                                     'current_stock': oldStock,
@@ -1320,7 +1325,7 @@ class Repository {
                               whereArgs: [rm.id],
                         );
 
-                        if (openingChanged) {
+                        if (updateOpeningBaseline) {
                               await txn.update(
                                     'location_stock',
                                     {'opening_stock': newOpening},
@@ -1385,6 +1390,22 @@ class Repository {
                                     );
                               }
                         }
+                  }
+
+                  if (fromGridSave && !KrustyBitesStock.usesStockSourcePool(rm)) {
+                        await txn.update(
+                              'location_stock',
+                              {'opening_stock': newStock},
+                              where:
+                                  'location_id = ? AND raw_material_id = ?',
+                              whereArgs: [stockLocationId, rm.id],
+                        );
+                        await txn.update(
+                              'raw_materials',
+                              {'opening_stock': newStock},
+                              where: 'id = ?',
+                              whereArgs: [rm.id],
+                        );
                   }
 
                   await _syncRawMaterialAggregateStock(txn, rm.id!);
@@ -5177,9 +5198,9 @@ class Repository {
       // ============================================================
 
       /// Deletes sales and purchases, clears stock movement history, clears
-      /// pending POS tokens, and restores stock to the values from the last
-      /// menu import for each location. Keeps menu items, categories, units,
-      /// customers, combos, and suppliers.
+      /// pending POS tokens, and restores stock to each location's saved opening
+      /// baseline (from the menu grid or import). Keeps menu items, categories,
+      /// units, customers, combos, and suppliers.
       Future<void> resetDemoTransactionData({int? locationId}) async {
             final db = await _db;
             final targetLocationId = locationId ?? _sessionLocationId;
@@ -5340,7 +5361,7 @@ class Repository {
             }
       }
 
-      /// Restores one location's stock to its imported opening values.
+      /// Restores one location's stock to its saved opening baseline.
       Future<void> resetLocationStockToImported(int locationId) async {
             final db = await _db;
             final now = DateTime.now().toIso8601String();
