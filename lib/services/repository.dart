@@ -1917,17 +1917,26 @@ class Repository {
                   // ==========================================================
 
                   else {
+                        final existingArgs = <Object>[combo.id!];
+                        var existingWhere = 'id = ?';
+                        if (catalogLocationId != null) {
+                              existingWhere +=
+                                  ' AND (location_id IS NULL OR location_id = ?)';
+                              existingArgs.add(catalogLocationId);
+                        }
                         final existing = await txn.query(
                               'combos',
-                              columns: ['id'],
-                              where: 'id = ?',
-                              whereArgs: [combo.id],
+                              columns: catalogLocationId != null
+                                  ? ['id', 'location_id']
+                                  : ['id'],
+                              where: existingWhere,
+                              whereArgs: existingArgs,
                               limit: 1,
                         );
 
                         if (existing.isEmpty) {
                               throw InvalidInventoryException(
-                                    'Combo does not exist.',
+                                    'Combo does not exist at this location.',
                               );
                         }
 
@@ -1936,12 +1945,26 @@ class Repository {
                         final map = Map<String, Object?>.from(comboMap)
                               ..remove('created_at');
 
-                        await txn.update(
+                        final updateArgs = <Object>[comboId];
+                        var updateWhere = 'id = ?';
+                        if (catalogLocationId != null) {
+                              updateWhere +=
+                                  ' AND (location_id IS NULL OR location_id = ?)';
+                              updateArgs.add(catalogLocationId);
+                        }
+
+                        final updated = await txn.update(
                               'combos',
                               map,
-                              where: 'id = ?',
-                              whereArgs: [comboId],
+                              where: updateWhere,
+                              whereArgs: updateArgs,
                         );
+
+                        if (updated != 1) {
+                              throw InvalidInventoryException(
+                                    'Combo update affected unexpected rows.',
+                              );
+                        }
 
                         await txn.delete(
                               'combo_raw_materials',
