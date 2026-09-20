@@ -1589,7 +1589,11 @@ class DBHelper {
     }
 
     if (oldVersion < 30) {
-      await runCatalogMaintenance(SqliteAppDb(db));
+      await runCatalogMaintenance(
+        SqliteAppDb(db),
+        aggressiveDedup: true,
+        syncAutoCombos: true,
+      );
     }
 
     if (oldVersion < 29) {
@@ -1609,7 +1613,11 @@ class DBHelper {
           'ALTER TABLE raw_materials ADD COLUMN opening_pieces REAL NOT NULL DEFAULT 0',
         );
       }
-      await runCatalogMaintenance(SqliteAppDb(db));
+      await runCatalogMaintenance(
+        SqliteAppDb(db),
+        aggressiveDedup: true,
+        syncAutoCombos: true,
+      );
     }
 
     if (oldVersion < 27) {

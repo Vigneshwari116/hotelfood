@@ -2680,7 +2680,7 @@ class Repository {
             return normalizeSubItemLabels(db);
       }
 
-      /// Dedupes ingredient rows after import or upgrades (does not bulk-sync combos).
+      /// Safe catalog pass on login (no listed=0 dedup or auto-combo overwrite).
       Future<void> maintainCatalog() async {
             final db = await _db;
             await runCatalogMaintenance(db);
