@@ -2369,6 +2369,7 @@ class _ComboEditorDialogState
           ),
         );
       }
+      _remapComboLinesForLocation();
     } else if (widget.categories.isNotEmpty) {
       _categoryId = widget.categories.first.id;
     }
@@ -2380,6 +2381,23 @@ class _ComboEditorDialogState
     _priceController.dispose();
 
     super.dispose();
+  }
+
+  Future<void> _remapComboLinesForLocation() async {
+    final locationId = Repository.instance.sessionLocationId;
+    if (locationId == null) return;
+
+    try {
+      for (final line in _lines) {
+        final id = line.rawMaterialId;
+        if (id == null) continue;
+        line.rawMaterialId = await Repository.instance
+            .resolveComboIngredientForLocation(id, locationId);
+      }
+      if (mounted) setState(() {});
+    } catch (_) {
+      // Leave ids unchanged; saveCombo will surface a clear error.
+    }
   }
 
   // ============================================================
@@ -2545,6 +2563,7 @@ class _ComboEditorDialogState
     });
 
     try {
+      final catalogLocationId = Repository.instance.sessionLocationId;
       final combo = Combo(
         id: widget.existing?.id,
         name: name,
@@ -2553,9 +2572,9 @@ class _ComboEditorDialogState
         price: price,
         imagePath: _imagePath,
         isActive: widget.existing?.isActive ?? true,
+        locationId: catalogLocationId,
       );
 
-      final catalogLocationId = Repository.instance.sessionLocationId;
       final comboRawMaterials = _lines.map((line) {
         return ComboRawMaterial(
           id: null,
@@ -2568,27 +2587,6 @@ class _ComboEditorDialogState
           qty: line.qty,
         );
       }).toList();
-
-      if (catalogLocationId != null) {
-        for (final line in comboRawMaterials) {
-          final material =
-              widget.allMaterialsById[line.rawMaterialId];
-          if (material == null ||
-              material.locationId != catalogLocationId) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Each combo ingredient must belong to the current location.',
-                ),
-              ),
-            );
-            setState(() {
-              _saving = false;
-            });
-            return;
-          }
-        }
-      }
 
       await Repository.instance.saveCombo(
         combo,
@@ -2951,7 +2949,8 @@ class _ComboEditorDialogState
     if (line.rawMaterialId != null &&
         !sortedMaterials.any((material) => material.id == line.rawMaterialId)) {
       final saved = widget.allMaterialsById[line.rawMaterialId];
-      if (saved != null) {
+      if (saved != null &&
+          saved.locationId == Repository.instance.sessionLocationId) {
         sortedMaterials.add(saved);
       }
     }

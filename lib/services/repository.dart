@@ -11,6 +11,7 @@ import 'package:foodstock/database/sub_item_migration.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/database/category_cleanup.dart';
 import 'package:foodstock/database/raw_material_integrity.dart';
+import 'package:foodstock/database/menu_catalog_match.dart';
 import 'package:foodstock/services/inventory_search.dart';
 import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/krusty_bites_stock.dart';
@@ -1847,6 +1848,11 @@ class Repository {
                   );
             }
 
+            if (_menuCatalogLocationId != null &&
+                _catalogLocationIdForComboSave(combo) == null) {
+                  _requireMenuCatalogLocation();
+            }
+
             return db.transaction((txn) async {
                   int comboId;
                   final catalogLocationId = _catalogLocationIdForComboSave(combo);
@@ -1928,49 +1934,21 @@ class Repository {
                               );
                         }
 
-                        final stockMaterialId = await _stockMaterialId(
-                              txn,
-                              item.rawMaterialId,
-                              stockIdMap: stockIdMap,
-                        );
-
-                        if (!uniqueMaterials.add(stockMaterialId)) {
-                              throw InvalidInventoryException(
-                                    'A raw material cannot appear twice in the same combo.',
-                              );
-                        }
-
+                        final int stockMaterialId;
                         if (catalogLocationId != null) {
-                              final materialRows = await txn.query(
-                                    'raw_materials',
-                                    columns: ['id'],
-                                    where: 'id = ? AND location_id = ?',
-                                    whereArgs: [
-                                          item.rawMaterialId,
-                                          catalogLocationId,
-                                    ],
-                                    limit: 1,
-                              );
-
-                              if (materialRows.isEmpty) {
-                                    final existsElsewhere = await txn.query(
-                                          'raw_materials',
-                                          columns: ['id'],
-                                          where: 'id = ?',
-                                          whereArgs: [item.rawMaterialId],
-                                          limit: 1,
-                                    );
-                                    if (existsElsewhere.isEmpty) {
-                                          throw InvalidInventoryException(
-                                                'A raw material in the combo no longer exists.',
-                                          );
-                                    }
-                                    throw InvalidInventoryException(
-                                          'Combo ingredients must belong to the '
-                                          'same location as the combo.',
-                                    );
-                              }
+                              stockMaterialId =
+                                  await _resolveComboIngredientRawMaterialId(
+                                    txn,
+                                    item.rawMaterialId,
+                                    catalogLocationId,
+                                    stockIdMap: stockIdMap,
+                                  );
                         } else {
+                              stockMaterialId = await _stockMaterialId(
+                                    txn,
+                                    item.rawMaterialId,
+                                    stockIdMap: stockIdMap,
+                              );
                               final materialRows = await txn.query(
                                     'raw_materials',
                                     columns: ['id'],
@@ -1978,12 +1956,17 @@ class Repository {
                                     whereArgs: [item.rawMaterialId],
                                     limit: 1,
                               );
-
                               if (materialRows.isEmpty) {
                                     throw InvalidInventoryException(
                                           'A raw material in the combo no longer exists.',
                                     );
                               }
+                        }
+
+                        if (!uniqueMaterials.add(stockMaterialId)) {
+                              throw InvalidInventoryException(
+                                    'A raw material cannot appear twice in the same combo.',
+                              );
                         }
 
                         await txn.insert(
@@ -1998,6 +1981,140 @@ class Repository {
 
                   return comboId;
             });
+      }
+
+      /// Maps a combo ingredient pick to the catalog row at [locationId], including
+      /// remapping legacy cross-location ids saved before location scoping.
+      Future<int> resolveComboIngredientForLocation(
+            int pickedMaterialId,
+            int locationId,
+            ) async {
+            final db = await _db;
+            return db.transaction((txn) async {
+                  final stockIdMap = await _buildStockMaterialIdMap(
+                        txn,
+                        scopeLocationId: locationId,
+                        strictLocationScope: true,
+                  );
+                  return _resolveComboIngredientRawMaterialId(
+                        txn,
+                        pickedMaterialId,
+                        locationId,
+                        stockIdMap: stockIdMap,
+                  );
+            });
+      }
+
+      Future<int> _findCatalogMaterialIdAtLocation(
+            AppDb txn,
+            Map<String, Object?> templateRow,
+            int catalogLocationId,
+            ) async {
+            final template = RawMaterial.fromMap(templateRow);
+            final templateKey = rawMaterialCatalogMatchKey(
+                  name: template.name,
+                  subItem: template.subItem,
+                  barcode: template.barcode,
+                  categoryId: template.categoryId,
+            );
+
+            final rows = await txn.query(
+                  'raw_materials',
+                  where: 'location_id = ?',
+                  whereArgs: [catalogLocationId],
+            );
+
+            int? bestId;
+            for (final row in rows) {
+                  final candidate = RawMaterial.fromMap(row);
+                  final candidateKey = rawMaterialCatalogMatchKey(
+                        name: candidate.name,
+                        subItem: candidate.subItem,
+                        barcode: candidate.barcode,
+                        categoryId: candidate.categoryId,
+                  );
+                  if (candidateKey != templateKey) continue;
+                  final id = candidate.id;
+                  if (id == null) continue;
+                  if (bestId == null || id < bestId) {
+                        bestId = id;
+                  }
+            }
+
+            if (bestId == null) {
+                  throw InvalidInventoryException(
+                        'No matching menu item exists at this location for combo '
+                        'ingredient "${template.staffLabel}".',
+                  );
+            }
+            return bestId;
+      }
+
+      Future<void> _assertRawMaterialAtCatalogLocation(
+            AppDb txn,
+            int rawMaterialId,
+            int catalogLocationId,
+            ) async {
+            final rows = await txn.query(
+                  'raw_materials',
+                  columns: ['id', 'location_id'],
+                  where: 'id = ?',
+                  whereArgs: [rawMaterialId],
+                  limit: 1,
+            );
+            if (rows.isEmpty) {
+                  throw InvalidInventoryException(
+                        'A raw material in the combo no longer exists.',
+                  );
+            }
+            final locationId = (rows.first['location_id'] as num?)?.toInt();
+            if (locationId != catalogLocationId) {
+                  throw InvalidInventoryException(
+                        'Combo ingredients must belong to the same location as the combo.',
+                  );
+            }
+      }
+
+      Future<int> _resolveComboIngredientRawMaterialId(
+            AppDb txn,
+            int pickedMaterialId,
+            int catalogLocationId, {
+            required Map<int, int> stockIdMap,
+            }) async {
+            final pickedRows = await txn.query(
+                  'raw_materials',
+                  where: 'id = ?',
+                  whereArgs: [pickedMaterialId],
+                  limit: 1,
+            );
+            if (pickedRows.isEmpty) {
+                  throw InvalidInventoryException(
+                        'A raw material in the combo no longer exists.',
+                  );
+            }
+
+            final pickedLocationId =
+                (pickedRows.first['location_id'] as num?)?.toInt();
+            final catalogMaterialId = pickedLocationId == catalogLocationId
+                ? pickedMaterialId
+                : await _findCatalogMaterialIdAtLocation(
+                      txn,
+                      pickedRows.first,
+                      catalogLocationId,
+                    );
+
+            final stockMaterialId = await _stockMaterialId(
+                  txn,
+                  catalogMaterialId,
+                  stockIdMap: stockIdMap,
+            );
+
+            await _assertRawMaterialAtCatalogLocation(
+                  txn,
+                  stockMaterialId,
+                  catalogLocationId,
+            );
+            return stockMaterialId;
       }
 
       Future<List<Combo>> combos({
