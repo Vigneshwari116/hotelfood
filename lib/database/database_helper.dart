@@ -8,6 +8,7 @@ import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/database/http_app_db.dart';
 import 'package:foodstock/database/sqlite_app_db.dart';
+import 'package:foodstock/database/always_visible_category_listed_repair.dart';
 import 'package:foodstock/database/combo_ingredient_location_repair.dart';
 import 'package:foodstock/database/listed_location_clone_repair.dart';
 import 'package:foodstock/database/location_menu_scoping.dart';
@@ -117,7 +118,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 33,
+      version: 34,
 
       onConfigure: (db) async {
         await db.execute(
@@ -1719,6 +1720,10 @@ class DBHelper {
 
     if (oldVersion < 33) {
       await migrateListedLocationCloneRepair(db);
+    }
+
+    if (oldVersion < 34) {
+      await migrateAlwaysVisibleCategoryListedRepair(db);
     }
   }
 

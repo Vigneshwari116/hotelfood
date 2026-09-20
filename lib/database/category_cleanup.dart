@@ -1,6 +1,7 @@
 import 'package:foodstock/database/app_db.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/combo_catalog_sync.dart';
+import 'package:foodstock/services/always_visible_menu_categories.dart';
 import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/sub_item_stock.dart';
 
@@ -143,7 +144,8 @@ Future<int> mergeOthersCategoryIntoUncategorized(AppDb db) async {
   return removedDuplicates;
 }
 
-/// Makes Sauces category items visible on Sales/POS (free add-ons, not hidden).
+/// Makes always-visible menu categories (Sauces, Fried Items, Snacks,
+/// Uncategorized) visible on Sales/POS.
 Future<int> listSaucesCategoryForPos(AppDb db) async {
   final categories = await db.query(
     'categories',
@@ -155,9 +157,9 @@ Future<int> listSaucesCategoryForPos(AppDb db) async {
   for (final row in categories) {
     final id = row['id'] as int?;
     if (id == null) continue;
-    final canonical =
-        ItemImportService.canonicalMenuCategory(row['name'] as String?) ?? '';
-    if (canonical.toLowerCase() != 'sauces') continue;
+    if (!isAlwaysVisibleInSalesCategoryName(row['name'] as String?)) {
+      continue;
+    }
     updated += await db.update(
       'raw_materials',
       {'listed': 1},

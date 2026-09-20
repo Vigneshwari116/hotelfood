@@ -1,3 +1,4 @@
+import 'always_visible_category_listed_repair.dart';
 import 'combo_ingredient_location_repair.dart';
 import 'listed_location_clone_repair.dart';
 
@@ -111,4 +112,8 @@ const postgresOneTimeDataMigrations = <PostgresDataMigration>[
     postgresListedMaterialsRepairBody,
     postgresListedCombosIsActiveRepairBody,
   ]),
+  PostgresDataMigration(
+    alwaysVisibleCategoryListedRepairV1,
+    [postgresAlwaysVisibleCategoryListedRepairSql],
+  ),
 ];

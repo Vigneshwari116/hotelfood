@@ -2,5 +2,6 @@
 --
 --   psql ... -f scripts/repair_listed_location_clone.sql
 --   psql ... -f scripts/repair_combo_ingredient_locations.sql
+--   psql ... -f scripts/repair_always_visible_category_listed.sql
 --
 -- Recommended order: listed first (Purchase/POS pickers), then combo ingredients.

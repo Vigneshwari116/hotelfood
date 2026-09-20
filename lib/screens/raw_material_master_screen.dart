@@ -12,6 +12,7 @@ import 'package:foodstock/model/models.dart';
 import '../services/combo_material_picker.dart';
 import '../services/combo_only_categories.dart';
 import '../database/api_config.dart';
+import '../services/always_visible_menu_categories.dart';
 import '../services/item_import_service.dart';
 import '../services/repository.dart';
 import '../services/sub_item_stock.dart';
@@ -1029,7 +1030,11 @@ class _RawMaterialMasterScreenState
                     ),
                   ],
 
-                  if (!item.listed) ...[
+                  if (!item.listed &&
+                      !isAlwaysVisibleInSalesCategoryId(
+                        item.categoryId,
+                        _categories,
+                      )) ...[
                     const SizedBox(height: 4),
                     Chip(
                       label: const Text(
@@ -1673,6 +1678,12 @@ class _RawMaterialEditorDialogState
           item.subItem ?? item.name;
       _subItemValue = _subItemController.text;
       _visibleInSales = item.listed;
+      if (isAlwaysVisibleInSalesCategoryId(
+            item.categoryId,
+            widget.categories,
+          )) {
+        _visibleInSales = true;
+      }
 
       _qtyController.text =
           item.qtyNeeded.toString();
@@ -1927,7 +1938,12 @@ class _RawMaterialEditorDialogState
         ),
         imagePath:
         _imagePath,
-        listed: _visibleInSales,
+        listed: isAlwaysVisibleInSalesCategoryId(
+              _categoryId,
+              widget.categories,
+            )
+            ? true
+            : _visibleInSales,
         createdAt: widget.existing?.createdAt,
         menuSortOrder: widget.existing?.menuSortOrder,
         variantGroup: widget.existing?.variantGroup,
@@ -2085,6 +2101,12 @@ class _RawMaterialEditorDialogState
                 onChanged: (value) {
                   setState(() {
                     _categoryId = value;
+                    if (isAlwaysVisibleInSalesCategoryId(
+                          value,
+                          widget.categories,
+                        )) {
+                      _visibleInSales = true;
+                    }
                   });
                 },
               ),
@@ -2117,22 +2139,30 @@ class _RawMaterialEditorDialogState
 
               const SizedBox(height: _fieldGap),
 
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Visible in Sales'),
-                subtitle: const Text(
-                  'Hidden items stay in stock and combo setup but '
-                  'won\'t appear on the POS screen.',
+              if (!isAlwaysVisibleInSalesCategoryId(
+                    _categoryId,
+                    widget.categories,
+                  ))
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Visible in Sales'),
+                  subtitle: const Text(
+                    'Hidden items stay in stock and combo setup but '
+                    'won\'t appear on the POS screen.',
+                  ),
+                  value: _visibleInSales,
+                  onChanged: (value) {
+                    setState(() {
+                      _visibleInSales = value;
+                    });
+                  },
                 ),
-                value: _visibleInSales,
-                onChanged: (value) {
-                  setState(() {
-                    _visibleInSales = value;
-                  });
-                },
-              ),
 
-              const SizedBox(height: _fieldGap),
+              if (!isAlwaysVisibleInSalesCategoryId(
+                    _categoryId,
+                    widget.categories,
+                  ))
+                const SizedBox(height: _fieldGap),
 
               BarcodeField(
                 controller: _barcodeController,

@@ -12,6 +12,7 @@ import 'package:foodstock/model/models.dart';
 import 'package:foodstock/database/category_cleanup.dart';
 import 'package:foodstock/database/raw_material_integrity.dart';
 import 'package:foodstock/database/menu_catalog_match.dart';
+import 'package:foodstock/services/always_visible_menu_categories.dart';
 import 'package:foodstock/services/inventory_search.dart';
 import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/krusty_bites_stock.dart';
@@ -1060,6 +1061,9 @@ class Repository {
 
             final map = rm.toMap()..remove('id');
             map['barcode'] = normalizeBarcodeValue(rm.barcode);
+            final forceListed =
+                await _rawMaterialMustBeListedInSales(db, categoryId: rm.categoryId);
+            map['listed'] = (forceListed || rm.listed) ? 1 : 0;
             final catalogLocationId = _catalogLocationIdForSave(rm);
             if (catalogLocationId != null) {
                   map['location_id'] = catalogLocationId;
@@ -1488,11 +1492,47 @@ class Repository {
           bool listed,
           ) async {
             final db = await _db;
+            final forceListed = await _rawMaterialMustBeListedInSales(
+                  db,
+                  rawMaterialId: rawMaterialId,
+            );
             await db.update(
                   'raw_materials',
-                  {'listed': listed ? 1 : 0},
+                  {'listed': (forceListed || listed) ? 1 : 0},
                   where: 'id = ?',
                   whereArgs: [rawMaterialId],
+            );
+      }
+
+      Future<bool> _rawMaterialMustBeListedInSales(
+            AppDb db, {
+            int? categoryId,
+            int? rawMaterialId,
+            }) async {
+            var resolvedCategoryId = categoryId;
+            if (resolvedCategoryId == null && rawMaterialId != null) {
+                  final rows = await db.query(
+                        'raw_materials',
+                        columns: ['category_id'],
+                        where: 'id = ?',
+                        whereArgs: [rawMaterialId],
+                        limit: 1,
+                  );
+                  if (rows.isEmpty) return false;
+                  resolvedCategoryId = (rows.first['category_id'] as num?)?.toInt();
+            }
+            if (resolvedCategoryId == null) return false;
+
+            final categoryRows = await db.query(
+                  'categories',
+                  columns: ['name'],
+                  where: 'id = ?',
+                  whereArgs: [resolvedCategoryId],
+                  limit: 1,
+            );
+            if (categoryRows.isEmpty) return false;
+            return isAlwaysVisibleInSalesCategoryName(
+                  categoryRows.first['name'] as String?,
             );
       }
 
