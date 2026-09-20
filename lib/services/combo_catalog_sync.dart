@@ -97,20 +97,7 @@ Future<int> syncBurgerRollCombos(AppDb db) async {
         comboIdByKey[comboKey] = comboId;
         synced++;
       } else {
-        comboId = existingComboId;
-        await db.update(
-          'combos',
-          {
-            'price': price,
-            'selling_price': price,
-            'category_id': categoryId,
-            'is_active': 1,
-            if (locationId != null) 'location_id': locationId,
-          },
-          where: 'id = ?',
-          whereArgs: [comboId],
-        );
-        synced++;
+        // Existing combos are edited only via saveCombo — never overwrite from menu rows.
         continue;
       }
 

@@ -587,12 +587,17 @@ Future<void> _mergeMaterialIntoKeeper(
   );
 }
 
-/// Runs post-import catalog maintenance (dedupe, combos, categories).
-Future<void> runCatalogMaintenance(AppDb db) async {
+/// Runs post-import catalog maintenance (dedupe, categories, optional auto-combos).
+Future<void> runCatalogMaintenance(
+  AppDb db, {
+  bool syncAutoCombos = false,
+}) async {
   await mergeGlobalStockDuplicateRows(db);
   await dedupeDuplicateRowsInCategory(db);
   await dedupeDuplicateItemNamesInCategory(db);
   await hideSnacksPopcornLargeDuplicates(db);
   await assignStockComponentCategories(db);
-  await syncBurgerRollCombos(db);
+  if (syncAutoCombos) {
+    await syncBurgerRollCombos(db);
+  }
 }
