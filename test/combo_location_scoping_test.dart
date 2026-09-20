@@ -167,6 +167,70 @@ void main() {
       await tearDownStockTestSession(database);
     });
 
+    test('saveCombo remaps cross-location pick to current location catalog id',
+        () async {
+      final database = await openStockTestDatabase();
+      await seedSecondLocation(database);
+      final now = DateTime.now().toIso8601String();
+
+      final loc1Ingredient = await database.insert('raw_materials', {
+        'name': 'Chicken 65',
+        'sub_item': 'Chicken 65',
+        'location_id': 1,
+        'listed': 1,
+        'created_at': now,
+      });
+      await seedLocationStock(database, loc1Ingredient);
+
+      final loc2Ingredient = await database.insert('raw_materials', {
+        'name': 'Chicken 65',
+        'sub_item': 'Chicken 65',
+        'location_id': 2,
+        'listed': 1,
+        'created_at': now,
+      });
+      await database.insert('location_stock', {
+        'location_id': 2,
+        'raw_material_id': loc2Ingredient,
+        'current_stock': 10,
+        'opening_stock': 10,
+        'reorder_level': 0,
+      });
+
+      Repository.instance.setAppDbForTesting(SqliteAppDb(database));
+      Repository.instance.bindSession(
+        role: 'location',
+        locationId: 2,
+        locationName: 'Magadi road',
+      );
+
+      final comboId = await Repository.instance.saveCombo(
+        Combo(
+          name: '199 combo',
+          price: 199,
+          locationId: 2,
+        ),
+        [
+          ComboRawMaterial(
+            comboId: 0,
+            rawMaterialId: loc1Ingredient,
+            qty: 1,
+          ),
+        ],
+      );
+
+      final link = (await database.query(
+        'combo_raw_materials',
+        where: 'combo_id = ?',
+        whereArgs: [comboId],
+      ))
+          .single;
+      expect(link['raw_material_id'], loc2Ingredient);
+      expect(link['raw_material_id'], isNot(loc1Ingredient));
+
+      await tearDownStockTestSession(database);
+    });
+
     test('audit counts cross-location combo ingredient links', () async {
       final database = await openStockTestDatabase();
       await seedSecondLocation(database);

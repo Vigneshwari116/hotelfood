@@ -1,7 +1,9 @@
 import 'package:foodstock/database/app_db.dart';
+import 'package:foodstock/database/menu_catalog_match.dart';
+import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/item_import_service.dart';
 
-/// Creates POS combo records from imported burger/roll menu rows.
+/// Creates POS combo records from imported burger/roll menu rows per location.
 Future<int> syncBurgerRollCombos(AppDb db) async {
   final categories = await db.query(
     'categories',
@@ -28,19 +30,7 @@ Future<int> syncBurgerRollCombos(AppDb db) async {
   };
 
   final materials = await db.query('raw_materials');
-  final byName = <String, int>{};
-  for (final row in materials) {
-    final id = row['id'] as int?;
-    if (id == null) continue;
-    final name = (row['name'] as String?)?.trim().toLowerCase() ?? '';
-    if (name.isNotEmpty) {
-      byName[name] = id;
-    }
-    final sub = (row['sub_item'] as String?)?.trim().toLowerCase() ?? '';
-    if (sub.isNotEmpty) {
-      byName.putIfAbsent(sub, () => id);
-    }
-  }
+  final locationIds = await _comboSyncLocationIds(db);
 
   final existingCombos = await db.query('combos');
   final comboIdByKey = <String, int>{};
@@ -49,108 +39,166 @@ Future<int> syncBurgerRollCombos(AppDb db) async {
     if (id == null) continue;
     final name = (row['name'] as String?)?.trim().toLowerCase() ?? '';
     final categoryId = row['category_id'] as int?;
-    comboIdByKey['$categoryId|$name'] = id;
+    final locationId = row['location_id'] as int?;
+    comboIdByKey['${locationId ?? 0}|$categoryId|$name'] = id;
   }
 
   var synced = 0;
 
-  for (final row in materials) {
-    final materialId = row['id'] as int?;
-    final categoryId = row['category_id'] as int?;
-    if (materialId == null || categoryId == null) continue;
-    if (!targetCategoryIds.contains(categoryId)) continue;
+  for (final locationId in locationIds) {
+    final locationMaterials = materials.where((row) {
+      final rowLocation = row['location_id'] as int?;
+      if (locationId == null) {
+        return rowLocation == null;
+      }
+      return rowLocation == locationId;
+    }).toList();
 
-    final itemName = (row['name'] as String?)?.trim() ?? '';
-    final subItem = (row['sub_item'] as String?)?.trim() ?? '';
-    if (itemName.isEmpty || subItem.isEmpty) continue;
-    if (itemName.toLowerCase() == subItem.toLowerCase()) continue;
+    if (locationMaterials.isEmpty) continue;
 
-    final componentName = subItem.toLowerCase();
-    final componentId = _resolveIngredientId(materials, componentName, byName);
-    if (componentId == null) continue;
+    for (final row in locationMaterials) {
+      final materialId = row['id'] as int?;
+      final categoryId = row['category_id'] as int?;
+      if (materialId == null || categoryId == null) continue;
+      if (!targetCategoryIds.contains(categoryId)) continue;
 
-    final qty = (row['qty_needed'] as num?)?.toDouble() ?? 1;
-    if (qty <= 0) continue;
+      final itemName = (row['name'] as String?)?.trim() ?? '';
+      final subItem = (row['sub_item'] as String?)?.trim() ?? '';
+      if (itemName.isEmpty || subItem.isEmpty) continue;
+      if (itemName.toLowerCase() == subItem.toLowerCase()) continue;
 
-    final price = (row['selling_price'] as num?)?.toDouble() ?? 0;
-    final comboKey = '$categoryId|${itemName.toLowerCase()}';
-    final existingComboId = comboIdByKey[comboKey];
+      final componentId = _resolveIngredientIdAtLocation(
+        locationMaterials,
+        subItem,
+        templateRow: row,
+      );
+      if (componentId == null) continue;
 
-    int comboId;
-    if (existingComboId == null) {
-      comboId = await db.insert('combos', {
-        'name': itemName,
-        'barcode': null,
-        'category_id': categoryId,
-        'price': price,
-        'selling_price': price,
-        'image_path': row['image_path'],
-        'is_active': 1,
-        'created_at': DateTime.now().toIso8601String(),
-      });
-      comboIdByKey[comboKey] = comboId;
-      synced++;
-    } else {
-      comboId = existingComboId;
-      await db.update(
-        'combos',
-        {
+      final qty = (row['qty_needed'] as num?)?.toDouble() ?? 1;
+      if (qty <= 0) continue;
+
+      final price = (row['selling_price'] as num?)?.toDouble() ?? 0;
+      final comboKey = '${locationId ?? 0}|$categoryId|${itemName.toLowerCase()}';
+      final existingComboId = comboIdByKey[comboKey];
+
+      int comboId;
+      if (existingComboId == null) {
+        comboId = await db.insert('combos', {
+          'name': itemName,
+          'barcode': null,
+          'category_id': categoryId,
           'price': price,
           'selling_price': price,
-          'category_id': categoryId,
+          'image_path': row['image_path'],
           'is_active': 1,
-        },
+          if (locationId != null) 'location_id': locationId,
+          'created_at': DateTime.now().toIso8601String(),
+        });
+        comboIdByKey[comboKey] = comboId;
+        synced++;
+      } else {
+        comboId = existingComboId;
+        await db.update(
+          'combos',
+          {
+            'price': price,
+            'selling_price': price,
+            'category_id': categoryId,
+            'is_active': 1,
+            if (locationId != null) 'location_id': locationId,
+          },
+          where: 'id = ?',
+          whereArgs: [comboId],
+        );
+        synced++;
+        continue;
+      }
+
+      await db.insert('combo_raw_materials', {
+        'combo_id': comboId,
+        'raw_material_id': componentId,
+        'qty': qty,
+      });
+
+      await db.update(
+        'raw_materials',
+        {'listed': 0},
         where: 'id = ?',
-        whereArgs: [comboId],
+        whereArgs: [materialId],
       );
-      synced++;
-      continue;
     }
-
-    await db.insert('combo_raw_materials', {
-      'combo_id': comboId,
-      'raw_material_id': componentId,
-      'qty': qty,
-    });
-
-    await db.update(
-      'raw_materials',
-      {'listed': 0},
-      where: 'id = ?',
-      whereArgs: [materialId],
-    );
   }
 
   return synced;
 }
 
-/// Prefer unlisted stock-holder rows over listed menu rows for the same ingredient.
-int? _resolveIngredientId(
-  List<Map<String, Object?>> materials,
-  String componentName,
-  Map<String, int> byName,
-) {
+/// Location ids to sync burger/roll combos for. Legacy DBs without a
+/// [locations] table (or with no rows) use a single pass with null location.
+Future<List<int?>> _comboSyncLocationIds(AppDb db) async {
+  try {
+    final locations = await db.query('locations', orderBy: 'id ASC');
+    if (locations.isEmpty) {
+      return [null];
+    }
+    return locations.map((row) => row['id'] as int?).toList();
+  } catch (_) {
+    return [null];
+  }
+}
+
+int? _resolveIngredientIdAtLocation(
+  List<Map<String, Object?>> locationMaterials,
+  String componentName, {
+  required Map<String, Object?> templateRow,
+}) {
+  final normalizedComponent = componentName.trim().toLowerCase();
   int? bestId;
   var bestScore = -1;
 
-  for (final row in materials) {
+  for (final row in locationMaterials) {
     final id = row['id'] as int?;
     if (id == null) continue;
 
     final name = (row['name'] as String?)?.trim().toLowerCase() ?? '';
     final sub = (row['sub_item'] as String?)?.trim().toLowerCase() ?? '';
     final listed = (row['listed'] as num?)?.toInt() ?? 1;
-    final matches = name == componentName || sub == componentName;
+    final matches = name == normalizedComponent || sub == normalizedComponent;
     if (!matches) continue;
 
     var score = 0;
     if (listed == 0) score += 10;
-    if (name == componentName) score += 5;
+    if (name == normalizedComponent) score += 5;
     if (score > bestScore) {
       bestScore = score;
       bestId = id;
     }
   }
 
-  return bestId ?? byName[componentName];
+  if (bestId != null) return bestId;
+
+  final template = RawMaterial.fromMap(templateRow);
+  final templateKey = rawMaterialCatalogMatchKey(
+    name: template.name,
+    subItem: normalizedComponent,
+    barcode: null,
+    categoryId: template.categoryId,
+  );
+
+  for (final row in locationMaterials) {
+    final candidate = RawMaterial.fromMap(row);
+    final candidateKey = rawMaterialCatalogMatchKey(
+      name: candidate.name,
+      subItem: candidate.subItem,
+      barcode: candidate.barcode,
+      categoryId: candidate.categoryId,
+    );
+    if (candidateKey != templateKey) continue;
+    final id = candidate.id;
+    if (id == null) continue;
+    if (bestId == null || id < bestId) {
+      bestId = id;
+    }
+  }
+
+  return bestId;
 }

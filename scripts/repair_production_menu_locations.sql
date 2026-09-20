@@ -1,8 +1,6 @@
--- Production menu repairs (run after one pg_dump backup).
--- Order: listed visibility first (unblocks Purchase/POS pickers), then combo FKs.
-
--- 1) Listed / is_active sync for locations 2+
-\i repair_listed_location_clone.sql
-
--- 2) Combo ingredient location FKs
-\i repair_combo_ingredient_locations.sql
+-- Run BOTH repairs after a single pg_dump backup (see each script for details):
+--
+--   psql ... -f scripts/repair_listed_location_clone.sql
+--   psql ... -f scripts/repair_combo_ingredient_locations.sql
+--
+-- Recommended order: listed first (Purchase/POS pickers), then combo ingredients.
