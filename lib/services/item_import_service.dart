@@ -939,7 +939,11 @@ class ItemImportService {
 
   Future<void> _runCatalogMaintenance() async {
     final db = await Repository.instance.sharedAppDb();
-    await runCatalogMaintenance(db);
+    await runCatalogMaintenance(
+      db,
+      aggressiveDedup: true,
+      syncAutoCombos: true,
+    );
   }
 
   Future<void> _applyVariantAutoLinking() async {

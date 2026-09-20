@@ -176,6 +176,22 @@ String _normalizeItemName(String? name) {
 
 String _categoryKey(int? categoryId) => categoryId?.toString() ?? 'null';
 
+String _locationScopeKey(int? locationId) => '${locationId ?? 0}';
+
+Future<bool> _rawMaterialsHaveLocationId(AppDb db) async {
+  try {
+    await db.query('raw_materials', columns: ['location_id'], limit: 1);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+int? _rowLocationId(Map<String, Object?> row, bool hasLocationColumn) {
+  if (!hasLocationColumn) return null;
+  return (row['location_id'] as num?)?.toInt();
+}
+
 int _scoreKeeperRow(Map<String, dynamic> row) {
   var score = 0;
   if ((row['listed'] as int? ?? 1) != 0) score += 8;
@@ -201,6 +217,7 @@ Map<String, dynamic> _pickKeeper(List<Map<String, dynamic>> group) {
 
 /// Hides duplicate catalog rows with the same category + name + sub-item.
 Future<int> dedupeDuplicateRowsInCategory(AppDb db) async {
+  final hasLocationColumn = await _rawMaterialsHaveLocationId(db);
   final rows = await db.query(
     'raw_materials',
     columns: [
@@ -208,6 +225,7 @@ Future<int> dedupeDuplicateRowsInCategory(AppDb db) async {
       'name',
       'sub_item',
       'category_id',
+      if (hasLocationColumn) 'location_id',
       'listed',
       'current_stock',
       'units_per_packet',
@@ -219,7 +237,7 @@ Future<int> dedupeDuplicateRowsInCategory(AppDb db) async {
   final byKey = <String, List<Map<String, dynamic>>>{};
   for (final row in rows) {
     final key =
-        '${_categoryKey(row['category_id'] as int?)}|${_normalizeItemKey(row['name'] as String?, row['sub_item'] as String?)}';
+        '${_locationScopeKey(_rowLocationId(row, hasLocationColumn))}|${_categoryKey(row['category_id'] as int?)}|${_normalizeItemKey(row['name'] as String?, row['sub_item'] as String?)}';
     if (key.endsWith('|')) continue;
     byKey.putIfAbsent(key, () => []).add(row);
   }
@@ -245,6 +263,7 @@ Future<int> dedupeDuplicateRowsInCategory(AppDb db) async {
 
 /// Hides duplicate item names within the same category (e.g. two Crunchy Masala rows).
 Future<int> dedupeDuplicateItemNamesInCategory(AppDb db) async {
+  final hasLocationColumn = await _rawMaterialsHaveLocationId(db);
   final rows = await db.query(
     'raw_materials',
     columns: [
@@ -252,6 +271,7 @@ Future<int> dedupeDuplicateItemNamesInCategory(AppDb db) async {
       'name',
       'sub_item',
       'category_id',
+      if (hasLocationColumn) 'location_id',
       'listed',
       'current_stock',
       'units_per_packet',
@@ -264,7 +284,8 @@ Future<int> dedupeDuplicateItemNamesInCategory(AppDb db) async {
   for (final row in rows) {
     final name = _normalizeItemName(row['name'] as String?);
     if (name.isEmpty) continue;
-    final key = '${_categoryKey(row['category_id'] as int?)}|$name';
+    final key =
+        '${_locationScopeKey(_rowLocationId(row, hasLocationColumn))}|${_categoryKey(row['category_id'] as int?)}|$name';
     byKey.putIfAbsent(key, () => []).add(row);
   }
 
@@ -289,6 +310,7 @@ Future<int> dedupeDuplicateItemNamesInCategory(AppDb db) async {
 
 /// Hides SNACKS popcorn-large rows when the FRIED ITEMS row exists.
 Future<int> hideSnacksPopcornLargeDuplicates(AppDb db) async {
+  final hasLocationColumn = await _rawMaterialsHaveLocationId(db);
   final categories = await db.query(
     'categories',
     columns: ['id', 'name'],
@@ -313,15 +335,22 @@ Future<int> hideSnacksPopcornLargeDuplicates(AppDb db) async {
 
   final rows = await db.query(
     'raw_materials',
-    columns: ['id', 'name', 'category_id', 'listed'],
+    columns: [
+      'id',
+      'name',
+      'category_id',
+      if (hasLocationColumn) 'location_id',
+      'listed',
+    ],
   );
 
-  final hasFriedPopcorn = rows.any(
-    (row) =>
-        isPopcornLarge(row['name'] as String?) &&
-        categoryName(row['category_id'] as int?) == 'fried items',
-  );
-  if (!hasFriedPopcorn) return 0;
+  final friedPopcornAtLocation = <int>{};
+  for (final row in rows) {
+    if (!isPopcornLarge(row['name'] as String?)) continue;
+    if (categoryName(row['category_id'] as int?) != 'fried items') continue;
+    friedPopcornAtLocation.add(_rowLocationId(row, hasLocationColumn) ?? 0);
+  }
+  if (friedPopcornAtLocation.isEmpty) return 0;
 
   var hidden = 0;
   for (final row in rows) {
@@ -329,6 +358,8 @@ Future<int> hideSnacksPopcornLargeDuplicates(AppDb db) async {
     if (id == null || (row['listed'] as int? ?? 1) == 0) continue;
     if (!isPopcornLarge(row['name'] as String?)) continue;
     if (categoryName(row['category_id'] as int?) != 'snacks') continue;
+    final locationKey = _rowLocationId(row, hasLocationColumn) ?? 0;
+    if (!friedPopcornAtLocation.contains(locationKey)) continue;
     await db.update(
       'raw_materials',
       {'listed': 0},
@@ -387,6 +418,7 @@ Future<int> assignStockComponentCategories(AppDb db) async {
 /// Merges duplicate ingredient rows (patty, bun, paratha, veg finger, etc.)
 /// that share one physical stock pool across categories.
 Future<int> mergeGlobalStockDuplicateRows(AppDb db) async {
+  final hasLocationColumn = await _rawMaterialsHaveLocationId(db);
   final rows = await db.query(
     'raw_materials',
     columns: [
@@ -394,6 +426,7 @@ Future<int> mergeGlobalStockDuplicateRows(AppDb db) async {
       'name',
       'sub_item',
       'category_id',
+      if (hasLocationColumn) 'location_id',
       'listed',
       'current_stock',
       'opening_stock',
@@ -432,8 +465,11 @@ Future<int> mergeGlobalStockDuplicateRows(AppDb db) async {
       continue;
     }
 
-    final key = SubItemStock.ingredientPoolKey(material);
-    if (key == null || key.isEmpty) continue;
+    final poolKey = SubItemStock.ingredientPoolKey(material);
+    if (poolKey == null || poolKey.isEmpty) continue;
+
+    final key =
+        '${_locationScopeKey(_rowLocationId(row, hasLocationColumn))}|$poolKey';
     byKey.putIfAbsent(key, () => []).add(row);
   }
 
@@ -587,12 +623,23 @@ Future<void> _mergeMaterialIntoKeeper(
   );
 }
 
-/// Runs post-import catalog maintenance (dedupe, combos, categories).
-Future<void> runCatalogMaintenance(AppDb db) async {
-  await mergeGlobalStockDuplicateRows(db);
-  await dedupeDuplicateRowsInCategory(db);
-  await dedupeDuplicateItemNamesInCategory(db);
-  await hideSnacksPopcornLargeDuplicates(db);
+/// Runs post-import catalog maintenance (dedupe, categories, optional auto-combos).
+///
+/// [aggressiveDedup] touches [listed] and merges rows — run only on menu import,
+/// not on every app login ([maintainCatalog]).
+Future<void> runCatalogMaintenance(
+  AppDb db, {
+  bool aggressiveDedup = false,
+  bool syncAutoCombos = false,
+}) async {
+  if (aggressiveDedup) {
+    await mergeGlobalStockDuplicateRows(db);
+    await dedupeDuplicateRowsInCategory(db);
+    await dedupeDuplicateItemNamesInCategory(db);
+    await hideSnacksPopcornLargeDuplicates(db);
+  }
   await assignStockComponentCategories(db);
-  await syncBurgerRollCombos(db);
+  if (syncAutoCombos) {
+    await syncBurgerRollCombos(db);
+  }
 }
