@@ -38,6 +38,86 @@ class VariantHelpers {
     return material.stockSourceId ?? material.id!;
   }
 
+  /// Whether two menu rows belong to the same shop location catalog.
+  static bool sameCatalogLocation(RawMaterial a, RawMaterial b) {
+    final left = a.locationId;
+    final right = b.locationId;
+    if (left == null && right == null) return true;
+    if (left == null || right == null) return false;
+    return left == right;
+  }
+
+  static bool isValidStockSource(
+    int sourceId,
+    RawMaterial item,
+    Map<int, RawMaterial> byId,
+  ) {
+    if (sourceId == item.id) return false;
+    final source = byId[sourceId];
+    if (source == null) return false;
+    return sameCatalogLocation(item, source);
+  }
+
+  /// Keeps a manual same-location link; only assigns [proposedSourceId] when unset
+  /// or when the current link is missing/invalid (including cross-location).
+  static int? resolveStockSourceId(
+    RawMaterial item,
+    int? proposedSourceId,
+    Map<int, RawMaterial> byId, {
+    bool itemIsPoolSource = false,
+  }) {
+    if (itemIsPoolSource) return null;
+
+    final existing = item.stockSourceId;
+    if (existing != null && isValidStockSource(existing, item, byId)) {
+      return existing;
+    }
+
+    if (proposedSourceId == null) return existing;
+    if (proposedSourceId == item.id) return null;
+
+    final proposed = byId[proposedSourceId];
+    if (proposed == null || !sameCatalogLocation(item, proposed)) {
+      return existing;
+    }
+
+    return proposedSourceId;
+  }
+
+  static Map<int, RawMaterial> _byId(Iterable<RawMaterial> items) {
+    return {
+      for (final item in items)
+        if (item.id != null) item.id!: item,
+    };
+  }
+
+  static RawMaterial _plannedLink(
+    RawMaterial item,
+    Map<int, RawMaterial> byId, {
+    String? variantGroup,
+    String? variantLabel,
+    int? proposedStockSourceId,
+    bool clearVariantGroup = false,
+    bool clearVariantLabel = false,
+    bool poolSource = false,
+  }) {
+    final resolved = resolveStockSourceId(
+      item,
+      poolSource ? item.id : proposedStockSourceId,
+      byId,
+      itemIsPoolSource: poolSource,
+    );
+    return _copyWithLinks(
+      item,
+      variantGroup: variantGroup,
+      variantLabel: variantLabel,
+      stockSourceId: resolved,
+      clearStockSource: poolSource,
+      clearVariantGroup: clearVariantGroup,
+      clearVariantLabel: clearVariantLabel,
+    );
+  }
+
   /// Stock count used for POS display and sellable-unit math.
   static double stockCount(
     RawMaterial material,
@@ -426,6 +506,7 @@ class VariantHelpers {
     Map<int, String>? categoryNameById,
   }) {
     final categories = categoryNameById ?? _categoryNameById(items);
+    final byId = _byId(items);
 
     final planned = <int, RawMaterial>{};
     for (final item in items) {
@@ -434,29 +515,32 @@ class VariantHelpers {
 
     final stockPools = <String, List<RawMaterial>>{};
     for (final item in items) {
-      final key = SubItemStock.stockKey(item);
-      if (key == null || key.isEmpty) continue;
+      final poolKey = SubItemStock.stockKey(item);
+      if (poolKey == null || poolKey.isEmpty) continue;
       final categoryName = categories[item.categoryId];
       if (SubItemStock.isComponentReference(item, categoryName)) continue;
+      final key = '${item.locationId ?? 0}|$poolKey';
       stockPools.putIfAbsent(key, () => []).add(item);
     }
 
     for (final entry in stockPools.entries) {
       final family = entry.value;
       if (family.length < 2) continue;
+      final stockKey = SubItemStock.stockKey(family.first) ?? '';
       final source = SubItemStock.canonicalHolder(
         family,
-        stockKey: entry.key,
+        stockKey: stockKey,
       );
       if (source == null || source.id == null) continue;
 
       for (final item in family) {
         if (item.id == null) continue;
         final isSource = item.id == source.id;
-        planned[item.id!] = _copyWithLinks(
+        planned[item.id!] = _plannedLink(
           planned[item.id!] ?? item,
-          stockSourceId: isSource ? null : source.id,
-          clearStockSource: isSource,
+          byId,
+          proposedStockSourceId: source.id,
+          poolSource: isSource,
         );
       }
     }
@@ -466,16 +550,21 @@ class VariantHelpers {
       if (!SubItemStock.isComponentReference(item, categoryName)) continue;
       final sub = item.subItem?.trim().toLowerCase() ?? '';
       if (sub.isEmpty) continue;
-      final patty = items.where(
-        (candidate) =>
-            candidate.name.trim().toLowerCase() == sub &&
-            candidate.id != item.id,
-      );
-      final holder = patty.isNotEmpty ? patty.first : null;
-      if (holder?.id == null || item.id == null) continue;
-      planned[item.id!] = _copyWithLinks(
+      final holders = items
+          .where(
+            (candidate) =>
+                candidate.id != item.id &&
+                sameCatalogLocation(item, candidate) &&
+                candidate.name.trim().toLowerCase() == sub,
+          )
+          .toList()
+        ..sort((a, b) => (a.id ?? 0).compareTo(b.id ?? 0));
+      if (holders.isEmpty || item.id == null) continue;
+      final holder = holders.first;
+      planned[item.id!] = _plannedLink(
         planned[item.id!] ?? item,
-        stockSourceId: holder!.id,
+        byId,
+        proposedStockSourceId: holder.id,
       );
     }
 
@@ -486,7 +575,9 @@ class VariantHelpers {
       if (!item.listed) continue;
       final group = item.variantGroup?.trim();
       if (group == null || group.isEmpty) continue;
-      explicitPosGroups.putIfAbsent(group.toLowerCase(), () => []).add(item);
+      explicitPosGroups
+          .putIfAbsent('${item.locationId ?? 0}|${group.toLowerCase()}', () => [])
+          .add(item);
     }
 
     final explicitGroupedIds = <int>{};
@@ -529,16 +620,15 @@ class VariantHelpers {
         final derivedLabel = looksLikeSizeVariant(item) && !isSource
             ? _sizeLabel(item)
             : null;
-        planned[item.id!] = _copyWithLinks(
+        planned[item.id!] = _plannedLink(
           planned[item.id!] ?? item,
+          byId,
           variantGroup: groupName,
           variantLabel: isSource
               ? (sizeLabel ?? 'Regular')
               : (sizeLabel ?? derivedLabel ?? item.name),
-          stockSourceId: isSource
-              ? null
-              : (planned[item.id!]?.stockSourceId ?? source.id),
-          clearStockSource: isSource,
+          proposedStockSourceId: source.id,
+          poolSource: isSource,
         );
       }
     }
@@ -547,7 +637,8 @@ class VariantHelpers {
     for (final item in planned.values) {
       if (!item.listed) continue;
       if (item.id != null && explicitGroupedIds.contains(item.id)) continue;
-      final key = SubItemStock.posGroupKey(item);
+      final key =
+          '${item.locationId ?? 0}|${SubItemStock.posGroupKey(item)}';
       posGroups.putIfAbsent(key, () => []).add(item);
     }
 
@@ -582,25 +673,31 @@ class VariantHelpers {
         final derivedLabel = looksLikeSizeVariant(item) && !isSource
             ? _sizeLabel(item)
             : null;
-        planned[item.id!] = _copyWithLinks(
+        planned[item.id!] = _plannedLink(
           planned[item.id!] ?? item,
+          byId,
           variantGroup: groupName,
           variantLabel: isSource
               ? (sizeLabel ?? 'Regular')
               : (sizeLabel ?? derivedLabel ?? item.name),
-          stockSourceId: planned[item.id!]?.stockSourceId,
+          proposedStockSourceId: source.id,
+          poolSource: isSource,
         );
       }
     }
 
-    final familyKeys = <String>{};
+    final familiesByLocation = <String, List<RawMaterial>>{};
     for (final item in planned.values) {
       final key = productFamilyKey(item);
-      if (key != null && key.isNotEmpty) familyKeys.add(key);
+      if (key == null || key.isEmpty) continue;
+      final bucket = '${item.locationId ?? 0}|$key';
+      familiesByLocation.putIfAbsent(bucket, () => []).add(item);
     }
 
-    for (final familyKey in familyKeys) {
-      final family = _familyForKey(familyKey, planned.values.toList());
+    for (final family in familiesByLocation.values) {
+      if (family.isEmpty) continue;
+      final familyKey = productFamilyKey(family.first);
+      if (familyKey == null || familyKey.isEmpty) continue;
       if (!shouldAutoLinkFamily(family)) continue;
 
       final source = canonicalStockSource(family, familyKey: familyKey);
@@ -618,16 +715,15 @@ class VariantHelpers {
         final derivedLabel = looksLikeSizeVariant(item) && !isSource
             ? _sizeLabel(item)
             : null;
-        planned[item.id!] = _copyWithLinks(
+        planned[item.id!] = _plannedLink(
           planned[item.id!] ?? item,
+          byId,
           variantGroup: groupName,
           variantLabel: isSource
               ? (sizeLabel ?? 'Regular')
               : (sizeLabel ?? derivedLabel ?? item.name),
-          stockSourceId: isSource
-              ? null
-              : (planned[item.id!]?.stockSourceId ?? source.id),
-          clearStockSource: isSource,
+          proposedStockSourceId: source.id,
+          poolSource: isSource,
         );
       }
     }
@@ -648,8 +744,7 @@ class VariantHelpers {
         if (item.id != null) groupedIds.add(item.id!);
       }
     }
-    for (final familyKey in familyKeys) {
-      final family = _familyForKey(familyKey, planned.values.toList());
+    for (final family in familiesByLocation.values) {
       if (!shouldAutoLinkFamily(family)) continue;
       for (final item in family) {
         if (item.id != null) groupedIds.add(item.id!);

@@ -759,11 +759,13 @@ class ItemImportService {
           'stockitem',
         ]);
         int? stockSourceId = existingItem?.stockSourceId;
-        if (stockSourceName.isNotEmpty) {
+        if (stockSourceName.isNotEmpty && stockSourceId == null) {
           stockSourceId = _resolveStockSourceId(
             stockSourceName,
             existingByKey,
             categoryName,
+            targetLocationId: existingItem?.locationId ??
+                Repository.instance.sessionLocationId,
           );
         }
 
@@ -963,20 +965,26 @@ class ItemImportService {
   int? _resolveStockSourceId(
     String stockSourceName,
     Map<String, RawMaterial> existingByKey,
-    String categoryName,
-  ) {
+    String categoryName, {
+    int? targetLocationId,
+  }) {
     final target = stockSourceName.trim().toLowerCase();
     if (target.isEmpty) return null;
 
+    bool sameLocation(RawMaterial item) {
+      if (targetLocationId == null || item.locationId == null) return true;
+      return item.locationId == targetLocationId;
+    }
+
     for (final item in existingByKey.values) {
-      if (item.id == null) continue;
+      if (item.id == null || !sameLocation(item)) continue;
       if (item.name.trim().toLowerCase() == target) {
         return item.id;
       }
     }
 
     for (final item in existingByKey.values) {
-      if (item.id == null) continue;
+      if (item.id == null || !sameLocation(item)) continue;
       final sub = item.subItem?.trim().toLowerCase() ?? '';
       if (sub == target || item.name.trim().toLowerCase() == target) {
         return item.id;
