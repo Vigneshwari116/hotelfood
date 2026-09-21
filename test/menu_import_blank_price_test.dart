@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foodstock/model/models.dart';
-import 'package:foodstock/services/item_import_service.dart';
+import 'support/menu_item_import.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -18,7 +18,7 @@ void main() {
 
   group('menu import with blank selling price', () {
     late Database database;
-    late ItemImportService service;
+    late MenuItemImportService service;
 
     const fixturePath =
         'test/fixtures/Shilpa_Enterprise_menu_items_CLIENT_FINAL.xlsx';
@@ -26,7 +26,7 @@ void main() {
     Future<void> openDb() async {
       database = await openImportTestDatabase();
       bindImportTestSession(database);
-      service = ItemImportService();
+      service = MenuItemImportService();
     }
 
     tearDown(() async {

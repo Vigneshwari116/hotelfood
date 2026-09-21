@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/database/app_db.dart';
+import 'package:foodstock/services/inventory_change_context.dart';
 
 class HttpAppDb implements AppDb {
   HttpAppDb({this.txId});
@@ -140,6 +141,16 @@ class HttpAppDb implements AppDb {
   }
 
   @override
+  Future<void> annotateChangeSource(String? source) async {
+    if (txId == null) return;
+    await _db({
+      'method': 'rawQuery',
+      'sql': "SELECT set_config('app.change_source', ?, true)",
+      'arguments': [source?.trim() ?? ''],
+    });
+  }
+
+  @override
   Future<T> transaction<T>(Future<T> Function(AppDb txn) action) async {
     final begun = await _post('/v1/tx/begin', {});
     final id = begun['tx']?.toString();
@@ -147,7 +158,9 @@ class HttpAppDb implements AppDb {
       throw StateError('Shop server did not start a transaction.');
     }
     try {
-      final value = await action(HttpAppDb(txId: id));
+      final txn = HttpAppDb(txId: id);
+      await txn.annotateChangeSource(InventoryChangeContext.source);
+      final value = await action(txn);
       await _post('/v1/tx/commit', {'tx': id});
       return value;
     } catch (error) {

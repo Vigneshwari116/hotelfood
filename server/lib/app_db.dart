@@ -34,4 +34,6 @@ abstract class AppDb {
   ]);
 
   Future<T> transaction<T>(Future<T> Function(AppDb txn) action);
+
+  Future<void> annotateChangeSource(String? source) async {}
 }

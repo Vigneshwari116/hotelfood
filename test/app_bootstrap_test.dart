@@ -30,6 +30,27 @@ void main() {
       expect(source.contains('rootBundle'), isFalse);
     });
 
+    test('production lib has no menu import entry points', () {
+      final libDir = Directory('lib');
+      final forbidden = [
+        'importFileBytes',
+        'importCsvText',
+        'importXlsxBytes',
+        'Future<ItemImportResult> importFile',
+      ];
+      for (final entity in libDir.listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        final source = entity.readAsStringSync();
+        for (final token in forbidden) {
+          expect(
+            source.contains(token),
+            isFalse,
+            reason: '${entity.path} must not contain $token',
+          );
+        }
+      }
+    });
+
     test('essential user seeding stays fast with a large catalog', () async {
       final database = await openDatabase(
         _essentialSeedDb,

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foodstock/model/models.dart';
-import 'package:foodstock/services/item_import_service.dart';
+import 'support/menu_item_import.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -41,7 +41,7 @@ SNACKS,French Fries,French Fries Small,,80,,,g,0,,50
   group('location menu re-import', () {
     test('re-import overwrites manual price edits with Excel values', () async {
       await openImportDb();
-      final service = ItemImportService();
+      final service = MenuItemImportService();
 
       await service.importCsvText(seedMenuCsv);
 
@@ -87,7 +87,7 @@ SNACKS,French Fries,French Fries Small,,80,,,g,0,,50
 
     test('re-import does not delete items missing from the Excel file', () async {
       await openImportDb();
-      final service = ItemImportService();
+      final service = MenuItemImportService();
 
       await service.importCsvText(seedMenuCsv, updateExisting: true);
 
@@ -120,7 +120,7 @@ SNACKS,French Fries,French Fries Small,,80,,,g,0,,50
 
     test('location importFile uses merge mode (replaceCatalog false)', () async {
       await openImportDb();
-      final service = ItemImportService();
+      final service = MenuItemImportService();
 
       await service.importCsvText(seedMenuCsv);
       await Repository.instance.saveRawMaterial(
@@ -147,7 +147,7 @@ SNACKS,French Fries,French Fries Small,,80,,,g,0,,50
 
     test('replaceCatalog true hides leftovers when delete is blocked', () async {
       await openImportDb();
-      final service = ItemImportService();
+      final service = MenuItemImportService();
 
       await service.importCsvText(seedMenuCsv);
       final onlyInAppId = await Repository.instance.saveRawMaterial(

@@ -34,4 +34,7 @@ abstract class AppDb {
   ]);
 
   Future<T> transaction<T>(Future<T> Function(AppDb txn) action);
+
+  /// Optional hint for database audit triggers (PostgreSQL).
+  Future<void> annotateChangeSource(String? source) async {}
 }

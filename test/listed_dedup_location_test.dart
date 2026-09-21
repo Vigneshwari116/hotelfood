@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foodstock/database/category_cleanup.dart';
 import 'package:foodstock/database/sqlite_app_db.dart';
+import 'package:foodstock/services/repository.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 void main() {
@@ -52,11 +53,28 @@ void main() {
     });
 
     tearDown(() async {
+      Repository.instance.setAppDbForTesting(null);
       await database.close();
     });
 
+    Future<void> bindRepo() async {
+      await database.execute('''
+        CREATE TABLE IF NOT EXISTS inventory_save_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          operation TEXT NOT NULL,
+          raw_material_id INTEGER,
+          success INTEGER NOT NULL DEFAULT 1,
+          error_message TEXT,
+          created_at TEXT NOT NULL
+        )
+      ''');
+      Repository.instance.setAppDbForTesting(SqliteAppDb(database));
+      Repository.instance.bindSession(role: 'admin');
+    }
+
     test('dedupeDuplicateRowsInCategory keeps listed=1 per location clone',
         () async {
+      await bindRepo();
       final now = DateTime.now().toIso8601String();
       await database.insert('raw_materials', {
         'name': 'Chicken 65',
@@ -96,6 +114,7 @@ void main() {
 
     test('dedupeDuplicateRowsInCategory still hides within one location',
         () async {
+      await bindRepo();
       final now = DateTime.now().toIso8601String();
       await database.insert('raw_materials', {
         'name': 'Crunchy Masala',

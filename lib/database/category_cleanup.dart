@@ -3,6 +3,8 @@ import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/combo_catalog_sync.dart';
 import 'package:foodstock/services/always_visible_menu_categories.dart';
 import 'package:foodstock/services/item_import_service.dart';
+import 'package:foodstock/database/raw_material_listed_writes.dart';
+import 'package:foodstock/services/listed_change_source.dart';
 import 'package:foodstock/services/sub_item_stock.dart';
 
 String _normalizeItemKey(String? name, String? subItem) {
@@ -115,11 +117,11 @@ Future<int> mergeOthersCategoryIntoUncategorized(AppDb db) async {
         continue;
       }
 
-      await db.update(
-        'raw_materials',
-        {'listed': 0},
-        where: 'id = ?',
-        whereArgs: [id],
+      await writeRawMaterialListed(
+        db,
+        rawMaterialId: id,
+        listed: false,
+        source: ListedChangeSource.importCatalogDedupCategory,
       );
       removedDuplicates++;
     }
@@ -249,11 +251,11 @@ Future<int> dedupeDuplicateRowsInCategory(AppDb db) async {
     for (final row in group) {
       final id = row['id'] as int?;
       if (id == null || id == keeper['id']) continue;
-      await db.update(
-        'raw_materials',
-        {'listed': 0},
-        where: 'id = ?',
-        whereArgs: [id],
+      await writeRawMaterialListed(
+        db,
+        rawMaterialId: id,
+        listed: false,
+        source: ListedChangeSource.importCatalogDedupCategory,
       );
       hidden++;
     }
@@ -296,11 +298,11 @@ Future<int> dedupeDuplicateItemNamesInCategory(AppDb db) async {
     for (final row in group) {
       final id = row['id'] as int?;
       if (id == null || id == keeper['id']) continue;
-      await db.update(
-        'raw_materials',
-        {'listed': 0},
-        where: 'id = ?',
-        whereArgs: [id],
+      await writeRawMaterialListed(
+        db,
+        rawMaterialId: id,
+        listed: false,
+        source: ListedChangeSource.importCatalogDedupName,
       );
       hidden++;
     }
@@ -360,11 +362,11 @@ Future<int> hideSnacksPopcornLargeDuplicates(AppDb db) async {
     if (categoryName(row['category_id'] as int?) != 'snacks') continue;
     final locationKey = _rowLocationId(row, hasLocationColumn) ?? 0;
     if (!friedPopcornAtLocation.contains(locationKey)) continue;
-    await db.update(
-      'raw_materials',
-      {'listed': 0},
-      where: 'id = ?',
-      whereArgs: [id],
+    await writeRawMaterialListed(
+      db,
+      rawMaterialId: id,
+      listed: false,
+      source: ListedChangeSource.importCatalogDedupPopcorn,
     );
     hidden++;
   }
@@ -611,10 +613,15 @@ Future<void> _mergeMaterialIntoKeeper(
     whereArgs: [duplicateId],
   );
 
+  await writeRawMaterialListed(
+    db,
+    rawMaterialId: duplicateId,
+    listed: false,
+    source: ListedChangeSource.importCatalogMergeStock,
+  );
   await db.update(
     'raw_materials',
     {
-      'listed': 0,
       'current_stock': 0,
       'opening_stock': 0,
     },
