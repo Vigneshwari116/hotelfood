@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foodstock/services/item_import_service.dart';
+import 'support/menu_item_import.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -18,7 +19,8 @@ void main() {
 
   group('location menu import/export round-trip', () {
     late Database database;
-    late ItemImportService service;
+    late MenuItemImportService importService;
+    late ItemImportService exportService;
 
     const approvedMasterPath =
         'assets/templates/shilpa_enterprise_menu_1401.csv';
@@ -28,7 +30,8 @@ void main() {
     Future<void> openRoundTripDb() async {
       database = await openImportTestDatabase();
       bindImportTestSession(database);
-      service = ItemImportService();
+      importService = MenuItemImportService();
+      exportService = ItemImportService();
     }
 
     tearDown(() async {
@@ -68,14 +71,14 @@ void main() {
         final importPath = '${tempDir.path}/Gt world mall.csv';
         await File(importPath).writeAsString(approvedCsv);
 
-        final result = await service.importFile(
+        final result = await importService.importFile(
           importPath,
           expectedLocationName: 'Gt world mall',
         );
         expect(result.errors, isEmpty);
 
-        final exportedBytes = await service.exportXlsxForLocation(1);
-        final exportedRows = service.parseSpreadsheetBytes(exportedBytes);
+        final exportedBytes = await exportService.exportXlsxForLocation(1);
+        final exportedRows = importService.parseSpreadsheetBytes(exportedBytes);
         final normalized = normalizedGrid(exportedRows);
 
         expect(normalized, isNotEmpty);

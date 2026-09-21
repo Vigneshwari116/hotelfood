@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foodstock/services/item_import_service.dart';
+import 'support/menu_item_import.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/services/sales_export_service.dart';
 import 'package:foodstock/services/spreadsheet_export.dart';
@@ -11,7 +12,7 @@ void main() {
     databaseFactory = databaseFactoryFfi;
   });
   test('import filename matches location name case-insensitively', () {
-    final service = ItemImportService();
+    final service = MenuItemImportService();
     expect(
       () => service.validateImportFilename(
         '/tmp/Gt world mall.xlsx',
