@@ -11,6 +11,7 @@ import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/combo_only_categories.dart';
 import 'package:foodstock/services/inventory_search.dart';
 import 'package:foodstock/services/item_import_service.dart';
+import 'package:foodstock/services/listed_change_source.dart';
 import 'package:foodstock/services/krusty_bites_stock.dart';
 import 'package:foodstock/services/menu_item_edit_helpers.dart';
 import 'package:foodstock/services/repository.dart';
@@ -407,7 +408,10 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
       });
       _showMessage('Deleted ${row.item.name}');
     } catch (_) {
-      await Repository.instance.hideRawMaterial(row.item.id!);
+      await Repository.instance.hideRawMaterial(
+        row.item.id!,
+        source: ListedChangeSource.userHide,
+      );
       if (!mounted) return;
       setState(() {
         _rows.remove(row);

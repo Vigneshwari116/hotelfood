@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:archive/archive.dart';
 import 'package:flutter/services.dart';
 import 'package:foodstock/database/category_cleanup.dart';
+import 'package:foodstock/database/menu_import_idempotency.dart';
+import 'package:foodstock/services/listed_change_source.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/services/combo_only_categories.dart';
 import 'package:foodstock/services/menu_item_edit_helpers.dart';
@@ -615,6 +617,15 @@ class ItemImportService {
       for (final category in categories)
         if (category.id != null) category.id!: category.name,
     };
+    final contentFingerprint = menuImportContentFingerprint(
+      rows,
+      Repository.instance.sessionLocationId,
+    );
+    final postProcessAlreadyDone =
+        await Repository.instance.hasImportPostProcessCompleted(
+      contentFingerprint,
+    );
+
     final importedKeys = <String>{};
     final existingByKey = <String, RawMaterial>{
       for (final item in existing)
@@ -863,15 +874,35 @@ class ItemImportService {
         try {
           await Repository.instance.deleteRawMaterial(item.id!);
         } catch (_) {
-          await Repository.instance.hideRawMaterial(item.id!);
+          await Repository.instance.hideRawMaterial(
+            item.id!,
+            source: ListedChangeSource.importCatalogPrune,
+          );
         }
       }
     }
 
-    await _applyVariantAutoLinking();
-    await _runCatalogMaintenance();
-    await _dedupeDuplicateVariantLabels();
-    await _cleanupPopcornFromSnacksCombos();
+    if (postProcessAlreadyDone) {
+      result.warnings.add(
+        'Import post-processing (variant link, catalog dedup) was already '
+        'applied for this exact file at this location; skipped to prevent '
+        'duplicate listed/stock side effects.',
+      );
+    } else {
+      await _applyVariantAutoLinking();
+      await _runCatalogMaintenance();
+      await _dedupeDuplicateVariantLabels();
+      await _cleanupPopcornFromSnacksCombos();
+      final recorded = await Repository.instance.tryRecordImportPostProcess(
+        contentFingerprint,
+      );
+      if (!recorded) {
+        result.warnings.add(
+          'Another import of this file finished post-processing first; '
+          'this run skipped duplicate maintenance.',
+        );
+      }
+    }
 
     final mismatches = await Repository.instance.auditStockGroupMismatches();
     for (final mismatch in mismatches) {
@@ -939,7 +970,10 @@ class ItemImportService {
         final keep = preferVariant(existing, variant);
         final drop = keep.id == existing.id ? variant : existing;
         if (drop.id != null) {
-          await Repository.instance.hideRawMaterial(drop.id!);
+          await Repository.instance.hideRawMaterial(
+            drop.id!,
+            source: ListedChangeSource.importVariantDedup,
+          );
         }
         winners[label] = keep;
       }

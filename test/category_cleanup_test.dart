@@ -2,7 +2,23 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:foodstock/database/category_cleanup.dart';
 import 'package:foodstock/database/sqlite_app_db.dart';
 import 'package:foodstock/services/item_import_service.dart';
+import 'package:foodstock/services/repository.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+Future<void> _bindRepositoryForCategoryTests(Database database) async {
+  await database.execute('''
+    CREATE TABLE IF NOT EXISTS inventory_save_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      operation TEXT NOT NULL,
+      raw_material_id INTEGER,
+      success INTEGER NOT NULL DEFAULT 1,
+      error_message TEXT,
+      created_at TEXT NOT NULL
+    )
+  ''');
+  Repository.instance.setAppDbForTesting(SqliteAppDb(database));
+  Repository.instance.bindSession(role: 'admin');
+}
 
 void main() {
   setUpAll(() {
@@ -74,10 +90,12 @@ void main() {
     });
 
     tearDown(() async {
+      Repository.instance.setAppDbForTesting(null);
       await database.close();
     });
 
     test('merges Others into Uncategorized and hides duplicate rows', () async {
+      await _bindRepositoryForCategoryTests(database);
       final removed =
           await mergeOthersCategoryIntoUncategorized(SqliteAppDb(database));
 
@@ -169,10 +187,12 @@ void main() {
     });
 
     tearDown(() async {
+      Repository.instance.setAppDbForTesting(null);
       await database.close();
     });
 
     test('hides duplicate rows with same category and item key', () async {
+      await _bindRepositoryForCategoryTests(database);
       final hidden = await dedupeDuplicateRowsInCategory(SqliteAppDb(database));
       expect(hidden, 1);
 
@@ -342,10 +362,12 @@ void main() {
     });
 
     tearDown(() async {
+      Repository.instance.setAppDbForTesting(null);
       await database.close();
     });
 
     test('merges duplicate patties and veg finger rows across categories', () async {
+      await _bindRepositoryForCategoryTests(database);
       final merged = await mergeGlobalStockDuplicateRows(SqliteAppDb(database));
       expect(merged, greaterThanOrEqualTo(3));
 

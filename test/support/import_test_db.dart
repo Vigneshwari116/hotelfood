@@ -163,6 +163,27 @@ Future<Database> openImportTestDatabase() async {
           raw_material_id INTEGER
         )
       ''');
+
+      await db.execute('''
+        CREATE TABLE inventory_save_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          operation TEXT NOT NULL,
+          raw_material_id INTEGER,
+          success INTEGER NOT NULL DEFAULT 1,
+          error_message TEXT,
+          created_at TEXT NOT NULL
+        )
+      ''');
+
+      await db.execute('''
+        CREATE TABLE menu_import_batches (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          location_id INTEGER,
+          content_fingerprint TEXT NOT NULL,
+          completed_at TEXT NOT NULL,
+          UNIQUE(location_id, content_fingerprint)
+        )
+      ''');
     },
   );
 }

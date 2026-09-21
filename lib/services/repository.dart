@@ -11,12 +11,16 @@ import 'package:foodstock/database/sub_item_migration.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/database/category_cleanup.dart';
 import 'package:foodstock/database/inventory_save_log.dart';
+import 'package:foodstock/database/raw_material_listed_writes.dart';
 import 'package:foodstock/database/raw_material_integrity.dart';
 import 'package:foodstock/database/stock_group_consistency.dart'
     as stock_group;
 import 'package:foodstock/database/menu_catalog_match.dart';
 import 'package:foodstock/services/inventory_change_context.dart';
 import 'package:foodstock/services/inventory_stock_bounds.dart';
+import 'package:foodstock/services/listed_change_source.dart';
+import 'package:foodstock/database/menu_import_idempotency.dart'
+    as menu_import_idempotency;
 import 'package:foodstock/services/always_visible_menu_categories.dart';
 import 'package:foodstock/services/inventory_search.dart';
 import 'package:foodstock/services/item_import_service.dart';
@@ -1570,33 +1574,124 @@ class Repository {
             });
       }
 
-      Future<void> hideRawMaterial(int rawMaterialId) async {
-            final db = await _db;
-            await db.update(
-                  'raw_materials',
-                  {
-                    'listed': 0,
-                    'barcode': null,
-                  },
-                  where: 'id = ?',
-                  whereArgs: [rawMaterialId],
+      Future<void> _applyListedChange({
+            required int rawMaterialId,
+            required bool listed,
+            required String source,
+            bool clearBarcode = false,
+            AppDb? dbOverride,
+      }) async {
+            final operation = 'listed_change:$source';
+            final db = dbOverride ?? await _db;
+
+            Future<void> apply() async {
+                  var nextListed = listed;
+                  if (!listed) {
+                        final rows = await db.query(
+                              'raw_materials',
+                              columns: ['category_id'],
+                              where: 'id = ?',
+                              whereArgs: [rawMaterialId],
+                              limit: 1,
+                        );
+                        if (rows.isEmpty) {
+                              throw InvalidInventoryException(
+                                    'Menu item does not exist.',
+                              );
+                        }
+                        final forceListed =
+                            await _rawMaterialMustBeListedInSales(
+                                  db,
+                                  rawMaterialId: rawMaterialId,
+                                  categoryId:
+                                      (rows.first['category_id'] as num?)
+                                          ?.toInt(),
+                            );
+                        if (forceListed) {
+                              nextListed = true;
+                        }
+                  }
+
+                  await writeRawMaterialListed(
+                        db,
+                        rawMaterialId: rawMaterialId,
+                        listed: nextListed,
+                        source: source,
+                        clearBarcode: clearBarcode,
+                  );
+            }
+
+            if (dbOverride != null) {
+                  await apply();
+            } else {
+                  await InventoryChangeContext.run(operation, apply);
+            }
+      }
+
+      /// Hides an item from sales and clears its barcode (delete fallback / user hide).
+      Future<void> hideRawMaterial(
+            int rawMaterialId, {
+            required String source,
+            AppDb? dbOverride,
+      }) async {
+            await _applyListedChange(
+                  rawMaterialId: rawMaterialId,
+                  listed: false,
+                  source: source,
+                  clearBarcode: true,
+                  dbOverride: dbOverride,
+            );
+      }
+
+      /// Sets [listed] without clearing barcode (catalog dedup / maintenance).
+      Future<void> unlistRawMaterial(
+            int rawMaterialId, {
+            required String source,
+            AppDb? dbOverride,
+      }) async {
+            await _applyListedChange(
+                  rawMaterialId: rawMaterialId,
+                  listed: false,
+                  source: source,
+                  clearBarcode: false,
+                  dbOverride: dbOverride,
             );
       }
 
       Future<void> setRawMaterialListed(
-          int rawMaterialId,
-          bool listed,
-          ) async {
-            final db = await _db;
-            final forceListed = await _rawMaterialMustBeListedInSales(
-                  db,
+            int rawMaterialId,
+            bool listed, {
+            required String source,
+            AppDb? dbOverride,
+      }) async {
+            await _applyListedChange(
                   rawMaterialId: rawMaterialId,
+                  listed: listed,
+                  source: source,
+                  clearBarcode: false,
+                  dbOverride: dbOverride,
             );
-            await db.update(
-                  'raw_materials',
-                  {'listed': (forceListed || listed) ? 1 : 0},
-                  where: 'id = ?',
-                  whereArgs: [rawMaterialId],
+      }
+
+      Future<bool> hasImportPostProcessCompleted(
+            String contentFingerprint,
+      ) async {
+            final db = await _db;
+            return menu_import_idempotency.importPostProcessAlreadyApplied(
+                  db,
+                  contentFingerprint: contentFingerprint,
+                  locationId: _menuCatalogLocationId,
+            );
+      }
+
+      Future<bool> tryRecordImportPostProcess(
+            String contentFingerprint,
+      ) async {
+            final db = await _db;
+            return menu_import_idempotency.tryRecordImportPostProcess(
+                  db,
+                  contentFingerprint: contentFingerprint,
+                  locationId: _menuCatalogLocationId,
             );
       }
 

@@ -9,8 +9,10 @@ This document maps every application code path that reads or writes `raw_materia
 | Operation | Function | Transaction | `location_id` filter | Validation | Trigger |
 |-----------|----------|-------------|----------------------|------------|---------|
 | Save menu / stock item | `saveRawMaterial` | Yes | Updates `location_stock` for `_stockLocationId` only; sets `raw_materials.location_id` on save | Bounds, stock group units/packets, stock source, variant labels | User save, import, variant sync |
-| Hide from sales | `hideRawMaterial` | No | `id` only | — | User hide, import dedupe |
-| Toggle listed | `setRawMaterialListed` | No | `id` only | Always-visible categories forced listed | User toggle |
+| Hide from sales | `hideRawMaterial` | Yes | `id` only | Required `source` (`ListedChangeSource.*`); logs `inventory_save_log` | User hide, import dedupe |
+| Unlist (keep barcode) | `unlistRawMaterial` | Yes | `id` only | Required `source`; used by catalog dedup | Import maintenance |
+| Toggle listed | `setRawMaterialListed` | Yes | `id` only | Required `source`; always-visible categories forced listed | User toggle |
+| Import post-process once | `menu_import_batches` | — | Per location + file fingerprint | Skips dedup/maintenance on repeat import | Menu import |
 | Delete item | `deleteRawMaterial` | Yes | Scoped cleanup | — | User delete |
 | Purchase | `recordPurchase` | Yes | `_stockLocationId` on batches/ledger/location_stock | Qty/rate, stock group unit | User purchase |
 | Sale / POS | `recordSale` | Yes | Sale `location_id`; stock via `_stockLocationId` | Cart normalization; deduct via `_stockMaterialIdForSale` (no double pool debit) | User checkout |
