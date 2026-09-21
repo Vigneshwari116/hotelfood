@@ -80,8 +80,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final lowStock = stock.where((r) {
         final current = (r['current_stock'] as num).toDouble();
         final reorder = (r['reorder_level'] as num).toDouble();
+        final listed = r['listed'];
+        final isListed = listed == null || listed == 1;
 
-        return current >= 0 && current <= reorder;
+        return isListed && current >= 0 && current <= reorder;
       }).length;
 
       final negativeStock = stock.where((r) {
