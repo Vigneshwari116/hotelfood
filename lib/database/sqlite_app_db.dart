@@ -72,6 +72,9 @@ class SqliteAppDb implements AppDb {
   }
 
   @override
+  Future<void> annotateChangeSource(String? source) async {}
+
+  @override
   Future<T> transaction<T>(Future<T> Function(AppDb txn) action) {
     final db = _db;
     if (db is Database) {

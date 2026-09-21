@@ -1,3 +1,5 @@
+import 'postgres_stock_integrity.dart';
+
 const postgresSchemaStatements = <String>[
   '''
   CREATE TABLE IF NOT EXISTS users (
@@ -282,4 +284,5 @@ const postgresSchemaStatements = <String>[
   ON raw_materials (location_id, barcode)
   WHERE barcode IS NOT NULL AND trim(barcode::text) <> ''
   ''',
+  ...postgresStockIntegrityStatements,
 ];

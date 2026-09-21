@@ -19,6 +19,7 @@ class ItemImportResult {
   int updated = 0;
   int skipped = 0;
   final List<String> errors = [];
+  final List<String> warnings = [];
 }
 
 class ItemImportService {
@@ -872,6 +873,14 @@ class ItemImportService {
     await _dedupeDuplicateVariantLabels();
     await _cleanupPopcornFromSnacksCombos();
 
+    final mismatches = await Repository.instance.auditStockGroupMismatches();
+    for (final mismatch in mismatches) {
+      result.warnings.add(
+        'Stock group "${mismatch.stockKey}" — ${mismatch.itemName}: '
+        '${mismatch.detail}',
+      );
+    }
+
     return result;
   }
 
@@ -962,7 +971,10 @@ class ItemImportService {
       categoryNameById: categoryNameById,
     );
     for (final item in updates) {
-      await Repository.instance.saveRawMaterial(item);
+      await Repository.instance.saveRawMaterial(
+        item,
+        skipVariantRefresh: true,
+      );
     }
   }
 

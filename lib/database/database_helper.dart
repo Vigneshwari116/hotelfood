@@ -118,7 +118,7 @@ class DBHelper {
       //      |
       //      +---- combo_items ---- combos
       //
-      version: 34,
+      version: 35,
 
       onConfigure: (db) async {
         await db.execute(
@@ -1732,6 +1732,19 @@ class DBHelper {
 
     if (oldVersion < 34) {
       await migrateAlwaysVisibleCategoryListedRepair(db);
+    }
+
+    if (oldVersion < 35) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS inventory_save_log (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          operation TEXT NOT NULL,
+          raw_material_id INTEGER,
+          success INTEGER NOT NULL DEFAULT 1,
+          error_message TEXT,
+          created_at TEXT NOT NULL
+        )
+      ''');
     }
   }
 

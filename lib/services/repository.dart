@@ -10,8 +10,13 @@ import 'package:foodstock/database/database_helper.dart';
 import 'package:foodstock/database/sub_item_migration.dart';
 import 'package:foodstock/model/models.dart';
 import 'package:foodstock/database/category_cleanup.dart';
+import 'package:foodstock/database/inventory_save_log.dart';
 import 'package:foodstock/database/raw_material_integrity.dart';
+import 'package:foodstock/database/stock_group_consistency.dart'
+    as stock_group;
 import 'package:foodstock/database/menu_catalog_match.dart';
+import 'package:foodstock/services/inventory_change_context.dart';
+import 'package:foodstock/services/inventory_stock_bounds.dart';
 import 'package:foodstock/services/always_visible_menu_categories.dart';
 import 'package:foodstock/services/inventory_search.dart';
 import 'package:foodstock/services/item_import_service.dart';
@@ -973,6 +978,38 @@ class Repository {
       // RAW MATERIAL MASTER
       // ============================================================
 
+      void _validateRawMaterialQuantities(RawMaterial rm) {
+            final label = rm.salesLabel;
+            InventoryStockBounds.requireFiniteQuantity(
+                  rm.currentStock,
+                  fieldLabel: 'current stock',
+                  itemLabel: label,
+            );
+            InventoryStockBounds.requireFiniteQuantity(
+                  rm.openingStock,
+                  fieldLabel: 'opening stock',
+                  itemLabel: label,
+            );
+            InventoryStockBounds.requireFiniteQuantity(
+                  rm.openingPieces,
+                  fieldLabel: 'opening pieces',
+                  itemLabel: label,
+            );
+            InventoryStockBounds.requirePositiveUnitsPerPacket(
+                  rm.unitsPerPacket,
+                  itemLabel: label,
+            );
+      }
+
+      String _saveRawMaterialOperationLabel({
+            required bool fromMenuImport,
+            required bool fromGridSave,
+      }) {
+            if (fromMenuImport) return 'saveRawMaterial:menu_import';
+            if (fromGridSave) return 'saveRawMaterial:menu_grid';
+            return 'saveRawMaterial:editor';
+      }
+
       Future<int> saveRawMaterial(
           RawMaterial rm, {
                 String? pin,
@@ -982,12 +1019,30 @@ class Repository {
                 int? menuSortOrder,
                 bool skipVariantRefresh = false,
           }) async {
+            final operation = _saveRawMaterialOperationLabel(
+                  fromMenuImport: fromMenuImport,
+                  fromGridSave: fromGridSave,
+            );
+            return InventoryChangeContext.run(operation, () async {
             final db = await _db;
 
             if (rm.name.trim().isEmpty) {
                   throw InvalidInventoryException(
                         'Raw material name cannot be empty.',
                   );
+            }
+
+            try {
+            _validateRawMaterialQuantities(rm);
+            } on InventoryStockBoundsException catch (e) {
+                  await logInventorySave(
+                        db,
+                        operation: operation,
+                        rawMaterialId: rm.id,
+                        success: false,
+                        errorMessage: e.message,
+                  );
+                  throw InvalidInventoryException(e.message);
             }
 
             if (rm.id == null && rm.openingStock < 0.0) {
@@ -1014,6 +1069,8 @@ class Repository {
                   );
             }
 
+            final catalogLocationForValidation = _catalogLocationIdForSave(rm);
+
             if (rm.unitId != null && !skipVariantRefresh && !fromMenuImport) {
                   await _assertStockGroupUnitMatches(
                         db,
@@ -1021,7 +1078,27 @@ class Repository {
                         unitId: rm.unitId,
                         subItem: rm.subItem,
                         name: rm.name,
+                        catalogLocationId: catalogLocationForValidation,
                   );
+            }
+
+            if (!fromMenuImport && !skipVariantRefresh) {
+                  try {
+                        await stock_group.assertStockGroupConsistency(
+                              db,
+                              material: rm,
+                              catalogLocationId: catalogLocationForValidation,
+                        );
+                  } on stock_group.StockGroupConsistencyException catch (e) {
+                        await logInventorySave(
+                              db,
+                              operation: operation,
+                              rawMaterialId: rm.id,
+                              success: false,
+                              errorMessage: e.message,
+                        );
+                        throw InvalidInventoryException(e.message);
+                  }
             }
 
             if (!skipVariantRefresh && !fromMenuImport) {
@@ -1093,6 +1170,9 @@ class Repository {
 
             if (rm.id == null) {
                   final id = await db.transaction((txn) async {
+                        await txn.annotateChangeSource(
+                              InventoryChangeContext.source ?? operation,
+                        );
                         final double openingStock = rm.openingStock;
                         final locationId = _stockLocationId;
 
@@ -1195,6 +1275,12 @@ class Repository {
                   if (!skipVariantRefresh && !fromGridSave) {
                         await refreshVariantLinks();
                   }
+                  await logInventorySave(
+                        db,
+                        operation: operation,
+                        rawMaterialId: id,
+                        success: true,
+                  );
                   return id;
             }
 
@@ -1203,6 +1289,9 @@ class Repository {
             // ----------------------------------------------------------
 
             final updatedId = await db.transaction((txn) async {
+                  await txn.annotateChangeSource(
+                        InventoryChangeContext.source ?? operation,
+                  );
                   final locationId = _stockLocationId;
 
                   final existingRows = await txn.query(
@@ -1471,7 +1560,14 @@ class Repository {
             if (!skipVariantRefresh && !fromGridSave) {
                   await refreshVariantLinks();
             }
+            await logInventorySave(
+                  db,
+                  operation: operation,
+                  rawMaterialId: updatedId,
+                  success: true,
+            );
             return updatedId;
+            });
       }
 
       Future<void> hideRawMaterial(int rawMaterialId) async {
@@ -2482,6 +2578,10 @@ class Repository {
                                     unitId: unitId.toInt(),
                                     subItem: materialRow['sub_item']?.toString(),
                                     name: materialRow['name']?.toString() ?? '',
+                                    catalogLocationId:
+                                        (materialRow['location_id'] as num?)
+                                            ?.toInt() ??
+                                        _stockLocationId,
                               );
                         }
 
@@ -3155,6 +3255,26 @@ class Repository {
                   final double safeNext =
                       next.abs() < 0.000001 ? 0.0 : next;
 
+                  final nameRows = await txn.query(
+                        'raw_materials',
+                        columns: ['name'],
+                        where: 'id = ?',
+                        whereArgs: [rawMaterialId],
+                        limit: 1,
+                  );
+                  final itemLabel = nameRows.isEmpty
+                      ? 'Item #$rawMaterialId'
+                      : nameRows.first['name']?.toString() ?? 'Item';
+                  try {
+                        InventoryStockBounds.requireQuantityAfterDelta(
+                              current: current,
+                              delta: delta,
+                              itemLabel: itemLabel,
+                        );
+                  } on InventoryStockBoundsException catch (e) {
+                        throw InvalidInventoryException(e.message);
+                  }
+
                   await txn.update(
                         'location_stock',
                         {'current_stock': safeNext},
@@ -3167,7 +3287,7 @@ class Repository {
 
             final rows = await txn.query(
                   'raw_materials',
-                  columns: ['current_stock'],
+                  columns: ['current_stock', 'name'],
                   where: 'id = ?',
                   whereArgs: [rawMaterialId],
                   limit: 1,
@@ -3186,6 +3306,18 @@ class Repository {
 
             final double safeNext =
             next.abs() < 0.000001 ? 0.0 : next;
+
+            final itemLabel =
+                rows.first['name']?.toString() ?? 'Item #$rawMaterialId';
+            try {
+                  InventoryStockBounds.requireQuantityAfterDelta(
+                        current: current,
+                        delta: delta,
+                        itemLabel: itemLabel,
+                  );
+            } on InventoryStockBoundsException catch (e) {
+                  throw InvalidInventoryException(e.message);
+            }
 
             await txn.update(
                   'raw_materials',
@@ -3443,6 +3575,7 @@ class Repository {
             required int? unitId,
             required String? subItem,
             required String name,
+            int? catalogLocationId,
       }) async {
             if (unitId == null) return;
 
@@ -3451,13 +3584,14 @@ class Repository {
                   name: name,
                   subItem: subItem,
                   unitId: unitId,
+                  locationId: catalogLocationId,
             );
             final stockKey = SubItemStock.stockKey(probe);
             if (stockKey == null || stockKey.isEmpty) return;
 
             final rows = await db.query(
                   'raw_materials',
-                  columns: ['id', 'name', 'sub_item', 'unit_id'],
+                  columns: ['id', 'name', 'sub_item', 'unit_id', 'location_id'],
             );
             final family = <RawMaterial>[];
             for (final row in rows) {
@@ -3466,7 +3600,13 @@ class Repository {
                         name: row['name']?.toString() ?? '',
                         subItem: row['sub_item']?.toString(),
                         unitId: (row['unit_id'] as num?)?.toInt(),
+                        locationId: (row['location_id'] as num?)?.toInt(),
                   );
+                  if (catalogLocationId != null &&
+                      item.locationId != null &&
+                      item.locationId != catalogLocationId) {
+                        continue;
+                  }
                   if (SubItemStock.stockKey(item) == stockKey) {
                         family.add(item);
                   }
@@ -3577,6 +3717,15 @@ class Repository {
       Future<Map<String, int>> auditOrphanedReferences() async {
             final db = await _db;
             return auditOrphanedRawMaterialReferences(db);
+      }
+
+      Future<List<stock_group.StockGroupMismatch>>
+      auditStockGroupMismatches() async {
+            final db = await _db;
+            return stock_group.auditStockGroupMismatches(
+                  db,
+                  locationId: _menuCatalogLocationId,
+            );
       }
 
       Future<void> refreshVariantLinks() async {
@@ -4261,6 +4410,7 @@ class Repository {
             String? customerName,
             String? customerPhone,
       }) async {
+            return InventoryChangeContext.run('recordSale', () async {
             final db = await _db;
 
             if (lines.isEmpty) {
@@ -4288,6 +4438,9 @@ class Repository {
             }
 
             return db.transaction((txn) async {
+                  await txn.annotateChangeSource(
+                        InventoryChangeContext.source ?? 'recordSale',
+                  );
                   final checkoutLines =
                       await _normalizeSaleLinesForCheckout(txn, lines);
 
@@ -4485,6 +4638,7 @@ class Repository {
                   }
 
                   return saleId;
+            });
             });
       }
 

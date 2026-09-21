@@ -1,6 +1,7 @@
 import 'always_visible_category_listed_repair.dart';
 import 'combo_ingredient_location_repair.dart';
 import 'listed_location_clone_repair.dart';
+import 'postgres_stock_integrity.dart';
 
 /// One-time data fixes for restored production databases. These must never run
 /// on every server boot — only once, tracked in [schema_migrations].
@@ -115,5 +116,9 @@ const postgresOneTimeDataMigrations = <PostgresDataMigration>[
   PostgresDataMigration(
     alwaysVisibleCategoryListedRepairV1,
     [postgresAlwaysVisibleCategoryListedRepairSql],
+  ),
+  PostgresDataMigration(
+    postgresStockGroupMismatchReportV1,
+    [postgresStockGroupMismatchReportSql],
   ),
 ];

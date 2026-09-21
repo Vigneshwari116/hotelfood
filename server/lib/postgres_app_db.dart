@@ -175,6 +175,15 @@ class PostgresAppDb implements AppDb {
   }
 
   @override
+  Future<void> annotateChangeSource(String? source) async {
+    final value = source?.trim() ?? '';
+    await execute(
+      "SELECT set_config('app.change_source', \$1, true)",
+      [value],
+    );
+  }
+
+  @override
   Future<T> transaction<T>(Future<T> Function(AppDb txn) action) {
     final conn = _connection;
     if (conn != null) {
