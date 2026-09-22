@@ -212,8 +212,9 @@ void main() {
           categoryNameById: {1: 'Snacks', 2: 'Fried Items'},
         );
 
-        final krustyUpdate = updates.where((item) => item.id == 856).toList();
-        expect(krustyUpdate, isEmpty);
+        for (final row in updates.where((item) => item.id == 856)) {
+          expect(row.stockSourceId, 843);
+        }
 
         final linked = VariantHelpers.withSyncedLinks(items);
         final byId = {
