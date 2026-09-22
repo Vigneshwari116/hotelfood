@@ -198,6 +198,29 @@ class Repository {
                 '$tableAlias.location_id = ?)';
       }
 
+      /// Location row wins when set; default 0 on [location_stock] falls back to
+      /// [raw_materials.reorder_level] (grid does not edit reorder level).
+      static const String _sqlEffectiveReorderLevel = '''
+CASE
+  WHEN COALESCE(ls.reorder_level, 0) <> 0 THEN ls.reorder_level
+  ELSE COALESCE(rm.reorder_level, 0)
+END''';
+
+      void _preserveGridCatalogColumnsFromExisting(
+            Map<String, Object?> updateMap,
+            Map<String, Object?> existing,
+      ) {
+            updateMap['reorder_level'] = existing['reorder_level'];
+            updateMap['shelf_life_days'] = existing['shelf_life_days'];
+            updateMap['entry_password_hash'] = existing['entry_password_hash'];
+            updateMap['image_path'] = existing['image_path'];
+            updateMap['category_id'] = existing['category_id'];
+            final menuSort = existing['menu_sort_order'];
+            if (menuSort != null) {
+                  updateMap['menu_sort_order'] = menuSort;
+            }
+      }
+
       void _requireMenuCatalogLocation() {
             if (_menuCatalogLocationId == null) {
                   throw InvalidInventoryException(
@@ -1362,6 +1385,12 @@ class Repository {
                           ..remove('created_at')
                           ..remove('current_stock')
                           ..remove('opening_stock');
+                        if (fromGridSave) {
+                              _preserveGridCatalogColumnsFromExisting(
+                                    updateMap,
+                                    existing,
+                              );
+                        }
 
                         await txn.update(
                               'raw_materials',
@@ -1380,7 +1409,9 @@ class Repository {
                               {
                                     'current_stock': 0,
                                     'opening_stock': 0,
-                                    'reorder_level': rm.reorderLevel,
+                                    'reorder_level': fromGridSave
+                                        ? existing['reorder_level']
+                                        : rm.reorderLevel,
                               },
                               where:
                                   'location_id = ? AND raw_material_id = ?',
@@ -1430,6 +1461,12 @@ class Repository {
                     ..remove('created_at')
                     ..remove('current_stock')
                     ..remove('opening_stock');
+                  if (fromGridSave) {
+                        _preserveGridCatalogColumnsFromExisting(
+                              updateMap,
+                              existing,
+                        );
+                  }
 
                   if (baselineReset) {
                         await txn.update(
@@ -1545,7 +1582,10 @@ class Repository {
                   if (fromGridSave && !KrustyBitesStock.usesStockSourcePool(rm)) {
                         await txn.update(
                               'location_stock',
-                              {'opening_stock': newStock},
+                              {
+                                    'opening_stock': newStock,
+                                    'reorder_level': existing['reorder_level'],
+                              },
                               where:
                                   'location_id = ? AND raw_material_id = ?',
                               whereArgs: [stockLocationId, rm.id],
@@ -1778,7 +1818,7 @@ class Repository {
         rm.*,
         COALESCE(ls.current_stock, 0) AS current_stock,
         COALESCE(ls.opening_stock, rm.opening_stock) AS opening_stock,
-        COALESCE(ls.reorder_level, rm.reorder_level) AS reorder_level,
+        $_sqlEffectiveReorderLevel AS reorder_level,
         c.name AS category_name
       FROM raw_materials rm
       LEFT JOIN location_stock ls
@@ -1856,7 +1896,7 @@ class Repository {
           0
         ) AS current_stock,
         COALESCE(ls.opening_stock, rm.opening_stock) AS opening_stock,
-        COALESCE(ls.reorder_level, rm.reorder_level) AS reorder_level
+        $_sqlEffectiveReorderLevel AS reorder_level
       FROM raw_materials rm
       LEFT JOIN location_stock ls
         ON ls.raw_material_id = rm.id
@@ -3507,7 +3547,7 @@ class Repository {
           END,
           0
         ) AS current_stock,
-        COALESCE(ls.reorder_level, rm.reorder_level) AS reorder_level,
+        $_sqlEffectiveReorderLevel AS reorder_level,
         rm.cost_price,
         rm.selling_price,
         rm.image_path,

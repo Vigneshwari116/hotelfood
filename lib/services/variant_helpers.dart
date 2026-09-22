@@ -88,6 +88,26 @@ class VariantHelpers {
     return proposedSourceId;
   }
 
+  /// When variant sync elects a row as pool holder but it already has a valid
+  /// manual stock source (e.g. Krusty → Chicken 65), keep that link.
+  static ({int? proposedSourceId, bool poolSource}) _variantSyncStockLink({
+    required RawMaterial current,
+    required RawMaterial source,
+    required bool isSource,
+    required Map<int, RawMaterial> byId,
+    RawMaterial? catalogBaseline,
+  }) {
+    final baseline = catalogBaseline ?? current;
+    final manualSourceId =
+        current.stockSourceId ?? baseline.stockSourceId;
+    final preserveManualStockSource = manualSourceId != null &&
+        isValidStockSource(manualSourceId, baseline, byId);
+    if (isSource && preserveManualStockSource) {
+      return (proposedSourceId: manualSourceId, poolSource: false);
+    }
+    return (proposedSourceId: source.id, poolSource: isSource);
+  }
+
   static Map<int, RawMaterial> _byId(Iterable<RawMaterial> items) {
     return {
       for (final item in items)
@@ -540,11 +560,19 @@ class VariantHelpers {
       for (final item in family) {
         if (item.id == null) continue;
         final isSource = item.id == source.id;
+        final current = planned[item.id!] ?? item;
+        final link = _variantSyncStockLink(
+          current: current,
+          source: source,
+          isSource: isSource,
+          byId: byId,
+          catalogBaseline: byId[item.id!],
+        );
         planned[item.id!] = _plannedLink(
-          planned[item.id!] ?? item,
+          current,
           byId,
-          proposedStockSourceId: source.id,
-          poolSource: isSource,
+          proposedStockSourceId: link.proposedSourceId,
+          poolSource: link.poolSource,
         );
       }
     }
@@ -624,15 +652,23 @@ class VariantHelpers {
         final derivedLabel = looksLikeSizeVariant(item) && !isSource
             ? _sizeLabel(item)
             : null;
+        final current = planned[item.id!] ?? item;
+        final link = _variantSyncStockLink(
+          current: current,
+          source: source,
+          isSource: isSource,
+          byId: byId,
+          catalogBaseline: byId[item.id!],
+        );
         planned[item.id!] = _plannedLink(
-          planned[item.id!] ?? item,
+          current,
           byId,
           variantGroup: groupName,
           variantLabel: isSource
               ? (sizeLabel ?? 'Regular')
               : (sizeLabel ?? derivedLabel ?? item.name),
-          proposedStockSourceId: source.id,
-          poolSource: isSource,
+          proposedStockSourceId: link.proposedSourceId,
+          poolSource: link.poolSource,
         );
       }
     }
@@ -677,15 +713,23 @@ class VariantHelpers {
         final derivedLabel = looksLikeSizeVariant(item) && !isSource
             ? _sizeLabel(item)
             : null;
+        final current = planned[item.id!] ?? item;
+        final link = _variantSyncStockLink(
+          current: current,
+          source: source,
+          isSource: isSource,
+          byId: byId,
+          catalogBaseline: byId[item.id!],
+        );
         planned[item.id!] = _plannedLink(
-          planned[item.id!] ?? item,
+          current,
           byId,
           variantGroup: groupName,
           variantLabel: isSource
               ? (sizeLabel ?? 'Regular')
               : (sizeLabel ?? derivedLabel ?? item.name),
-          proposedStockSourceId: source.id,
-          poolSource: isSource,
+          proposedStockSourceId: link.proposedSourceId,
+          poolSource: link.poolSource,
         );
       }
     }
@@ -719,15 +763,23 @@ class VariantHelpers {
         final derivedLabel = looksLikeSizeVariant(item) && !isSource
             ? _sizeLabel(item)
             : null;
+        final current = planned[item.id!] ?? item;
+        final link = _variantSyncStockLink(
+          current: current,
+          source: source,
+          isSource: isSource,
+          byId: byId,
+          catalogBaseline: byId[item.id!],
+        );
         planned[item.id!] = _plannedLink(
-          planned[item.id!] ?? item,
+          current,
           byId,
           variantGroup: groupName,
           variantLabel: isSource
               ? (sizeLabel ?? 'Regular')
               : (sizeLabel ?? derivedLabel ?? item.name),
-          proposedStockSourceId: source.id,
-          poolSource: isSource,
+          proposedStockSourceId: link.proposedSourceId,
+          poolSource: link.poolSource,
         );
       }
     }
@@ -759,6 +811,13 @@ class VariantHelpers {
     for (final item in items) {
       if (item.id == null) continue;
       if (groupedIds.contains(item.id)) continue;
+      final explicitGroup = item.variantGroup?.trim();
+      if (explicitGroup != null && explicitGroup.isNotEmpty) {
+        final categoryName = categories[item.categoryId];
+        if (!SubItemStock.isComponentReference(item, categoryName)) {
+          continue;
+        }
+      }
       planned[item.id!] = _copyWithLinks(
         planned[item.id!] ?? item,
         clearVariantGroup: true,
