@@ -18,6 +18,7 @@ void main() {
         subItem: 'chicken 65',
         locationId: 3,
         categoryId: 1,
+        listed: true,
       );
       final krusty = RawMaterial(
         id: 856,
@@ -26,6 +27,7 @@ void main() {
         locationId: 3,
         categoryId: 2,
         stockSourceId: 843,
+        listed: true,
       );
 
       final updates = VariantHelpers.syncVariantLinks(
@@ -35,6 +37,89 @@ void main() {
 
       expect(updates, isEmpty);
     });
+
+    test(
+      'syncVariantLinks keeps Krusty link when POS group would elect it holder',
+      () {
+        final localChicken = RawMaterial(
+          id: 843,
+          name: 'Chicken 65',
+          subItem: 'chicken 65',
+          locationId: 3,
+          categoryId: 1,
+          listed: true,
+        );
+        final krusty = RawMaterial(
+          id: 856,
+          name: 'Krusty Bites',
+          subItem: 'chicken 65',
+          locationId: 3,
+          categoryId: 2,
+          stockSourceId: 843,
+          listed: true,
+        );
+        final friedPeer = RawMaterial(
+          id: 883,
+          name: 'Fried peer A',
+          subItem: 'chicken 65',
+          locationId: 3,
+          categoryId: 2,
+          stockSourceId: 848,
+          listed: true,
+        );
+        final friedPeerB = RawMaterial(
+          id: 880,
+          name: 'Fried peer B',
+          subItem: 'chicken 65',
+          locationId: 3,
+          categoryId: 2,
+          stockSourceId: 849,
+          listed: true,
+        );
+        final holder848 = RawMaterial(
+          id: 848,
+          name: 'Holder848',
+          subItem: 'x',
+          locationId: 3,
+          categoryId: 1,
+          listed: true,
+        );
+        final holder849 = RawMaterial(
+          id: 849,
+          name: 'Holder849',
+          subItem: 'y',
+          locationId: 3,
+          categoryId: 1,
+          listed: true,
+        );
+
+        final items = [
+          localChicken,
+          krusty,
+          friedPeer,
+          friedPeerB,
+          holder848,
+          holder849,
+        ];
+
+        final updates = VariantHelpers.syncVariantLinks(
+          items,
+          categoryNameById: {1: 'Snacks', 2: 'Fried Items'},
+        );
+
+        final krustyUpdate = updates.where((item) => item.id == 856).toList();
+        expect(krustyUpdate, isEmpty);
+
+        final linked = VariantHelpers.withSyncedLinks(items);
+        final byId = {
+          for (final item in linked)
+            if (item.id != null) item.id!: item,
+        };
+        expect(byId[856]?.stockSourceId, 843);
+        expect(byId[883]?.stockSourceId, 848);
+        expect(byId[880]?.stockSourceId, 849);
+      },
+    );
 
     test('syncVariantLinks does not assign cross-location stock_source_id', () {
       final gtChicken = RawMaterial(
