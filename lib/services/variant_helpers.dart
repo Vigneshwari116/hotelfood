@@ -66,9 +66,13 @@ class VariantHelpers {
     Map<int, RawMaterial> byId, {
     bool itemIsPoolSource = false,
   }) {
-    if (itemIsPoolSource) return null;
-
     final existing = item.stockSourceId;
+    if (itemIsPoolSource) {
+      if (existing != null && isValidStockSource(existing, item, byId)) {
+        return existing;
+      }
+      return null;
+    }
     if (existing != null && isValidStockSource(existing, item, byId)) {
       return existing;
     }
@@ -112,7 +116,7 @@ class VariantHelpers {
       variantGroup: variantGroup,
       variantLabel: variantLabel,
       stockSourceId: resolved,
-      clearStockSource: poolSource,
+      clearStockSource: poolSource && resolved == null,
       clearVariantGroup: clearVariantGroup,
       clearVariantLabel: clearVariantLabel,
     );
