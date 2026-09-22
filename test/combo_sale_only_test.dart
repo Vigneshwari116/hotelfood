@@ -10,7 +10,7 @@ void main() {
       expect(ComboOnlyCategories.isComboSaleOnlyCategoryName('Snacks'), isFalse);
     });
 
-    test('hides Burgers and Rolls standalone menu items by category name', () {
+    test('POS hides Burgers and Rolls standalone materials by category name', () {
       final burger = RawMaterial(
         id: 10,
         name: 'Hot Crispy burger',
@@ -19,12 +19,12 @@ void main() {
       );
 
       expect(
-        ComboOnlyCategories.shouldHideStandaloneMenuItem(
+        ComboOnlyCategories.isPosStandaloneMaterial(
           burger,
-          categoryNameFor: (_) => 'Burgers',
           comboOnlyCategoryIds: const {},
+          categoryNameFor: (_) => 'Burgers',
         ),
-        isTrue,
+        isFalse,
       );
     });
 

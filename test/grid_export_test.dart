@@ -168,14 +168,16 @@ void main() {
 
     final service = ItemImportService();
     final rows = await service.gridExportRowsForLocation(1);
-    expect(rows, hasLength(1));
-    expect(rows.map((row) => row[2]), isNot(contains('Hot Crispy Patty')));
-    expect(rows.map((row) => row[2]), isNot(contains('Burger Bun With Sesame')));
-    expect(rows.map((row) => row[2]), isNot(contains('Kathi Roll Paratha')));
+    expect(rows, hasLength(4));
+    expect(rows.map((row) => row[2]), containsAll([
+      'Hot Crispy Patty',
+      'Burger Bun With Sesame',
+      'Popcorn Small',
+      'Kathi Roll Paratha',
+    ]));
 
-    final snackRow = rows.single;
+    final snackRow = rows.firstWhere((row) => row[2] == 'Popcorn Small');
     expect(snackRow[0], 'Snacks');
-    expect(snackRow[2], 'Popcorn Small');
     expect(snackRow[13], '49');
 
     final comboRows = await service.comboExportRows();

@@ -9,7 +9,6 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:foodstock/model/models.dart';
 import '../services/combo_material_picker.dart';
-import '../services/combo_only_categories.dart';
 import '../database/api_config.dart';
 import '../services/always_visible_menu_categories.dart';
 import '../services/item_import_service.dart';
@@ -37,8 +36,6 @@ class _RawMaterialMasterScreenState
   List<Category> _categories = [];
   List<UnitM> _units = [];
   List<Combo> _combos = [];
-  Set<int?> _comboOnlyCategoryIds = {};
-
   final TextEditingController _searchController =
   TextEditingController();
 
@@ -113,10 +110,6 @@ class _RawMaterialMasterScreenState
           if (combo.id == null) return true;
           return seenComboIds.add(combo.id!);
         }).toList(growable: false);
-        _comboOnlyCategoryIds = ComboOnlyCategories.categoryIds(
-          materials: _items,
-          combos: _combos,
-        );
       });
     } catch (e) {
       if (!mounted || generation != _loadGeneration) return;
@@ -686,14 +679,6 @@ class _RawMaterialMasterScreenState
     grouped = {};
 
     for (final item in _items) {
-      if (ComboOnlyCategories.shouldHideStandaloneMenuItem(
-        item,
-        categoryNameFor: _rawCategoryName,
-        comboOnlyCategoryIds: _comboOnlyCategoryIds,
-      )) {
-        continue;
-      }
-
       final category = _categoryName(item.categoryId);
 
       grouped.putIfAbsent(
