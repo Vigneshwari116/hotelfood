@@ -1,9 +1,114 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:foodstock/model/models.dart';
+import 'package:foodstock/services/menu_item_edit_helpers.dart';
 import 'package:foodstock/services/variant_helpers.dart';
+
+RawMaterial _krustyForGridSave({
+  required int? stockSourceId,
+}) {
+  return RawMaterial(
+    id: 856,
+    name: 'Krusty Bites',
+    subItem: 'chicken 65',
+    locationId: 3,
+    categoryId: 2,
+    stockSourceId: stockSourceId,
+    listed: true,
+    qtyNeeded: 1,
+    unitId: 2,
+  );
+}
+
+RawMaterial _buildKrustyViaGridClear(RawMaterial existing) {
+  return MenuItemEditHelpers.buildForSave(
+    existing: existing,
+    barcodeText: '',
+    itemName: 'Krusty Bites',
+    subItemText: 'chicken 65',
+    qtyPerSaleText: '1',
+    packetsText: '0',
+    unitsPerPacketText: '90',
+    openingPiecesText: '',
+    stockText: '0',
+    costPriceText: '',
+    sellingPriceText: '99',
+    unitId: 2,
+    variantGroupText: '',
+    variantLabelText: '',
+    stockSourceId: null,
+    clearStockSource: true,
+  );
+}
 
 void main() {
   group('stock_source_id preservation', () {
+    test('CASE A: syncVariantLinks keeps manual 856→843', () {
+      final localChicken = RawMaterial(
+        id: 843,
+        name: 'Chicken 65',
+        subItem: 'chicken 65',
+        locationId: 3,
+        categoryId: 1,
+        listed: true,
+      );
+      final krusty = RawMaterial(
+        id: 856,
+        name: 'Krusty Bites',
+        subItem: 'chicken 65',
+        locationId: 3,
+        categoryId: 2,
+        stockSourceId: 843,
+        listed: true,
+      );
+
+      final linked = VariantHelpers.withSyncedLinks([localChicken, krusty]);
+      final byId = {
+        for (final item in linked)
+          if (item.id != null) item.id!: item,
+      };
+      expect(byId[856]?.stockSourceId, 843);
+    });
+
+    test(
+      'grid save path keeps 856→NULL when user clears stock source field',
+      () {
+        final cleared = _buildKrustyViaGridClear(
+          _krustyForGridSave(stockSourceId: 843),
+        );
+        expect(cleared.stockSourceId, isNull);
+      },
+    );
+
+    test(
+      'CASE B: syncVariantLinks cannot keep intentional clear as NULL',
+      () {
+        // RawMaterial has no persisted flag for "user cleared stock source".
+        // stockSourceId == null is identical to "never linked" and to a true
+        // pool holder (holder rows also use null). syncVariantLinks therefore
+        // re-applies sub_item pooling and proposes Chicken 65 again.
+        final localChicken = RawMaterial(
+          id: 843,
+          name: 'Chicken 65',
+          subItem: 'chicken 65',
+          locationId: 3,
+          categoryId: 1,
+          listed: true,
+        );
+        final krustyCleared = _buildKrustyViaGridClear(
+          _krustyForGridSave(stockSourceId: 843),
+        );
+        expect(krustyCleared.stockSourceId, isNull);
+
+        final updates = VariantHelpers.syncVariantLinks(
+          [localChicken, krustyCleared],
+          categoryNameById: {1: 'Snacks', 2: 'Fried Items'},
+        );
+
+        final krustyUpdate = updates.firstWhere((item) => item.id == 856);
+        expect(krustyUpdate.stockSourceId, 843);
+      },
+    );
+
     test('syncVariantLinks keeps manual same-location stock_source_id', () {
       final gtChicken = RawMaterial(
         id: 4,
