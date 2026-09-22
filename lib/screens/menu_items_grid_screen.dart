@@ -8,7 +8,6 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:foodstock/database/api_config.dart';
 import 'package:foodstock/model/models.dart';
-import 'package:foodstock/services/combo_only_categories.dart';
 import 'package:foodstock/services/inventory_search.dart';
 import 'package:foodstock/services/item_import_service.dart';
 import 'package:foodstock/services/listed_change_source.dart';
@@ -40,8 +39,6 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
 
   List<Category> _categories = [];
   List<UnitM> _units = [];
-  List<Combo> _combos = [];
-  Set<int?> _comboOnlyCategoryIds = {};
   final List<_MenuGridRow> _rows = [];
 
   bool _loading = true;
@@ -76,7 +73,6 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
         ),
         Repository.instance.categories(type: 'raw_material'),
         Repository.instance.units(),
-        Repository.instance.combosWithItems(),
       ]);
 
       if (!mounted) return;
@@ -89,11 +85,6 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
       final items = results[0] as List<RawMaterial>;
       _categories = results[1] as List<Category>;
       _units = results[2] as List<UnitM>;
-      _combos = results[3] as List<Combo>;
-      _comboOnlyCategoryIds = ComboOnlyCategories.categoryIds(
-        materials: items,
-        combos: _combos,
-      );
 
       for (final item in items) {
         _rows.add(_MenuGridRow(item: item));
@@ -138,13 +129,6 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
   Map<String, List<_MenuGridRow>> get _groupedRows {
     final grouped = <String, List<_MenuGridRow>>{};
     for (final row in _rows) {
-      if (ComboOnlyCategories.shouldHideStandaloneMenuItem(
-        row.item,
-        categoryNameFor: _rawCategoryName,
-        comboOnlyCategoryIds: _comboOnlyCategoryIds,
-      )) {
-        continue;
-      }
       final category = _categoryName(row.item.categoryId);
       grouped.putIfAbsent(category, () => []).add(row);
     }
@@ -163,16 +147,7 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
   }
 
   List<String> get _sortedCategories {
-    final keys = _groupedRows.keys.where((categoryName) {
-      if (ComboOnlyCategories.isComboSaleOnlyCategoryName(categoryName)) {
-        return false;
-      }
-      final categoryId = _categoryIdForName(categoryName);
-      if (categoryId != null && _comboOnlyCategoryIds.contains(categoryId)) {
-        return false;
-      }
-      return true;
-    }).toList();
+    final keys = _groupedRows.keys.toList();
     keys.sort((a, b) {
       final byOrder = _categorySortIndex(a).compareTo(_categorySortIndex(b));
       if (byOrder != 0) return byOrder;
@@ -187,14 +162,6 @@ class _MenuItemsGridScreenState extends State<MenuItemsGridScreen> {
       if (_canonicalCategoryDisplayName(category.name) == name) {
         return category.id;
       }
-    }
-    return null;
-  }
-
-  String? _rawCategoryName(int? id) {
-    if (id == null) return null;
-    for (final category in _categories) {
-      if (category.id == id) return category.name;
     }
     return null;
   }

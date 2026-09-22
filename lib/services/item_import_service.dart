@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:foodstock/model/models.dart';
-import 'package:foodstock/services/combo_only_categories.dart';
 import 'package:foodstock/services/menu_item_edit_helpers.dart';
 import 'package:foodstock/services/repository.dart';
 import 'package:foodstock/services/spreadsheet_export.dart';
@@ -237,11 +236,6 @@ class ItemImportService {
       includeHidden: true,
     );
     final categories = await Repository.instance.categories(type: 'raw_material');
-    final combos = await Repository.instance.combosWithItems();
-    final comboOnlyCategoryIds = ComboOnlyCategories.categoryIds(
-      materials: materials,
-      combos: combos,
-    );
     final categoryNameById = {
       for (final category in categories)
         if (category.id != null) category.id!: category.name,
@@ -265,13 +259,6 @@ class ItemImportService {
 
     final rows = <List<String>>[];
     for (final item in materials) {
-      if (ComboOnlyCategories.shouldHideStandaloneMenuItem(
-        item,
-        categoryNameFor: (id) => id == null ? null : categoryNameById[id],
-        comboOnlyCategoryIds: comboOnlyCategoryIds,
-      )) {
-        continue;
-      }
       final categoryName = displayCategoryName(categoryNameById[item.categoryId]);
       final stockSourceName = item.stockSourceId == null
           ? ''

@@ -4,26 +4,12 @@ import 'package:foodstock/model/models.dart';
 class ComboOnlyCategories {
   ComboOnlyCategories._();
 
-  /// Categories sold only through combos (not as standalone POS/grid cards).
+  /// Categories sold only through combos (hidden from direct POS sale).
   static const comboSaleOnlyCategoryNames = {'burgers', 'rolls'};
 
   static bool isComboSaleOnlyCategoryName(String? name) {
     final key = name?.trim().toLowerCase() ?? '';
     return comboSaleOnlyCategoryNames.contains(key);
-  }
-
-  static bool shouldHideStandaloneMenuItem(
-    RawMaterial material, {
-    required String? Function(int? categoryId) categoryNameFor,
-    required Set<int?> comboOnlyCategoryIds,
-  }) {
-    if (isComboSaleOnlyCategoryName(categoryNameFor(material.categoryId))) {
-      return true;
-    }
-    return !isDirectSaleMaterial(
-      material,
-      comboOnlyCategoryIds: comboOnlyCategoryIds,
-    );
   }
 
   static bool isPosStandaloneMaterial(
